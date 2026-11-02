@@ -708,3 +708,146 @@ mod signing {
         assert_eq!(contract.get_op(op).signatures, vec![None, None]);
     }
 }
+
+mod clawback {
+    use super::withdrawals_support::*;
+    use super::*;
+    use crate::core::policy::HOUR_NS;
+    use crate::core::spend::{SpendOpKind, SpendOpState, SpendSource};
+
+    fn expect_panic(expected: &str, f: impl FnOnce() + std::panic::UnwindSafe) {
+        let message = panic_message(f);
+        assert!(
+            message.contains(expected),
+            "expected {expected}, got {message}"
+        );
+    }
+
+    fn claw(
+        contract: &mut VaultContract,
+        id: U64,
+        utxos: Vec<crate::core::spend::Outpoint>,
+    ) -> U64 {
+        as_caller("backup.testnet");
+        contract.begin_clawback(id, utxos, 2, None)
+    }
+
+    #[test]
+    fn sweeps_to_the_recovery_address_voids_live_ops_and_closes_the_vault() {
+        let (mut contract, id) = active_vault();
+        let withdrawal = request(&mut contract, id, vec![utxo(1, 150_000)], 100_000);
+        let clawback = claw(&mut contract, id, vec![utxo(1, 150_000), utxo(2, 60_000)]);
+
+        let op = contract.get_op(clawback);
+        assert_eq!(op.kind, SpendOpKind::Clawback);
+        assert_eq!(op.state, SpendOpState::Frozen);
+        assert_eq!(
+            op.destination,
+            contract.get_vault(id).policy.recovery_address
+        );
+        assert_eq!(op.sighashes.len(), 2);
+        assert_eq!(
+            op.witness_template.as_ref().map(|t| t.path.as_str()),
+            Some("clawback")
+        );
+        assert!(op.unsigned_tx_hex.as_ref().unwrap().contains("fdffffff"));
+        assert_eq!(contract.get_op(withdrawal).state, SpendOpState::Voided);
+        assert_eq!(contract.get_vault(id).state, VaultState::ClawedBack);
+
+        let kinds: Vec<String> = contract
+            .events_since(U64(3), 100)
+            .into_iter()
+            .map(|e| e.kind)
+            .collect();
+        assert_eq!(kinds, vec!["op_voided", "vault_clawed_back", "op_frozen"]);
+    }
+
+    #[test]
+    fn only_guardians_can_claw_back() {
+        for caller in ["owner.testnet", "stranger.testnet"] {
+            expect_panic("ERR_UNAUTHORIZED", move || {
+                let (mut contract, id) = active_vault();
+                as_caller(caller);
+                contract.begin_clawback(id, vec![utxo(1, 150_000)], 2, None);
+            });
+        }
+    }
+
+    #[test]
+    fn a_clawed_back_vault_rejects_everything_else() {
+        expect_panic("ERR_CLAWED_BACK", || {
+            let (mut contract, id) = active_vault();
+            claw(&mut contract, id, vec![utxo(1, 150_000)]);
+            request(&mut contract, id, vec![utxo(2, 150_000)], 100_000);
+        });
+        expect_panic("ERR_CLAWED_BACK", || {
+            let (mut contract, id) = active_vault();
+            let op = request(&mut contract, id, vec![utxo(1, 150_000)], 100_000);
+            claw(&mut contract, id, vec![utxo(2, 150_000)]);
+            at_time("owner.testnet", NOW + 24 * HOUR_NS);
+            contract.begin_execute(op, envelope());
+        });
+        expect_panic("ERR_CLAWED_BACK", || {
+            let (mut contract, id) = active_vault();
+            let op = request(&mut contract, id, vec![utxo(1, 150_000)], 100_000);
+            claw(&mut contract, id, vec![utxo(2, 150_000)]);
+            as_caller("owner.testnet");
+            contract.cancel(op, Some(envelope()));
+        });
+    }
+
+    #[test]
+    fn sweeps_late_deposits_but_never_the_same_outpoint_twice() {
+        let (mut contract, id) = active_vault();
+        claw(&mut contract, id, vec![utxo(1, 150_000)]);
+        let late = claw(&mut contract, id, vec![utxo(2, 60_000)]);
+        assert_eq!(contract.get_op(late).state, SpendOpState::Frozen);
+        expect_panic("ERR_OUTPOINT_RESERVED", || {
+            let (mut contract, id) = active_vault();
+            claw(&mut contract, id, vec![utxo(1, 150_000)]);
+            claw(&mut contract, id, vec![utxo(1, 150_000)]);
+        });
+    }
+
+    #[test]
+    fn enforces_the_clawback_fee_cap() {
+        expect_panic("ERR_FEE_TOO_HIGH", || {
+            let (mut contract, id) = active_vault();
+            as_caller("emma.testnet");
+            contract.begin_clawback(id, vec![utxo(1, 150_000)], 1_000, None);
+        });
+    }
+
+    #[test]
+    fn sweeps_the_allowance_address_with_its_own_script() {
+        let (mut contract, id) = active_vault();
+        as_caller("emma.testnet");
+        let from_vault = contract.begin_clawback(id, vec![utxo(1, 150_000)], 2, None);
+        let from_allowance =
+            contract.begin_clawback(id, vec![utxo(2, 150_000)], 2, Some(SpendSource::Allowance));
+        assert_eq!(
+            contract.get_op(from_allowance).source,
+            SpendSource::Allowance
+        );
+        assert_ne!(
+            contract.get_op(from_vault).sighashes,
+            contract.get_op(from_allowance).sighashes
+        );
+    }
+
+    #[test]
+    fn guardians_sign_clawback_inputs_even_after_the_vault_is_closed() {
+        let (mut contract, id) = active_vault();
+        let op = claw(&mut contract, id, vec![utxo(1, 150_000)]);
+        assert!(matches!(
+            contract.sign_input(op, 0),
+            near_sdk::PromiseOrValue::Promise(_)
+        ));
+        expect_panic("ERR_UNAUTHORIZED", || {
+            let (mut contract, id) = active_vault();
+            let op = claw(&mut contract, id, vec![utxo(1, 150_000)]);
+            as_caller("owner.testnet");
+            let _ = contract.sign_input(op, 0);
+        });
+    }
+}
