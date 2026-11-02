@@ -27,6 +27,7 @@ import type {
   SpendAllowanceArgs,
   SpendOp,
   SpendOpKind,
+  SpendSource,
   U64,
   Vault,
   VaultKit,
@@ -529,12 +530,13 @@ export class MockContractClient implements ContractClient {
     state: SpendOp["state"],
     amountSats: U64,
     destination: string,
-    args: { utxos: Outpoint[]; fee_rate_sat_vb: number },
+    args: { utxos: Outpoint[]; fee_rate_sat_vb: number; source?: SpendSource },
   ): SpendOp {
     const op: SpendOp = {
       op_id: (this.nextOpId++).toString(),
       vault_id: vault.vault_id,
       kind,
+      source: "source" in args && args.source === "allowance" ? "allowance" : "vault",
       state,
       amount_sats: amountSats,
       destination,

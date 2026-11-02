@@ -8,15 +8,18 @@ export interface FaucetOptions {
   backoffMs?: (attempt: number) => number;
 }
 
-/** Creates a funded NEAR testnet account through the public faucet helper. */
+/**
+ * Creates a funded NEAR testnet account through the public faucet helper. Retries with exponential
+ * backoff (5, 10, 20, 40 s), because the faucet rate-limits by IP (HTTP 429).
+ */
 export async function createTestnetAccount(
   accountId: string,
   publicKey: string,
   {
     url = TESTNET_FAUCET_URL,
-    attempts = 3,
+    attempts = 5,
     fetchFn = fetch,
-    backoffMs = (n) => 2_000 * n,
+    backoffMs = (n) => 5_000 * 2 ** (n - 1),
   }: FaucetOptions = {},
 ): Promise<void> {
   let lastError = "";

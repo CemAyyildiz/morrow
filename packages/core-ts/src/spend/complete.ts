@@ -15,9 +15,15 @@ export function parseStoredSignature(stored: Hex): MpcSignature {
   return { big_r: { affine_point: stored.slice(0, 66) }, s: { scalar: stored.slice(66) } };
 }
 
-/** Signs one sighash with the Owner Key: low-S, DER, SIGHASH_ALL. */
-export function ownerSignature(sighash: Hex, ownerSecretKey: Uint8Array): Hex {
-  const compact = secp256k1.sign(hexToBytes(sighash), ownerSecretKey, { prehash: false });
+/** The local signer for a spend: the Owner (Withdrawal Path) or a Guardian (Clawback Path). */
+export interface LocalSigner {
+  role: "owner" | "guardian";
+  secretKey: Uint8Array;
+}
+
+/** Signs one sighash with a local key: low-S, DER, SIGHASH_ALL. */
+export function ownerSignature(sighash: Hex, secretKey: Uint8Array): Hex {
+  const compact = secp256k1.sign(hexToBytes(sighash), secretKey, { prehash: false });
   const r = BigInt(`0x${bytesToHex(compact.slice(0, 32))}`);
   const s = BigInt(`0x${bytesToHex(compact.slice(32))}`);
   return encodeSignature(r, s);
@@ -25,10 +31,16 @@ export function ownerSignature(sighash: Hex, ownerSecretKey: Uint8Array): Hex {
 
 /**
  * Adds the witnesses to the contract-built transaction: the Co-signer's MPC signature and the
- * Owner's signature, placed by the contract-published template. The transaction itself is never
- * rebuilt or modified.
+ * local signer's signature, placed by the contract-published template. The transaction itself is
+ * never rebuilt or modified. A bare secret key means the Owner.
  */
-export function assembleSpend(op: SpendOp, witnessScriptHex: Hex, ownerSecretKey: Uint8Array): Hex {
+export function assembleSpend(
+  op: SpendOp,
+  witnessScriptHex: Hex,
+  signer: LocalSigner | Uint8Array,
+): Hex {
+  const local =
+    signer instanceof Uint8Array ? { role: "owner" as const, secretKey: signer } : signer;
   const template = op.witness_template;
   if (!op.unsigned_tx_hex || !template) throw new CryptoError(`Op ${op.op_id} is not frozen`);
   const tx = Transaction.fromHex(op.unsigned_tx_hex);
@@ -40,7 +52,7 @@ export function assembleSpend(op: SpendOp, witnessScriptHex: Hex, ownerSecretKey
     const stack = fillWitness(template, {
       signatures: {
         cosigner: mpcSignatureToDer(parseStoredSignature(stored)),
-        owner: ownerSignature(sighash, ownerSecretKey),
+        [local.role]: ownerSignature(sighash, local.secretKey),
       },
       scriptHex: witnessScriptHex,
     });
@@ -59,10 +71,10 @@ const ALREADY_KNOWN =
 export async function completeAndBroadcast(
   op: SpendOp,
   witnessScriptHex: Hex,
-  ownerSecretKey: Uint8Array,
+  signer: LocalSigner | Uint8Array,
   backend: BitcoinBackend,
 ): Promise<Hex> {
-  const raw = assembleSpend(op, witnessScriptHex, ownerSecretKey);
+  const raw = assembleSpend(op, witnessScriptHex, signer);
   try {
     return await backend.broadcast(raw);
   } catch (error) {
