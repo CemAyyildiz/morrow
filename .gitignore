@@ -47,3 +47,6 @@ pnpm-debug.log*
 .idea/
 .vscode/*
 !.vscode/extensions.json
+
+# Local watcher state
+.watcher-state/
