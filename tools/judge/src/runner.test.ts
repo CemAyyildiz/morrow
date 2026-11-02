@@ -8,9 +8,12 @@ async function run(scenarios: Scenario[], release = false) {
   return { lines, code: exitCode(results) };
 }
 
+/** The registry with every Scenario marked as not built. */
+const UNBUILT: Scenario[] = SCENARIOS.map(({ id, name, mandatory }) => ({ id, name, mandatory }));
+
 describe("judge runner", () => {
   it("prints one SKIP line per unbuilt Scenario and exits 0", async () => {
-    const { lines, code } = await run(SCENARIOS);
+    const { lines, code } = await run(UNBUILT);
     expect(lines).toEqual([
       "S-1 Create SKIP (not built)",
       "S-2 Withdraw after Delay SKIP (not built)",
@@ -24,7 +27,7 @@ describe("judge runner", () => {
   });
 
   it("fails a release build when a mandatory Scenario is not built", async () => {
-    const { lines, code } = await run(SCENARIOS, true);
+    const { lines, code } = await run(UNBUILT, true);
     expect(lines[0]).toBe("S-1 Create FAIL: mandatory Scenario not built");
     expect(lines[3]).toBe("S-4 Duress SKIP (not built)");
     expect(code).toBe(1);
