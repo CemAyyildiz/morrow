@@ -16,6 +16,10 @@ fn context(caller: &str, deposit: NearToken) {
 
 fn testnet_contract(allowlist: Vec<&str>) -> VaultContract {
     context("deployer.testnet", NearToken::from_yoctonear(0));
+    // testing_env! keeps storage between contexts; every test contract starts empty.
+    near_sdk::mock::with_mocked_blockchain(|chain| {
+        chain.take_storage();
+    });
     VaultContract::new(
         "v1.signer-prod.testnet".parse().unwrap(),
         vec![
@@ -311,5 +315,186 @@ mod activation {
         let first = contract.get_vault(id).cosigner_pubkeys;
         contract.on_keys_derived(id, Ok(derived(0x66)), Ok(derived(0x77)));
         assert_eq!(contract.get_vault(id).cosigner_pubkeys, first);
+    }
+}
+
+mod withdrawals {
+    use super::*;
+    use crate::core::policy::HOUR_NS;
+    use crate::core::spend::{Outpoint, SpendOpState};
+
+    fn envelope() -> String {
+        "ab".repeat(80)
+    }
+    const DESTINATION: &str = "tb1qw508d6qejxtdg4y5r3zarvary0c5xw7kxpjzsx";
+    const NOW: u64 = 1_762_070_400_000_000_000;
+
+    fn utxo(n: u8, value: u64) -> Outpoint {
+        Outpoint {
+            txid: format!("{n:02x}").repeat(32),
+            vout: 0,
+            value_sats: U64(value),
+        }
+    }
+
+    fn as_caller(caller: &str) {
+        context(caller, NearToken::from_yoctonear(0));
+    }
+
+    /// An active signet Vault owned by owner.testnet with Guardians emma.testnet and backup.testnet.
+    fn active_vault() -> (VaultContract, U64) {
+        let mut contract = testnet_contract(vec![]);
+        context("owner.testnet", MIN_VAULT_STORAGE);
+        let id = create(&mut contract, standard_policy());
+        let mut point = [0x11u8; 64];
+        point[63] = 1;
+        let key = format!("secp256k1:{}", bs58::encode(point).into_string());
+        contract.on_keys_derived(id, Ok(key.clone()), Ok(key));
+        (contract, id)
+    }
+
+    fn request(contract: &mut VaultContract, id: U64, utxos: Vec<Outpoint>, amount: u64) -> U64 {
+        as_caller("owner.testnet");
+        contract.request_withdrawal(id, U64(amount), DESTINATION.into(), 2, utxos, envelope())
+    }
+
+    fn rejects(expected: &str, f: impl FnOnce(&mut VaultContract, U64) + std::panic::UnwindSafe) {
+        let message = panic_message(move || {
+            let (mut contract, id) = active_vault();
+            f(&mut contract, id);
+        });
+        assert!(
+            message.contains(expected),
+            "expected {expected}, got {message}"
+        );
+    }
+
+    #[test]
+    fn requests_a_pending_withdrawal_that_waits_the_delay() {
+        let (mut contract, id) = active_vault();
+        let op_id = request(&mut contract, id, vec![utxo(1, 100_000)], 50_000);
+        let op = contract.get_op(op_id);
+        assert_eq!(op.state, SpendOpState::Pending);
+        assert_eq!(op.executable_at, Some(U64(NOW + 24 * HOUR_NS)));
+        let event = contract.events_since(U64(2), 100).pop().unwrap();
+        assert_eq!(event.kind, "withdrawal_requested");
+        assert_eq!(event.data["op_id"], "1");
+        assert_eq!(event.data["envelope"], envelope());
+    }
+
+    #[test]
+    fn only_the_owner_can_request() {
+        for caller in ["emma.testnet", "stranger.testnet"] {
+            rejects("ERR_UNAUTHORIZED", move |c, id| {
+                as_caller(caller);
+                c.request_withdrawal(
+                    id,
+                    U64(1),
+                    DESTINATION.into(),
+                    2,
+                    vec![utxo(1, 10)],
+                    envelope(),
+                );
+            });
+        }
+    }
+
+    #[test]
+    fn rejects_bad_envelopes_inputs_funds_and_destinations() {
+        rejects("ERR_BAD_ENVELOPE", |c, id| {
+            as_caller("owner.testnet");
+            c.request_withdrawal(
+                id,
+                U64(1),
+                DESTINATION.into(),
+                2,
+                vec![utxo(1, 10)],
+                "ab".repeat(79),
+            );
+        });
+        rejects("ERR_NO_INPUTS", |c, id| {
+            request(c, id, vec![], 1);
+        });
+        rejects("ERR_TOO_MANY_INPUTS", |c, id| {
+            request(c, id, (1..=6).map(|n| utxo(n, 10)).collect(), 1);
+        });
+        rejects("ERR_OUTPOINT_RESERVED", |c, id| {
+            request(c, id, vec![utxo(1, 10), utxo(1, 10)], 1);
+        });
+        rejects("ERR_INSUFFICIENT_FUNDS", |c, id| {
+            request(c, id, vec![utxo(1, 10)], 11);
+        });
+        rejects("ERR_BAD_ADDRESS", |c, id| {
+            as_caller("owner.testnet");
+            c.request_withdrawal(
+                id,
+                U64(1),
+                "bc1qw508d6qejxtdg4y5r3zarvary0c5xw7kv8f3t4".into(),
+                2,
+                vec![utxo(1, 10)],
+                envelope(),
+            );
+        });
+    }
+
+    #[test]
+    fn reserves_outpoints_until_cancelled() {
+        rejects("ERR_OUTPOINT_RESERVED", |c, id| {
+            request(c, id, vec![utxo(1, 10)], 5);
+            request(c, id, vec![utxo(1, 10)], 5);
+        });
+        let (mut contract, id) = active_vault();
+        let op_id = request(&mut contract, id, vec![utxo(1, 10)], 5);
+        as_caller("emma.testnet");
+        contract.cancel(op_id, None);
+        assert_eq!(contract.get_op(op_id).state, SpendOpState::Cancelled);
+        assert_eq!(
+            contract.events_since(U64(0), 100).pop().unwrap().kind,
+            "withdrawal_cancelled"
+        );
+        request(&mut contract, id, vec![utxo(1, 10)], 5);
+    }
+
+    #[test]
+    fn owner_cancels_with_an_envelope_and_strangers_cannot() {
+        let (mut contract, id) = active_vault();
+        let op_id = request(&mut contract, id, vec![utxo(1, 10)], 5);
+        contract.cancel(op_id, Some(envelope()));
+        assert_eq!(contract.get_op(op_id).state, SpendOpState::Cancelled);
+
+        rejects("ERR_BAD_ENVELOPE", |c, id| {
+            let op = request(c, id, vec![utxo(1, 10)], 5);
+            c.cancel(op, None);
+        });
+        rejects("ERR_UNAUTHORIZED", |c, id| {
+            let op = request(c, id, vec![utxo(1, 10)], 5);
+            as_caller("stranger.testnet");
+            c.cancel(op, None);
+        });
+        rejects("ERR_BAD_OP_STATE", |c, id| {
+            let op = request(c, id, vec![utxo(1, 10)], 5);
+            as_caller("emma.testnet");
+            c.cancel(op, None);
+            c.cancel(op, None);
+        });
+    }
+
+    #[test]
+    fn a_pending_keys_vault_rejects_requests() {
+        let message = panic_message(|| {
+            let mut contract = testnet_contract(vec![]);
+            context("owner.testnet", MIN_VAULT_STORAGE);
+            let id = create(&mut contract, standard_policy());
+            request(&mut contract, id, vec![utxo(1, 10)], 5);
+        });
+        assert!(message.contains("ERR_VAULT_NOT_ACTIVE"), "{message}");
+    }
+
+    #[test]
+    fn charges_storage_to_the_vault() {
+        let (mut contract, id) = active_vault();
+        let before = contract.get_vault(id).storage_balance.0;
+        request(&mut contract, id, vec![utxo(1, 10)], 5);
+        assert!(contract.get_vault(id).storage_balance.0 < before);
     }
 }
