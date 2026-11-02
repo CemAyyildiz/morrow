@@ -2,8 +2,8 @@
 // dependencies). Serves `dist/` with the NFR-10 headers on every response, `/config.json` from
 // the whitelisted env vars, and `index.html` for any path without a file extension so deep
 // links such as `/g/<vault_id>` load the app. Refuses to start on a bad config.
-import { readFileSync } from "node:fs";
-import { readFile, stat } from "node:fs/promises";
+import { createReadStream, readFileSync } from "node:fs";
+import { stat } from "node:fs/promises";
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
 import { extname, join, resolve, sep } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
@@ -25,6 +25,10 @@ const CONTENT_TYPES: Record<string, string> = {
   ".png": "image/png",
   ".ico": "image/x-icon",
   ".webp": "image/webp",
+  ".avif": "image/avif",
+  ".jpg": "image/jpeg",
+  ".jpeg": "image/jpeg",
+  ".mp4": "video/mp4",
   ".woff2": "font/woff2",
   ".woff": "font/woff",
   ".ttf": "font/ttf",
@@ -54,6 +58,31 @@ function decodePath(rawUrl: string): string | null {
   // No `.` or `..` segments and no dotfiles, checked after decoding so `%2e%2e` counts.
   if (decoded.split("/").some((segment) => segment.startsWith("."))) return null;
   return decoded;
+}
+
+/**
+ * A single `bytes=` range from a `Range` header: null when absent or not a single byte range
+ * (the full file is sent), "unsatisfiable" when it starts past the end or the file is empty.
+ */
+export function byteRange(
+  header: string | undefined,
+  size: number,
+): { start: number; end: number } | "unsatisfiable" | null {
+  const match = header === undefined ? null : /^bytes=(\d*)-(\d*)$/.exec(header.trim());
+  if (!match) return null;
+  const [, from = "", to = ""] = match;
+  if (from === "" && to === "") return null;
+  if (size === 0) return "unsatisfiable";
+  if (from === "") {
+    const suffix = Number(to);
+    if (suffix === 0) return "unsatisfiable";
+    return { start: Math.max(0, size - suffix), end: size - 1 };
+  }
+  const start = Number(from);
+  if (start >= size) return "unsatisfiable";
+  const end = to === "" ? size - 1 : Math.min(Number(to), size - 1);
+  if (end < start) return null;
+  return { start, end };
 }
 
 export function createWebServer({ config, distDir }: WebServerOptions): Server {
@@ -108,12 +137,36 @@ export function createWebServer({ config, distDir }: WebServerOptions): Server {
     const file = resolve(root, `.${path}`);
     if (!file.startsWith(root + sep)) return notFound(request, response);
     try {
-      if (!(await stat(file)).isFile()) return notFound(request, response);
-      const body = await readFile(file);
-      return send(request, response, 200, body, {
+      const info = await stat(file);
+      if (!info.isFile()) return notFound(request, response);
+      const size = info.size;
+      const fileHeaders = {
         "content-type": CONTENT_TYPES[extension] ?? "application/octet-stream",
         "cache-control": path.startsWith("/assets/") ? IMMUTABLE : "no-cache",
+        "accept-ranges": "bytes",
+      };
+      // Safari plays <video> only from a server that answers byte-range requests.
+      const range = byteRange(request.headers.range, size);
+      if (range === "unsatisfiable") {
+        return send(request, response, 416, Buffer.alloc(0), {
+          ...fileHeaders,
+          "content-range": `bytes */${size}`,
+        });
+      }
+      // Stream the file (or the requested slice) instead of reading it whole.
+      const start = range === null ? 0 : range.start;
+      const end = range === null ? size - 1 : range.end;
+      response.writeHead(range === null ? 200 : 206, {
+        ...headers,
+        ...fileHeaders,
+        "content-length": end - start + 1,
+        ...(range === null ? {} : { "content-range": `bytes ${start}-${end}/${size}` }),
       });
+      if (request.method === "HEAD" || size === 0) return void response.end();
+      const stream = createReadStream(file, { start, end });
+      stream.on("error", () => response.destroy());
+      stream.pipe(response);
+      return;
     } catch {
       return notFound(request, response);
     }

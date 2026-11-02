@@ -55,10 +55,15 @@ export const NAV_ROUTES: readonly NavRoute[] = [
 
 export const HOME_PATH = "/challenge";
 
-export const REDIRECTS: Readonly<Record<string, string>> = { "/": HOME_PATH };
+/** The public landing (Epic 9), drawn full-bleed outside the app shell. */
+export const LANDING_PATH = "/";
+
+/** Paths the router rewrites before rendering. None today: `/` is the landing. */
+export const REDIRECTS: Readonly<Record<string, string>> = {};
 
 export type ResolvedRoute =
   | { kind: "redirect"; to: string }
+  | { kind: "landing" }
   | { kind: "nav"; route: NavRoute }
   | { kind: "not-found"; path: string };
 
@@ -66,6 +71,7 @@ export function resolveRoute(pathname: string): ResolvedRoute {
   const path = normalizePath(pathname);
   const to = REDIRECTS[path];
   if (to !== undefined) return { kind: "redirect", to };
+  if (path === LANDING_PATH) return { kind: "landing" };
   const route = NAV_ROUTES.find((candidate) => candidate.path === path);
   return route ? { kind: "nav", route } : { kind: "not-found", path };
 }

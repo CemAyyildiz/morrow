@@ -103,6 +103,16 @@ export const copy = {
     coSigner: "Co-signer",
   },
 
+  attemptLog: {
+    title: "Attempt log",
+    empty: "No attempts this round yet. The keys are above.",
+  },
+
+  xray: {
+    title: "X-Ray · latest attempt",
+    notReached: "not reached",
+  },
+
   placeholder: "This screen is not part of this build.",
 
   notFound: {

@@ -1,0 +1,1124 @@
+/* The landing, ported from mockups/landing/index.html (CSS lines 7–203). Every rule is scoped
+   to `.landing` with `l-` class names so nothing reaches the product. Inline styles from the
+   mockup's markup became classes here: the CSP allows no style attributes in markup, and the
+   motion writes through the CSSOM (useDive.ts, Collage.tsx). Values are DESIGN.md tokens. */
+
+.landing {
+  --page: #07080b;
+  --card: #0c0e12;
+  --hi: #111419;
+  --line: #1c2028;
+  --ink: #f3f1ec;
+  --mu: #8a909b;
+  --faint: #4a505b;
+  --or: #ff7a1a;
+  --or-fg: #160a01;
+  --ok: #7ee2a8;
+  --al: #ff6b5b;
+  --al-fg: #1a0402;
+  --sky: #1b1a20;
+  --cream: #ece9e2;
+  --cream2: #e2ded5;
+  --ink2: #16151a;
+  --mu2: #6b6760;
+  background: var(--page);
+  color: var(--ink);
+  font-family: "Funnel Sans", sans-serif;
+  font-size: 16px;
+  /* The mockup runs on the browser's normal line height; the product frame restores its own. */
+  line-height: normal;
+}
+
+.landing a {
+  color: inherit;
+  text-decoration: none;
+}
+
+.landing picture {
+  display: contents;
+}
+
+/* ---------- nav ---------- */
+.l-nav {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: 20;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 20px 32px;
+  transition:
+    background 0.3s,
+    color 0.3s;
+  color: var(--sky);
+}
+.l-nav[data-solid] {
+  background: #07080bd9;
+  backdrop-filter: blur(12px);
+  color: var(--ink);
+}
+.l-mark {
+  display: inline-flex;
+  align-items: center;
+  min-height: 44px;
+  font: 900 22px Doto;
+  letter-spacing: 0.02em;
+}
+.l-links {
+  display: flex;
+  gap: 28px;
+  font-size: 15px;
+}
+.l-links a {
+  display: inline-flex;
+  align-items: center;
+  min-height: 44px;
+}
+.l-pill {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 44px;
+  font: 600 15px "Funnel Sans";
+  padding: 12px 20px;
+  border-radius: 999px;
+  border: 1px solid transparent;
+  cursor: pointer;
+}
+.l-pill-or {
+  background: var(--or);
+  color: var(--or-fg);
+}
+.l-pill-glass {
+  background: #ffffff59;
+  border-color: #1b1a2022;
+  color: var(--sky);
+  backdrop-filter: blur(8px);
+}
+/* Focus rings take the text colour: sky-ink over the sunrise, ink once the nav is solid. */
+.l-nav a:focus-visible,
+.l-headline a:focus-visible,
+.l-final a:focus-visible,
+.l-pill:focus-visible {
+  outline: 2px solid currentColor;
+  outline-offset: 3px;
+}
+.l-pill-or:focus-visible {
+  outline-color: var(--or);
+}
+
+/* ---------- scroll stage (hero dive) ---------- */
+.l-scroll {
+  height: 440vh;
+  position: relative;
+}
+.l-stage {
+  position: sticky;
+  top: 0;
+  height: 100vh;
+  overflow: hidden;
+  background: #cfc3c0;
+}
+.l-world {
+  position: absolute;
+  left: 0;
+  top: 0;
+  transform-origin: 0 0;
+}
+.l-world img,
+.l-world video {
+  position: absolute;
+  display: block;
+  max-width: none;
+  user-select: none;
+}
+.l-world video {
+  transition: opacity 0.5s;
+}
+.l-gold {
+  opacity: 0;
+}
+.l-screen {
+  position: absolute;
+  overflow: hidden;
+  border-radius: 0.6%;
+  background: #030405;
+  pointer-events: none;
+}
+.l-app {
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 1440px;
+  height: 930px;
+  transform-origin: 0 0;
+}
+.l-shade {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background: radial-gradient(ellipse at center, transparent 28%, #07080b 82%);
+  opacity: 0;
+}
+.l-dim {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background: #07080b;
+  opacity: 0;
+}
+.l-crisp {
+  position: absolute;
+  z-index: 6;
+  overflow: hidden;
+  opacity: 0;
+  pointer-events: none;
+  border-radius: 10px;
+  box-shadow: 0 40px 140px #000;
+}
+.l-crisp[data-live] {
+  pointer-events: auto;
+}
+.l-headline {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 11vh;
+  text-align: center;
+  z-index: 5;
+  padding: 0 20px;
+  color: var(--sky);
+}
+.l-headline h1 {
+  font: 400 clamp(38px, 4.6vw, 74px) / 1.02 "Funnel Display";
+  letter-spacing: -0.035em;
+}
+.l-headline p {
+  font-size: clamp(16px, 1.3vw, 19px);
+  color: #3a3640;
+  max-width: 600px;
+  margin: 16px auto 0;
+  line-height: 1.5;
+}
+.l-headline-row {
+  display: flex;
+  gap: 12px;
+  justify-content: center;
+  margin-top: 26px;
+  flex-wrap: wrap;
+}
+.l-legal {
+  position: absolute;
+  bottom: 3vh;
+  left: 50%;
+  transform: translateX(-50%);
+  font: 12px "Geist Mono";
+  color: #f2efe9;
+  background: #1b1a2066;
+  backdrop-filter: blur(6px);
+  padding: 8px 14px;
+  border-radius: 8px;
+  z-index: 5;
+  white-space: nowrap;
+}
+
+/* ---------- the product, designed at 1440 × 930 ---------- */
+.l-frame {
+  display: grid;
+  grid-template-columns: 232px minmax(0, 1fr);
+  width: 1440px;
+  height: 930px;
+  overflow: hidden;
+  background: var(--page);
+  color: var(--ink);
+  font-size: 16px;
+  line-height: 1.55;
+}
+.l-frame-main {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+  padding: 22px 28px;
+}
+.l-frame-bottom {
+  display: grid;
+  grid-template-columns: 1.25fr 1fr;
+  gap: 14px;
+  min-height: 0;
+  flex: 1 1 0;
+}
+
+/* ---------- phone: the same product, re-flowed (replaces the laptop at the end) ---------- */
+.l-mobview {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 64px;
+  bottom: 0;
+  z-index: 7;
+  opacity: 0;
+  pointer-events: none;
+  overflow: hidden;
+  padding: 12px 14px;
+  background: var(--page);
+  font-size: 16px;
+  line-height: 1.55;
+}
+/* Live, the re-flowed product scrolls inside the stage (the mockup clips it), so the X-Ray
+   below the fold stays reachable; at either end the scroll carries on to the page. */
+.l-mobview[data-live] {
+  pointer-events: auto;
+  overflow-y: auto;
+  scrollbar-width: none;
+}
+.l-mob-main {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+/* Below 820 px, as `PHONE_BELOW` in useDive.ts (vw < 820): 820 itself is desktop. */
+@media (max-width: 819.98px) {
+  .l-links {
+    display: none;
+  }
+  .l-nav {
+    padding: 16px 18px;
+  }
+  .l-headline {
+    top: 9vh;
+  }
+  .l-legal {
+    display: none;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .l-world video {
+    display: none;
+  }
+}
+
+/* ---------- A · feature list + product panel (dark) ---------- */
+.l-feat {
+  display: grid;
+  grid-template-columns: minmax(320px, 440px) 1fr;
+  gap: 6vw;
+  align-items: center;
+  padding: 18vh 0 18vh 9vw;
+  overflow: hidden;
+}
+.l-feat h2 {
+  font: 400 32px/1.2 "Funnel Display";
+  letter-spacing: -0.02em;
+  max-width: 460px;
+}
+.l-flist {
+  margin-top: 44px;
+  border-top: 1px solid var(--line);
+}
+.l-fi {
+  display: block;
+  width: 100%;
+  text-align: left;
+  background: none;
+  border: 0;
+  border-bottom: 1px solid var(--line);
+  color: var(--mu);
+  font: 500 17px "Funnel Sans";
+  padding: 18px 0;
+  cursor: pointer;
+  position: relative;
+}
+.l-fi b {
+  font-weight: 500;
+}
+.l-fi-body {
+  display: block;
+  max-height: 0;
+  overflow: hidden;
+  opacity: 0;
+  font: 400 15.5px/1.55 "Funnel Sans";
+  color: #b9bec7;
+  transition:
+    max-height 0.5s,
+    opacity 0.4s,
+    margin 0.4s;
+}
+.l-fi[aria-expanded="true"] {
+  color: var(--ink);
+}
+.l-fi[aria-expanded="true"] .l-fi-body {
+  max-height: 120px;
+  opacity: 1;
+  margin-top: 8px;
+}
+.l-fi[aria-expanded="true"]::before {
+  content: "";
+  position: absolute;
+  left: -18px;
+  top: 27px;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--ink);
+}
+.l-fi-bar {
+  position: absolute;
+  left: 0;
+  bottom: -1px;
+  height: 1px;
+  background: var(--ink);
+  width: 0;
+}
+/* The progress line runs only while the accordion auto-advances. */
+.l-fi[aria-expanded="true"] .l-fi-bar[data-running] {
+  animation: l-fbar 6s linear forwards;
+}
+@keyframes l-fbar {
+  to {
+    width: 100%;
+  }
+}
+.l-fi:focus-visible {
+  outline: 2px solid var(--ink);
+  outline-offset: 4px;
+}
+.l-panel {
+  position: relative;
+  height: 560px;
+  -webkit-mask-image:
+    linear-gradient(90deg, #000 60%, transparent 98%),
+    linear-gradient(180deg, #000 75%, transparent);
+  -webkit-mask-composite: source-in;
+  mask-image: linear-gradient(90deg, #000 60%, transparent 98%);
+}
+.l-pv {
+  position: absolute;
+  inset: 0;
+  width: 900px;
+  background: linear-gradient(180deg, #0f1216, #0a0c0f);
+  border: 1px solid var(--line);
+  border-radius: 20px;
+  padding: 30px;
+  opacity: 0;
+  transform: translateY(16px);
+  transition:
+    opacity 0.5s,
+    transform 0.5s;
+}
+.l-pv[data-on] {
+  opacity: 1;
+  transform: none;
+}
+.l-pv h3 {
+  font: 500 22px "Funnel Display";
+  margin: 6px 0 20px;
+}
+.l-lab {
+  font: 500 11px "Geist Mono";
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--mu);
+}
+.l-track {
+  max-width: 640px;
+}
+.l-track .l-lab {
+  display: flex;
+  justify-content: space-between;
+}
+.l-ticks {
+  display: grid;
+  grid-template-columns: repeat(24, 1fr);
+  gap: 6px;
+  margin: 18px 0 12px;
+}
+.l-ticks i {
+  height: 40px;
+  border-radius: 3px;
+  background: #161a20;
+}
+.l-ticks i.l-done {
+  background: #2a3039;
+}
+.l-ticks i.l-now {
+  background: var(--ink);
+  box-shadow: 0 0 18px #f3f1ec88;
+}
+.l-ends {
+  display: flex;
+  justify-content: space-between;
+  font: 13px "Geist Mono";
+  color: var(--mu);
+}
+.l-ends b {
+  color: var(--ink);
+  font-weight: 500;
+}
+.l-alert {
+  width: 360px;
+  border-radius: 22px;
+  background: #15181d;
+  border: 1px solid #232831;
+  padding: 18px;
+  box-shadow: 0 30px 80px #000a;
+}
+.l-alert-t {
+  font: 12px "Geist Mono";
+  color: var(--mu);
+  display: flex;
+  justify-content: space-between;
+}
+.l-alert h4 {
+  font: 500 18px/1.3 "Funnel Sans";
+  margin: 10px 0;
+}
+.l-alert-row {
+  display: flex;
+  gap: 8px;
+  margin-top: 14px;
+}
+.l-alert-row span {
+  flex: 1;
+  text-align: center;
+  padding: 11px;
+  border-radius: 999px;
+  font: 600 14px "Funnel Sans";
+  background: #20252d;
+}
+.l-alert-row .l-r {
+  background: var(--al);
+  color: var(--al-fg);
+}
+.l-kv {
+  display: grid;
+  grid-template-columns: 200px 1fr;
+  font: 14px "Geist Mono";
+  border-top: 1px solid var(--line);
+}
+.l-kv dt,
+.l-kv dd {
+  padding: 13px 0;
+  border-bottom: 1px solid var(--line);
+}
+.l-kv dt {
+  color: var(--mu);
+}
+.l-kv dd {
+  font-weight: 500;
+}
+.l-kv-delay {
+  max-width: 640px;
+  margin-top: 26px;
+}
+.l-kv-alert {
+  grid-template-columns: 110px 1fr;
+}
+.l-kv-proof {
+  max-width: 660px;
+}
+.l-kv .l-good {
+  color: var(--ok);
+}
+.l-paths {
+  display: grid;
+  gap: 12px;
+  max-width: 700px;
+}
+.l-paths > div {
+  display: grid;
+  grid-template-columns: 150px 1fr 200px;
+  gap: 14px;
+  align-items: center;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  padding: 16px 18px;
+  font: 14px "Geist Mono";
+}
+.l-paths b {
+  font: 500 16px "Funnel Sans";
+}
+.l-paths em {
+  font-style: normal;
+  color: var(--mu);
+}
+.l-pins {
+  display: flex;
+  gap: 24px;
+}
+.l-pin {
+  width: 250px;
+  border: 1px solid var(--line);
+  border-radius: 18px;
+  padding: 18px;
+  background: #0d1014;
+}
+.l-pin-dots {
+  display: flex;
+  gap: 10px;
+  margin: 14px 0;
+}
+.l-pin-dots i {
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background: var(--ink);
+}
+.l-keys {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 8px;
+}
+.l-keys span {
+  height: 44px;
+  border-radius: 12px;
+  background: #171b21;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font: 500 17px "Funnel Sans";
+}
+.l-pin-note {
+  margin-top: 20px;
+  font: 13px "Geist Mono";
+  color: var(--mu);
+}
+
+/* ---------- B · collage (light) ---------- */
+.l-collage {
+  background: var(--cream);
+  color: var(--ink2);
+  height: 300vh;
+  position: relative;
+}
+.l-cstage {
+  position: sticky;
+  top: 0;
+  height: 100vh;
+  overflow: hidden;
+}
+.l-cmono {
+  position: absolute;
+  left: 50%;
+  transform: translateX(-50%);
+  width: min(560px, 86vw);
+  text-align: center;
+  font: 500 15px/1.6 "Geist Mono";
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+  z-index: 3;
+}
+.l-cmono-top {
+  top: 9vh;
+}
+.l-cmono-bot {
+  bottom: 3vh;
+}
+.l-marq {
+  position: absolute;
+  top: 50%;
+  left: 0;
+  transform: translate(15vw, -50%);
+  white-space: nowrap;
+  font: 400 clamp(110px, 15vw, 230px) / 1 Anton;
+  color: var(--or);
+  letter-spacing: -0.005em;
+  z-index: 1;
+  will-change: transform;
+}
+.l-tile {
+  position: absolute;
+  border-radius: 6px;
+  overflow: hidden;
+  box-shadow: 0 18px 40px #0000002a;
+  z-index: 2;
+  will-change: transform;
+}
+.l-tile img {
+  width: 100%;
+  height: 100%;
+  max-width: none;
+  object-fit: cover;
+  display: block;
+}
+.l-tile-sw {
+  background: var(--or);
+}
+.l-tile-sw svg {
+  width: 100%;
+  height: 100%;
+}
+.l-tile-timelock {
+  left: 6vw;
+  top: 14vh;
+  width: 15vw;
+  height: 15vw;
+  min-width: 150px;
+  min-height: 150px;
+}
+.l-tile-clock {
+  left: 23vw;
+  top: 9vh;
+  width: 7vw;
+  height: 7vw;
+  min-width: 70px;
+  min-height: 70px;
+}
+.l-tile-emma {
+  right: 7vw;
+  top: 12vh;
+  width: 16vw;
+  height: 20vw;
+  min-width: 150px;
+  min-height: 190px;
+}
+.l-tile-vaultdoor {
+  left: 4vw;
+  bottom: 10vh;
+  width: 13vw;
+  height: 13vw;
+  min-width: 130px;
+  min-height: 130px;
+}
+.l-tile-nightphone {
+  left: 24vw;
+  bottom: 5vh;
+  width: 11vw;
+  height: 14vw;
+  min-width: 110px;
+  min-height: 140px;
+}
+.l-tile-drawer {
+  right: 22vw;
+  bottom: 8vh;
+  width: 12vw;
+  height: 12vw;
+  min-width: 120px;
+  min-height: 120px;
+}
+.l-tile-clouds {
+  right: 5vw;
+  bottom: 14vh;
+  width: 13vw;
+  height: 9vw;
+  min-width: 130px;
+  min-height: 90px;
+}
+.l-phone3d {
+  position: absolute;
+  left: 50%;
+  top: 52%;
+  width: 240px;
+  height: 500px;
+  margin: -250px 0 0 -120px;
+  z-index: 4;
+  perspective: 1400px;
+}
+.l-phone-body {
+  width: 100%;
+  height: 100%;
+  border-radius: 44px;
+  background: #0b0b0d;
+  border: 9px solid #1d1d21;
+  box-shadow:
+    0 50px 90px #00000055,
+    inset 0 0 0 1px #333;
+  transform-style: preserve-3d;
+  transform: rotateY(-28deg) rotateX(8deg) rotateZ(-6deg);
+  will-change: transform;
+  padding: 22px 16px;
+  color: var(--ink);
+  overflow: hidden;
+}
+.l-notch {
+  width: 90px;
+  height: 24px;
+  border-radius: 14px;
+  background: #000;
+  margin: 0 auto 18px;
+}
+.l-lock {
+  text-align: center;
+  font: 300 56px/1 "Funnel Display";
+  letter-spacing: -0.03em;
+}
+.l-date {
+  text-align: center;
+  font: 13px "Funnel Sans";
+  color: #b9bec7;
+  margin: 6px 0 22px;
+}
+.l-note {
+  background: #1c1f25ee;
+  border-radius: 18px;
+  padding: 14px;
+  font: 13px/1.4 "Funnel Sans";
+}
+.l-note-t {
+  display: flex;
+  justify-content: space-between;
+  font: 11px "Geist Mono";
+  color: var(--mu);
+  margin-bottom: 6px;
+}
+.l-note b {
+  display: block;
+  font-weight: 600;
+  margin-bottom: 3px;
+}
+.l-act {
+  display: flex;
+  gap: 8px;
+  margin-top: 10px;
+}
+.l-act span {
+  flex: 1;
+  text-align: center;
+  padding: 9px;
+  border-radius: 12px;
+  background: #2a2e36;
+  font: 600 12px "Funnel Sans";
+}
+.l-act .l-r {
+  background: var(--al);
+  color: var(--al-fg);
+}
+
+/* ---------- C · the record ---------- */
+.l-record {
+  background: var(--cream);
+  color: var(--ink2);
+  text-align: center;
+  padding: 20vh 8vw 18vh;
+}
+.l-record blockquote {
+  display: block;
+  font: 400 clamp(30px, 3.4vw, 52px) / 1.18 "Funnel Display";
+  letter-spacing: -0.025em;
+  max-width: 1000px;
+  margin: 0 auto;
+}
+.l-record em {
+  font-style: normal;
+  color: var(--or);
+}
+.l-by {
+  margin-top: 28px;
+  font: 500 15px "Funnel Sans";
+}
+.l-by span {
+  display: block;
+  color: var(--mu2);
+  font-weight: 400;
+  margin-top: 4px;
+}
+
+/* ---------- D · cards (light) ---------- */
+.l-cards {
+  background: var(--cream);
+  color: var(--ink2);
+  padding: 0 max(8vw, calc((100vw - 1240px) / 2)) 20vh;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 40px 32px;
+}
+.l-cards h2 {
+  grid-column: 1/-1;
+  font: 400 34px/1.15 "Funnel Display";
+  letter-spacing: -0.02em;
+  margin-bottom: 10px;
+}
+.l-cv {
+  height: 340px;
+  border-radius: 18px;
+  background: var(--cream2);
+  position: relative;
+  overflow: hidden;
+}
+.l-frag {
+  position: absolute;
+  background: #fff;
+  border-radius: 14px;
+  box-shadow: 0 14px 40px #0000001f;
+  font: 14px "Funnel Sans";
+  padding: 14px 16px;
+  color: var(--ink2);
+}
+.l-frag-dark {
+  background: #111317;
+  color: var(--ink);
+}
+.l-ghost {
+  filter: blur(3px);
+  opacity: 0.55;
+}
+.l-mono {
+  font: 13px "Geist Mono";
+}
+.l-mono-mu {
+  color: var(--mu2);
+}
+.l-frag-dark .l-mono-mu {
+  color: var(--mu);
+}
+.l-strong {
+  margin-top: 6px;
+  font-weight: 600;
+}
+.l-f-alert {
+  left: 9%;
+  top: 16%;
+  width: 62%;
+}
+.l-f-alert-ghost {
+  left: 28%;
+  top: 48%;
+  width: 58%;
+}
+.l-f-send {
+  right: 8%;
+  bottom: 12%;
+  background: var(--al);
+  color: var(--al-fg);
+  font-weight: 600;
+}
+.l-f-hash {
+  left: 8%;
+  top: 20%;
+  width: 70%;
+}
+.l-f-match {
+  right: 10%;
+  top: 55%;
+  font-weight: 600;
+  color: #1f7a4c;
+}
+.l-f-code {
+  left: 14%;
+  bottom: 8%;
+}
+.l-f-kit {
+  left: 10%;
+  top: 18%;
+  display: flex;
+  gap: 12px;
+  align-items: center;
+}
+.l-f-kit b {
+  display: block;
+  font-weight: 600;
+}
+.l-f-escape {
+  right: 8%;
+  top: 50%;
+}
+.l-f-nonear {
+  left: 20%;
+  bottom: 10%;
+}
+.l-f-pin {
+  left: 10%;
+  top: 14%;
+  width: 44%;
+  height: 72%;
+}
+.l-f-pin-ghost {
+  right: 8%;
+  top: 22%;
+  width: 40%;
+  height: 62%;
+}
+.l-f-dots {
+  display: flex;
+  gap: 8px;
+  margin: 14px 0;
+}
+.l-f-dots i {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: var(--ink);
+}
+.l-ct {
+  margin-top: 18px;
+  font: 500 19px "Funnel Sans";
+}
+.l-cd {
+  margin-top: 6px;
+  color: var(--mu2);
+  line-height: 1.55;
+  max-width: 480px;
+}
+
+/* ---------- E · tomorrow ---------- */
+.l-final {
+  position: relative;
+  height: 100vh;
+  min-height: 620px;
+  color: #fff;
+  overflow: hidden;
+}
+.l-final img {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  max-width: none;
+  object-fit: cover;
+}
+.l-final::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(180deg, #00000000 30%, #000000b3 100%);
+}
+.l-final-in {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 12vh;
+  text-align: center;
+  z-index: 2;
+  padding: 0 20px;
+}
+.l-final h2 {
+  font: 400 clamp(44px, 6vw, 96px) / 1 "Funnel Display";
+  letter-spacing: -0.035em;
+}
+.l-final p {
+  margin: 16px auto 28px;
+  max-width: 520px;
+  color: #f1ede6;
+  font-size: 18px;
+  line-height: 1.5;
+}
+.l-footer {
+  background: var(--page);
+  border-top: 1px solid var(--line);
+  padding: 28px 32px;
+  display: flex;
+  justify-content: space-between;
+  font: 12px "Geist Mono";
+  color: var(--mu);
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+/* ---------- phones (EXPERIENCE.md breakpoint: 900 px) ---------- */
+@media (max-width: 900px) {
+  .l-feat {
+    grid-template-columns: 1fr;
+    padding: 12vh 20px;
+  }
+  .l-panel {
+    height: auto;
+    min-height: 440px;
+    -webkit-mask-image: none;
+    mask-image: none;
+  }
+  .l-pv {
+    width: 100%;
+    padding: 18px;
+  }
+  .l-pv:not([data-on]) {
+    display: none;
+  }
+  .l-pv[data-on] {
+    position: relative;
+  }
+  .l-kv {
+    font-size: 12px;
+  }
+  /* The alert keeps its 110 px label column (an inline style in the mockup). */
+  .l-kv:not(.l-kv-alert) {
+    grid-template-columns: 1fr 1.25fr;
+  }
+  .l-paths > div {
+    grid-template-columns: 1fr;
+    gap: 4px;
+  }
+  .l-pins {
+    flex-direction: column;
+    gap: 12px;
+  }
+  .l-pin {
+    width: 100%;
+  }
+  .l-alert {
+    width: 100%;
+  }
+  .l-pv h3 {
+    font-size: 19px;
+  }
+  .l-cards {
+    grid-template-columns: 1fr;
+    padding: 0 20px 14vh;
+  }
+  .l-phone3d {
+    transform: scale(0.72);
+  }
+  .l-cmono {
+    font-size: 11px;
+  }
+  .l-cmono-top {
+    top: 8vh;
+  }
+  .l-cmono-bot {
+    bottom: 2vh;
+  }
+  /* Three tiles stay: Emma, the drawer and the time-lock. */
+  .l-tile {
+    display: none;
+  }
+  .l-tile-emma,
+  .l-tile-drawer,
+  .l-tile-timelock {
+    display: block;
+    min-width: 0;
+    min-height: 0;
+  }
+  .l-tile-emma {
+    left: auto;
+    right: 5vw;
+    top: 27vh;
+    width: 30vw;
+    height: 40vw;
+  }
+  .l-tile-drawer {
+    right: auto;
+    left: 5vw;
+    top: auto;
+    bottom: 16vh;
+    width: 30vw;
+    height: 30vw;
+  }
+  .l-tile-timelock {
+    left: 5vw;
+    top: 27vh;
+    width: 26vw;
+    height: 26vw;
+  }
+  .l-record blockquote {
+    font-size: 30px;
+  }
+  .l-final-in {
+    bottom: 8vh;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .l-fi[aria-expanded="true"] .l-fi-bar {
+    animation: none;
+    width: 100%;
+  }
+  .l-fi-body,
+  .l-pv,
+  .l-nav {
+    transition: none;
+  }
+}

@@ -16,6 +16,26 @@
 
 @custom-variant dark (&:where(.dark, .dark *));
 
+/* The landing draws the product inside a fixed 1440 × 930 frame at every viewport size, the
+   laptop screen of the hero dive. Inside `.frame-desktop` the desktop layout applies whatever
+   the viewport is; everywhere else `desktop:` and `max-desktop:` are the plain 900 px query. */
+@custom-variant desktop {
+  @media (width >= 900px) {
+    @slot;
+  }
+  &:where(.frame-desktop, .frame-desktop *) {
+    @slot;
+  }
+}
+
+@custom-variant max-desktop {
+  @media (width < 900px) {
+    &:not(:where(.frame-desktop, .frame-desktop *)) {
+      @slot;
+    }
+  }
+}
+
 @theme {
   /* The shell re-flows below 900 px: `desktop:` is the 900 px and wider layout. */
   --breakpoint-desktop: 900px;
@@ -103,6 +123,17 @@
 
   --animate-shimmer: shimmer 1.6s ease-in-out infinite;
   --animate-fade-in: fade-in 0.45s ease-out both;
+  /* A new attempt-log row flashes once. */
+  --animate-row-flash: row-flash 1.6s ease;
+
+  @keyframes row-flash {
+    from {
+      background-color: color-mix(in srgb, var(--color-ink) 8%, transparent);
+    }
+    to {
+      background-color: transparent;
+    }
+  }
 
   @keyframes shimmer {
     from {
@@ -220,7 +251,8 @@
 
 @media (prefers-reduced-motion: reduce) {
   .animate-shimmer,
-  .animate-fade-in {
+  .animate-fade-in,
+  .animate-row-flash {
     animation: none;
   }
 }

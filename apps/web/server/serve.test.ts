@@ -7,7 +7,7 @@ import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { contentSecurityPolicy, loadConfig } from "./config.ts";
-import { createWebServer, parsePort } from "./serve.ts";
+import { byteRange, createWebServer, parsePort } from "./serve.ts";
 
 const ENV = {
   MORROW_NEAR_NETWORK: "testnet",
@@ -32,6 +32,7 @@ beforeAll(async () => {
   writeFileSync(join(dist, "index.html"), INDEX);
   writeFileSync(join(dist, "assets", "index-abc123.js"), "console.log(1);");
   writeFileSync(join(dist, "assets", "font-def456.woff2"), "woff2");
+  writeFileSync(join(dist, "assets", "hero-aaa111.mp4"), "0123456789");
   writeFileSync(join(dist, ".env"), "SECRET=1");
   server = createWebServer({ config, distDir: dist });
   await new Promise<void>((done) => server.listen(0, "127.0.0.1", done));
@@ -50,9 +51,9 @@ interface Reply {
 }
 
 /** Sends `path` as-is (no client-side normalization of `..` or `%2e`). */
-function get(path: string, method = "GET"): Promise<Reply> {
+function get(path: string, method = "GET", headers: Record<string, string> = {}): Promise<Reply> {
   return new Promise((done, fail) => {
-    const req = request({ host: "127.0.0.1", port, path, method }, (res) => {
+    const req = request({ host: "127.0.0.1", port, path, method, headers }, (res) => {
       let body = "";
       res.setEncoding("utf8");
       res.on("data", (chunk: string) => (body += chunk));
@@ -198,5 +199,37 @@ describe("parsePort", () => {
     for (const bad of ["0", "65536", "-1", "80.5", "1e3", "0x50", "80x", "eighty"]) {
       expect(parsePort(bad)).toBeNull();
     }
+  });
+});
+
+describe("media", () => {
+  it("serves mp4 with its type and answers byte ranges with 206", async () => {
+    const full = await get("/assets/hero-aaa111.mp4");
+    expect(full.status).toBe(200);
+    expect(full.headers["content-type"]).toBe("video/mp4");
+    expect(full.headers["accept-ranges"]).toBe("bytes");
+    const part = await get("/assets/hero-aaa111.mp4", "GET", { range: "bytes=2-5" });
+    expect(part.status).toBe(206);
+    expect(part.body).toBe("2345");
+    expect(part.headers["content-range"]).toBe("bytes 2-5/10");
+    expectSecurityHeaders(part.headers);
+    const past = await get("/assets/hero-aaa111.mp4", "GET", { range: "bytes=10-" });
+    expect(past.status).toBe(416);
+    expect(past.headers["content-range"]).toBe("bytes */10");
+  });
+
+  it("parses single byte ranges", () => {
+    expect(byteRange(undefined, 10)).toBeNull();
+    expect(byteRange("bytes=0-", 10)).toEqual({ start: 0, end: 9 });
+    expect(byteRange("bytes=0-1", 10)).toEqual({ start: 0, end: 1 });
+    expect(byteRange("bytes=-3", 10)).toEqual({ start: 7, end: 9 });
+    expect(byteRange("bytes=4-99", 10)).toEqual({ start: 4, end: 9 });
+    expect(byteRange("bytes=12-", 10)).toBe("unsatisfiable");
+    expect(byteRange("bytes=0-1,4-5", 10)).toBeNull();
+    expect(byteRange("items=0-1", 10)).toBeNull();
+    expect(byteRange("bytes=0-", 0)).toBe("unsatisfiable");
+    expect(byteRange("bytes=-5", 0)).toBe("unsatisfiable");
+    expect(byteRange("bytes=-0", 10)).toBe("unsatisfiable");
+    expect(byteRange("bytes=5-2", 10)).toBeNull();
   });
 });

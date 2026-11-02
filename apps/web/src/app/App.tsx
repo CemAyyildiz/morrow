@@ -1,5 +1,7 @@
 import { useEffect } from "react";
 import { copy } from "@/copy";
+import { Landing } from "@/landing/Landing";
+import { landingCopy } from "@/landing/copy";
 import { AppShell } from "@/shell/AppShell";
 import { ChallengeView } from "@/views/ChallengeView";
 import { NotFoundView } from "@/views/NotFoundView";
@@ -17,14 +19,21 @@ export function App() {
     if (redirectTo !== null) navigate(redirectTo, { replace: true });
   }, [redirectTo, navigate]);
 
-  const title = resolved.kind === "nav" ? resolved.route.title : copy.titles.notFound;
+  const documentTitle =
+    resolved.kind === "landing"
+      ? landingCopy.documentTitle
+      : `${resolved.kind === "nav" ? resolved.route.title : copy.titles.notFound} · ${copy.wordmark}`;
 
   useEffect(() => {
-    document.title = `${title} · ${copy.wordmark}`;
-  }, [title]);
+    document.title = documentTitle;
+  }, [documentTitle]);
 
   if (resolved.kind === "redirect") return null;
 
+  // The landing is full-bleed: no shell, no sidebar, no banner bar.
+  if (resolved.kind === "landing") return <Landing />;
+
+  const title = resolved.kind === "nav" ? resolved.route.title : copy.titles.notFound;
   return (
     <AppShell activeId={resolved.kind === "nav" ? resolved.route.id : null} title={title}>
       {resolved.kind === "not-found" ? (

@@ -3,20 +3,24 @@ import { Badge } from "@/components/ui/badge";
 
 // Page title, mono chips and the action row. On phones the row takes the full width and
 // each action spans it, the primary one included.
+// `headingLevel` is 2 where the screen is drawn inside another page (the landing's laptop).
 export function PageHeader({
   title,
   chips = [],
   actions,
+  headingLevel = 1,
 }: {
   title: string;
   chips?: readonly string[];
   actions?: ReactNode;
+  headingLevel?: 1 | 2 | undefined;
 }) {
+  const Heading = headingLevel === 1 ? "h1" : "h2";
   return (
     <header className="flex flex-wrap items-center gap-2 desktop:flex-nowrap desktop:gap-[14px]">
-      <h1 className="font-display text-[22px] leading-[1.2] font-medium tracking-[-0.02em] desktop:text-[26px]">
+      <Heading className="font-display text-[22px] leading-[1.2] font-medium tracking-[-0.02em] desktop:text-[26px]">
         {title}
-      </h1>
+      </Heading>
       {chips.map((chip) => (
         <Badge key={chip} variant="chip">
           {chip}

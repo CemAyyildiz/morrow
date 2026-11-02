@@ -66,7 +66,7 @@ test.describe("security headers", () => {
 });
 
 test.describe("no CSP violation on load", () => {
-  for (const path of ["/challenge", "/vault", "/g/1", "/nope"]) {
+  for (const path of ["/", "/challenge", "/vault", "/g/1", "/nope"]) {
     test(path, async ({ page }) => {
       const violations: string[] = [];
       page.on("console", (message) => {

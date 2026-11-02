@@ -87,10 +87,15 @@ test.describe("every route", () => {
   }
 });
 
-test("/ redirects to /challenge", async ({ page }) => {
+test("/ is the landing, full-bleed outside the shell", async ({ page }) => {
   await open(page, "/");
-  await expect(page).toHaveURL(/\/challenge$/);
-  await expect(page.getByRole("heading", { level: 1 })).toHaveText("Challenge vault");
+  await expect(page).toHaveURL(/\/$/);
+  await expect(page).toHaveTitle("morrow · Bitcoin that can't be rushed");
+  await expect(page.getByRole("heading", { level: 1 })).toHaveText("Bitcoin that can't be rushed.");
+  // No shell chrome: the product appears only inside the hero laptop.
+  await expect(page.getByTestId("phone-bar")).toHaveCount(0);
+  await expect(page.getByTestId("testnet-banner")).toHaveCount(0);
+  await expect(page.locator("#main")).toHaveCount(0);
 });
 
 test("the markup carries no inline script or style", async ({ page }) => {
@@ -160,6 +165,13 @@ test("the system card shows the live config, lock state and heartbeat", async ({
   await expect(page.getByTestId("system-alerts")).toHaveText("Alerts: watcher last seen 1 min ago");
   await expect(page.getByTestId("system-alerts")).toHaveAttribute("data-alarm", "false");
   await expect(page.getByTestId("system-dot")).toHaveCSS("background-color", OK);
+});
+
+test("product tabs keep their titles", async ({ page }) => {
+  await open(page, "/challenge");
+  await expect(page).toHaveTitle("Challenge vault · morrow");
+  await open(page, "/nope");
+  await expect(page).toHaveTitle("Not found · morrow");
 });
 
 test("/challenge shows the honest empty state in production", async ({ page }) => {

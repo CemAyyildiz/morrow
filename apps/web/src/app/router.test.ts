@@ -2,11 +2,13 @@ import { describe, expect, it } from "vitest";
 import { copy, plural } from "@/copy";
 import type { BtcNetwork, NearNetwork, NetworkPair } from "./data";
 import { normalizePath } from "./router";
-import { NAV_ROUTES, resolveRoute } from "./routes";
+import { NAV_ROUTES, REDIRECTS, resolveRoute } from "./routes";
 
 describe("route resolution", () => {
-  it("redirects / to /challenge", () => {
-    expect(resolveRoute("/")).toEqual({ kind: "redirect", to: "/challenge" });
+  it("resolves / to the landing, with no redirect left", () => {
+    expect(resolveRoute("/")).toEqual({ kind: "landing" });
+    expect(resolveRoute("")).toEqual({ kind: "landing" });
+    expect(REDIRECTS).toEqual({});
   });
 
   it("lists the six nav items in sidebar order", () => {
