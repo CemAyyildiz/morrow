@@ -1,0 +1,32 @@
+name: morrow-regtest
+
+services:
+  bitcoind:
+    # bitcoin/bitcoin:32.1 (multi-arch). The -alpine tag has no arm64 build.
+    image: bitcoin/bitcoin:32.1@sha256:d2454aaf2ff4ce1ebbc49f4aa05ed044c907b849a80a3f4c0ad23e488e50bbe0
+    command:
+      - -regtest
+      - -server
+      - -txindex=1
+      - -fallbackfee=0.0002
+      - -rpcbind=0.0.0.0
+      - -rpcallowip=0.0.0.0/0
+      # Regtest-only credentials; the port is published on 127.0.0.1 only.
+      - -rpcuser=morrow
+      - -rpcpassword=morrow
+      - -printtoconsole
+    ports:
+      - "127.0.0.1:18443:18443"
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "bitcoin-cli",
+          "-regtest",
+          "-rpcuser=morrow",
+          "-rpcpassword=morrow",
+          "getblockchaininfo",
+        ]
+      interval: 2s
+      timeout: 5s
+      retries: 30
