@@ -34,6 +34,7 @@ export const ERROR_CODES = {
   ERR_FAST_APPROVAL_DISABLED: "Fast Approval is not enabled for this Vault.",
   ERR_NOT_TRUSTED_CONTACT: "Only a Guardian of kind Trusted Contact can fast-approve.",
   ERR_INPUT_INDEX: "This input index does not exist in the operation.",
+  ERR_SIGNER_FAILED: "The NEAR MPC network did not return a signature. Try signing again.",
 } as const;
 
 export type ErrorCode = keyof typeof ERROR_CODES;
