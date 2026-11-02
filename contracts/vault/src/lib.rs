@@ -13,8 +13,11 @@ use crate::core::script::{
 };
 use crate::core::spend::{
     check_amount, check_envelope, check_inputs, Outpoint, SpendOp, SpendOpKind, SpendOpState,
+    SpendSource,
 };
-use crate::core::tx::{build_payment, withdrawal_fee_cap, PaymentPlan};
+use crate::core::tx::{
+    build_payment, build_sweep, clawback_fee_cap, withdrawal_fee_cap, PaymentPlan,
+};
 use crate::events::{record, EventView, StoredEvent, EVENTS_SINCE_MAX_LIMIT};
 use near_sdk::json_types::{U128, U64};
 use near_sdk::serde_json::json;
@@ -73,6 +76,8 @@ enum StorageKey {
     Events,
     Ops,
     Reservations,
+    VaultOps,
+    ClawbackOutpoints,
 }
 
 #[near(serializers = [borsh, json])]
@@ -154,6 +159,10 @@ pub struct VaultContract {
     next_op_id: u64,
     /// Outpoint key ("txid:vout") → the non-terminal, non-clawback op holding it.
     reservations: LookupMap<String, u64>,
+    /// Every op id per Vault, so a Clawback can void the live ones.
+    vault_ops: LookupMap<u64, Vec<u64>>,
+    /// Outpoint key → the clawback op sweeping it.
+    clawback_outpoints: LookupMap<String, u64>,
 }
 
 fn reject(rejection: &Rejection) -> ! {
@@ -186,6 +195,8 @@ impl VaultContract {
             ops: LookupMap::new(StorageKey::Ops),
             next_op_id: 1,
             reservations: LookupMap::new(StorageKey::Reservations),
+            vault_ops: LookupMap::new(StorageKey::VaultOps),
+            clawback_outpoints: LookupMap::new(StorageKey::ClawbackOutpoints),
         }
     }
 
@@ -356,6 +367,7 @@ impl VaultContract {
                 op_id: U64(op_id),
                 vault_id,
                 kind: SpendOpKind::Withdrawal,
+                source: SpendSource::Vault,
                 state: SpendOpState::Pending,
                 amount_sats,
                 destination,
@@ -369,6 +381,7 @@ impl VaultContract {
                 witness_template: None,
             },
         );
+        self.index_op(vault_id.0, op_id);
         self.flush_and_charge(vault_id.0, storage_before);
         U64(op_id)
     }
@@ -478,11 +491,7 @@ impl VaultContract {
         if let Some(Some(signature)) = op.signatures.get(index) {
             return PromiseOrValue::Value(signature.clone());
         }
-        let role = if op.kind == SpendOpKind::Allowance {
-            "allowance"
-        } else {
-            "vault"
-        };
+        let role = op.source.role();
         let args = json!({
             "request": {
                 "payload_v2": { "Ecdsa": sighash },
@@ -547,6 +556,125 @@ impl VaultContract {
         }
         self.flush_and_charge(vault_id, storage_before);
         stored
+    }
+
+    /// Any Guardian sends up to 5 coins from one source (the Vault Address by default, or the
+    /// Allowance Address) to the Recovery Address in effect. The first Clawback voids every live
+    /// op and closes the Vault for good; later calls sweep late deposits.
+    pub fn begin_clawback(
+        &mut self,
+        vault_id: U64,
+        utxos: Vec<Outpoint>,
+        fee_rate_sat_vb: u32,
+        source: Option<SpendSource>,
+    ) -> U64 {
+        let storage_before = env::storage_usage();
+        let source = source.unwrap_or_default();
+        let vault = self
+            .vaults
+            .get(&vault_id.0)
+            .cloned()
+            .unwrap_or_else(|| fail(ErrorCode::VaultNotFound));
+        if vault.state == VaultState::PendingKeys {
+            fail(ErrorCode::VaultNotActive);
+        }
+        let caller = env::predecessor_account_id();
+        if !vault
+            .policy
+            .guardians
+            .iter()
+            .any(|g| g.guardian_account == caller)
+        {
+            fail(ErrorCode::Unauthorized);
+        }
+        let total = check_inputs(&utxos).unwrap_or_else(|r| reject(&r));
+        if utxos
+            .iter()
+            .any(|u| self.clawback_outpoints.contains_key(&u.key()))
+        {
+            fail(ErrorCode::OutpointReserved);
+        }
+
+        let (vault_script, allowance_script) =
+            vault_scripts(&vault).unwrap_or_else(|| fail(ErrorCode::BadKey));
+        let witness_script = match source {
+            SpendSource::Vault => vault_script,
+            SpendSource::Allowance => allowance_script,
+        };
+        let recovery = script_pubkey(&vault.policy.recovery_address, vault.policy.btc_network)
+            .unwrap_or_else(|r| reject(&r));
+        let built = build_sweep(
+            &utxos,
+            &recovery,
+            fee_rate_sat_vb,
+            clawback_fee_cap(vault.policy.fee_cap_sats.0, total),
+            &witness_script,
+        )
+        .unwrap_or_else(|r| reject(&r));
+
+        let op_id = self.next_op_id;
+        self.next_op_id += 1;
+        for op_id_to_void in self.vault_ops.get(&vault_id.0).cloned().unwrap_or_default() {
+            let voided = match self.ops.get_mut(&op_id_to_void) {
+                Some(op) if op.kind != SpendOpKind::Clawback && !op.state.is_terminal() => {
+                    op.state = SpendOpState::Voided;
+                    true
+                }
+                _ => false,
+            };
+            if voided {
+                self.emit(
+                    vault_id.0,
+                    "op_voided",
+                    json!({ "op_id": U64(op_id_to_void), "by_op_id": U64(op_id) }),
+                );
+            }
+        }
+        if vault.state != VaultState::ClawedBack {
+            if let Some(stored) = self.vaults.get_mut(&vault_id.0) {
+                stored.state = VaultState::ClawedBack;
+            }
+            self.emit(
+                vault_id.0,
+                "vault_clawed_back",
+                json!({ "op_id": U64(op_id), "by": caller, "recovery_address": vault.policy.recovery_address }),
+            );
+        }
+        for utxo in &utxos {
+            self.clawback_outpoints.insert(utxo.key(), op_id);
+        }
+        let now = U64(env::block_timestamp());
+        self.ops.insert(
+            op_id,
+            SpendOp {
+                op_id: U64(op_id),
+                vault_id,
+                kind: SpendOpKind::Clawback,
+                source,
+                state: SpendOpState::Frozen,
+                amount_sats: U64(total - built.fee_sats),
+                destination: vault.policy.recovery_address.clone(),
+                fee_rate_sat_vb,
+                utxos,
+                created_at: now,
+                executable_at: None,
+                unsigned_tx_hex: Some(hex(&built.unsigned)),
+                sighashes: built.sighashes.iter().map(|s| hex(s)).collect(),
+                signatures: vec![None; built.sighashes.len()],
+                witness_template: witness_templates()
+                    .into_iter()
+                    .find(|t| t.path == "clawback"),
+            },
+        );
+        self.emit(
+            vault_id.0,
+            "op_frozen",
+            json!({ "op_id": U64(op_id), "kind": "clawback", "envelope": null, "fee_sats": U64(built.fee_sats) }),
+        );
+        self.index_op(vault_id.0, op_id);
+        self.flush_all();
+        self.charge_storage(vault_id.0, storage_before);
+        U64(op_id)
     }
 
     /// Cancels a pending withdrawal. The Owner needs an envelope; any Guardian may cancel.
@@ -712,12 +840,24 @@ impl VaultContract {
         }
     }
 
-    /// Flushes collections and charges the added storage to the Vault, failing when it is short.
-    fn flush_and_charge(&mut self, vault_id: u64, storage_before: u64) {
+    fn index_op(&mut self, vault_id: u64, op_id: u64) {
+        let mut ids = self.vault_ops.get(&vault_id).cloned().unwrap_or_default();
+        ids.push(op_id);
+        self.vault_ops.insert(vault_id, ids);
+    }
+
+    fn flush_all(&mut self) {
         self.vaults.flush();
         self.events.flush();
         self.ops.flush();
         self.reservations.flush();
+        self.vault_ops.flush();
+        self.clawback_outpoints.flush();
+    }
+
+    /// Flushes collections and charges the added storage to the Vault, failing when it is short.
+    fn flush_and_charge(&mut self, vault_id: u64, storage_before: u64) {
+        self.flush_all();
         let used = u128::from(env::storage_usage().saturating_sub(storage_before));
         let cost = env::storage_byte_cost().as_yoctonear() * used;
         let vault = self
