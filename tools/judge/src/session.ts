@@ -12,7 +12,7 @@ import {
   type EnvelopeKeypair,
   type Policy,
 } from "@morrow/core-ts";
-import { KeyPair } from "near-api-js";
+import { Account, JsonRpcProvider, KeyPair, KeyPairSigner } from "near-api-js";
 import { loadJudgeConfig, type JudgeConfig } from "./config.js";
 
 /** One faucet account and one set of keys, shared by every Scenario in a run. */
@@ -22,6 +22,10 @@ export interface JudgeSession {
   client: NearContractClient;
   ownerSecret: Uint8Array;
   ownerKey: string;
+  /** A second faucet account acting as the Guardian, with its own Bitcoin key. */
+  guardianAccountId: string;
+  guardianClient: NearContractClient;
+  guardianSecret: Uint8Array;
   guardianKey: string;
   watcher: EnvelopeKeypair;
   rpc: BitcoindRpc;
@@ -39,22 +43,54 @@ let current: Promise<JudgeSession> | null = null;
 
 export function judgeSession(config: JudgeConfig = loadJudgeConfig()): Promise<JudgeSession> {
   current ??= (async () => {
-    const nearKey = KeyPair.fromRandom("ed25519");
-    const accountId = judgeAccountId();
-    await createTestnetAccount(accountId, nearKey.getPublicKey().toString());
-    const rpc = new BitcoindRpc(config.regtestRpcUrl);
-    const ownerSecret = secp256k1.utils.randomSecretKey();
-    return {
-      config,
-      accountId,
-      client: new NearContractClient({
+    // The Owner account comes from the public faucet, or from a funded account when one is
+    // configured (CI). The Guardian is a sub-account funded by the Owner: one faucet call per run.
+    const provider = new JsonRpcProvider({ url: config.nearRpcUrl });
+    const ownerKey = KeyPair.fromRandom("ed25519");
+    let ownerId = judgeAccountId();
+    if (config.funder) {
+      ownerId = `j${Date.now().toString(36)}.${config.funder.accountId}`;
+      const funder = new Account(
+        config.funder.accountId,
+        provider,
+        KeyPairSigner.fromSecretKey(config.funder.secretKey as never),
+      );
+      await funder.createSubAccount({
+        accountOrPrefix: ownerId,
+        publicKey: ownerKey.getPublicKey(),
+        nearToTransfer: 2_500_000_000_000_000_000_000_000n,
+      });
+    } else {
+      await createTestnetAccount(ownerId, ownerKey.getPublicKey().toString());
+    }
+    const guardianKey = KeyPair.fromRandom("ed25519");
+    const guardianId = `guardian.${ownerId}`;
+    await new Account(ownerId, provider, new KeyPairSigner(ownerKey)).createSubAccount({
+      accountOrPrefix: guardianId,
+      publicKey: guardianKey.getPublicKey(),
+      nearToTransfer: 500_000_000_000_000_000_000_000n,
+    });
+    const client = (accountId: string, key: KeyPair) =>
+      new NearContractClient({
         contractId: config.vaultContract,
         rpcUrl: config.nearRpcUrl,
-        signer: { accountId, secretKey: nearKey.toString() },
-      }),
+        signer: { accountId, secretKey: key.toString() },
+      });
+    const owner = { accountId: ownerId, client: client(ownerId, ownerKey) };
+    const guardian = { accountId: guardianId, client: client(guardianId, guardianKey) };
+    const rpc = new BitcoindRpc(config.regtestRpcUrl);
+    const ownerSecret = secp256k1.utils.randomSecretKey();
+    const guardianSecret = secp256k1.utils.randomSecretKey();
+    return {
+      config,
+      accountId: owner.accountId,
+      client: owner.client,
       ownerSecret,
       ownerKey: publicKeyHex(ownerSecret),
-      guardianKey: publicKeyHex(secp256k1.utils.randomSecretKey()),
+      guardianAccountId: guardian.accountId,
+      guardianClient: guardian.client,
+      guardianSecret,
+      guardianKey: publicKeyHex(guardianSecret),
       watcher: await generateEnvelopeKeypair(),
       rpc,
       regtest: new RegtestControl(rpc),
@@ -71,7 +107,7 @@ export function judgePolicy(session: JudgeSession, recoveryAddress: string): Pol
       guardians: [
         {
           guardian_key: session.guardianKey,
-          guardian_account: "morrow-judge-guardian.testnet",
+          guardian_account: session.guardianAccountId,
           kind: "backup_device",
         },
       ],
