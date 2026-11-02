@@ -1,3 +1,6 @@
+import { loadJudgeConfig } from "./config.js";
+import { runCreate } from "./scenarios/s1-create.js";
+
 export interface ScenarioContext {
   /** Prints a progress line under the Scenario. */
   log(message: string): void;
@@ -13,7 +16,7 @@ export interface Scenario {
 }
 
 export const SCENARIOS: Scenario[] = [
-  { id: "S-1", name: "Create", mandatory: true },
+  { id: "S-1", name: "Create", mandatory: true, run: (ctx) => runCreate(loadJudgeConfig(), ctx) },
   { id: "S-2", name: "Withdraw after Delay", mandatory: true },
   { id: "S-3", name: "Thief and Clawback", mandatory: true },
   { id: "S-4", name: "Duress", mandatory: false },

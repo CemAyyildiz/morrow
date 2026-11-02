@@ -11,7 +11,9 @@
     "start": "tsx src/main.ts"
   },
   "dependencies": {
-    "@morrow/core-ts": "workspace:*"
+    "@morrow/core-ts": "workspace:*",
+    "@noble/curves": "2.4.0",
+    "near-api-js": "7.4.0"
   },
   "devDependencies": {
     "tsx": "4.23.15"
