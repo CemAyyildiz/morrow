@@ -6,3 +6,8 @@ packages:
 
 saveExact: true
 engineStrict: true
+
+# Install scripts stay off. esbuild (via tsx) ships its binary as an optional
+# platform package, so its postinstall check is not needed.
+allowBuilds:
+  esbuild: false
