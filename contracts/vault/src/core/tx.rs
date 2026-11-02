@@ -43,6 +43,13 @@ pub fn withdrawal_witness_size(script_len: usize) -> u64 {
     1 + 2 * (1 + MAX_SIGNATURE_BYTES) + (1 + 1) + varint_len(script_len) + script_len
 }
 
+/// Witness bytes of one Clawback Path input: item count, the CHECKMULTISIG dummy, the Guardian
+/// and Co-signer signatures, the 0x01 selector, the empty outer selector and the script.
+pub fn clawback_witness_size(script_len: usize) -> u64 {
+    let script_len = script_len as u64;
+    1 + 1 + 2 * (1 + MAX_SIGNATURE_BYTES) + (1 + 1) + 1 + varint_len(script_len) + script_len
+}
+
 /// Virtual size from the unsigned (non-witness) serialization plus per-input witness bytes.
 pub fn vsize(unsigned_len: usize, inputs: usize, witness_per_input: u64) -> u64 {
     let weight = unsigned_len as u64 * 4 + 2 + inputs as u64 * witness_per_input;
@@ -185,6 +192,44 @@ pub fn build_payment(plan: &PaymentPlan) -> CoreResult<BuiltTx> {
     })
 }
 
+/// Sweeps every input to a single output (the Recovery Address); the fee is taken from the amount.
+pub fn build_sweep(
+    inputs: &[Outpoint],
+    to: &[u8],
+    fee_rate_sat_vb: u32,
+    fee_cap_sats: u64,
+    witness_script: &[u8],
+) -> CoreResult<BuiltTx> {
+    let total: u64 = inputs.iter().map(|u| u.value_sats.0).sum();
+    let probe = build(inputs, &[(to.to_vec(), total)])?;
+    let fee = vsize(
+        probe.serialize().len(),
+        inputs.len(),
+        clawback_witness_size(witness_script.len()),
+    ) * u64::from(fee_rate_sat_vb);
+    if fee > fee_cap_sats {
+        return Err(Rejection::with(
+            ErrorCode::FeeTooHigh,
+            format!("fee {fee} > cap {fee_cap_sats}"),
+        ));
+    }
+    let amount = total.checked_sub(fee).filter(|a| *a >= DUST_LIMIT_SATS);
+    let amount = amount.ok_or_else(|| Rejection::new(ErrorCode::InsufficientFunds))?;
+    let tx = build(inputs, &[(to.to_vec(), amount)])?;
+    Ok(BuiltTx {
+        unsigned: tx.serialize(),
+        sighashes: sighashes(&tx, inputs, witness_script),
+        fee_sats: fee,
+        change_sats: 0,
+    })
+}
+
+/// Clawback fee cap: min(2 × Fee Cap, 10% of the amount moved), so a Clawback can outbid a
+/// conflicting withdrawal.
+pub fn clawback_fee_cap(policy_fee_cap: u64, amount_sats: u64) -> u64 {
+    policy_fee_cap.saturating_mul(2).min(amount_sats / 10)
+}
+
 /// Withdrawal fee cap: min(Fee Cap, 5% of the amount moved).
 pub fn withdrawal_fee_cap(policy_fee_cap: u64, amount_sats: u64) -> u64 {
     policy_fee_cap.min(amount_sats / 20)
@@ -298,5 +343,51 @@ mod tests {
     fn sizes_the_withdrawal_witness() {
         assert_eq!(withdrawal_witness_size(188), 1 + 74 + 74 + 2 + 1 + 188);
         assert_eq!(withdrawal_witness_size(300), 1 + 74 + 74 + 2 + 3 + 300);
+    }
+
+    // Pinned against bitcoinjs-lib 7.0.5 (hashForWitnessV0 with the Vault Script, SIGHASH_ALL).
+    const SWEEP_UNSIGNED: &str = "020000000201ababababababababababababababababababababababababababababababab0100000000fdffffff02cdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcd0000000000fdffffff01db30030000000000160014751e76e8199196d454941c45d1b3a323f1433bd600000000";
+
+    #[test]
+    fn sweeps_everything_to_one_output_with_bitcoinjs_identical_sighashes() {
+        let (inputs, script) = (inputs(), script());
+        let to = from_hex(DESTINATION).unwrap();
+        let built =
+            build_sweep(&inputs, &to, 3, clawback_fee_cap(100_000, 210_000), &script).unwrap();
+        assert_eq!(hex(&built.unsigned), SWEEP_UNSIGNED);
+        let sighashes: Vec<String> = built.sighashes.iter().map(|s| hex(s)).collect();
+        assert_eq!(
+            sighashes,
+            [
+                "4b8b23120d6d9f5019a5f3e08d279d76c1cdf62dd13083345c4a2dea5d21900b",
+                "9101d069a9ce33c38dc871f9bb13eab703717b62b90f266e708fbf3b0a2784ff"
+            ]
+        );
+        assert_eq!(built.fee_sats, 885);
+    }
+
+    #[test]
+    fn caps_clawback_fees_and_rejects_dust() {
+        let (inputs, script) = (inputs(), script());
+        let to = from_hex(DESTINATION).unwrap();
+        assert_eq!(clawback_fee_cap(100_000, 210_000), 21_000);
+        assert_eq!(clawback_fee_cap(100_000, 10_000_000), 200_000);
+        assert_eq!(
+            build_sweep(&inputs, &to, 100, 21_000, &script)
+                .unwrap_err()
+                .code,
+            ErrorCode::FeeTooHigh
+        );
+        let tiny = vec![Outpoint {
+            value_sats: U64(600),
+            ..inputs[0].clone()
+        }];
+        assert_eq!(
+            build_sweep(&tiny, &to, 1, 21_000, &script)
+                .unwrap_err()
+                .code,
+            ErrorCode::InsufficientFunds
+        );
+        assert!(clawback_witness_size(188) > withdrawal_witness_size(188));
     }
 }

@@ -33,6 +33,25 @@ pub enum SpendOpKind {
     Clawback,
 }
 
+/// Which address a spend's coins come from; decides the witness script and the signing path.
+#[near(serializers = [borsh, json])]
+#[serde(rename_all = "snake_case")]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum SpendSource {
+    #[default]
+    Vault,
+    Allowance,
+}
+
+impl SpendSource {
+    pub const fn role(self) -> &'static str {
+        match self {
+            Self::Vault => "vault",
+            Self::Allowance => "allowance",
+        }
+    }
+}
+
 /// Stored states. `executable` is derived from `executable_at` and never stored.
 #[near(serializers = [borsh, json])]
 #[serde(rename_all = "snake_case")]
@@ -57,6 +76,7 @@ pub struct SpendOp {
     pub op_id: U64,
     pub vault_id: U64,
     pub kind: SpendOpKind,
+    pub source: SpendSource,
     pub state: SpendOpState,
     pub amount_sats: U64,
     pub destination: String,
