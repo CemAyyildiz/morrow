@@ -17,6 +17,11 @@ export interface WatcherConfig {
   clawbackFeeRate: number;
   /** Bearer token for `POST /clawbacks`; the endpoint is off without it. */
   adminToken: string | null;
+  /**
+   * Challenge mode: Vaults whose Owner Account is a sub-account of this account are clawed back
+   * on every Withdrawal Request and have every Policy Change vetoed. Off when null.
+   */
+  challengeOwnerParent: string | null;
 }
 
 export interface GuardianConfig {
@@ -69,6 +74,25 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): WatcherConfig 
   if (!Number.isInteger(clawbackFeeRate) || clawbackFeeRate < 1) {
     throw new Error("MORROW_CLAWBACK_FEE_RATE must be a whole number of sat/vB, at least 1");
   }
+  const guardian = loadGuardian(env);
+  const challengeOwnerParent = env.MORROW_CHALLENGE_OWNER_PARENT || null;
+  if (challengeOwnerParent !== null) {
+    // A top-level account ("testnet") would put every user's Vault into challenge mode.
+    if (
+      challengeOwnerParent.length < 2 ||
+      challengeOwnerParent.length > 64 ||
+      !/^[a-z0-9]+([-_][a-z0-9]+)*(\.[a-z0-9]+([-_][a-z0-9]+)*)+$/.test(challengeOwnerParent)
+    ) {
+      throw new Error(
+        "MORROW_CHALLENGE_OWNER_PARENT must be a NEAR sub-account id (2-64 chars, at least one '.')",
+      );
+    }
+    if (!guardian) {
+      throw new Error(
+        `MORROW_CHALLENGE_OWNER_PARENT needs the Auto-Clawback Guardian (${GUARDIAN_ENV.join(", ")})`,
+      );
+    }
+  }
   return {
     nearNetwork,
     nearRpcUrl: nearNetwork === "mock" ? null : (env.MORROW_NEAR_RPC_URL ?? NEAR_RPC[nearNetwork]),
@@ -81,8 +105,9 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): WatcherConfig 
     appUrl,
     telegramToken: env.MORROW_TELEGRAM_BOT_TOKEN ?? null,
     jobsFile: env.MORROW_WATCHER_JOBS_FILE ?? ".watcher-state/clawbacks.json",
-    guardian: loadGuardian(env),
+    guardian,
     clawbackFeeRate,
     adminToken: env.MORROW_WATCHER_ADMIN_TOKEN || null,
+    challengeOwnerParent,
   };
 }

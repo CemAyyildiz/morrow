@@ -8,6 +8,7 @@ import {
   hexToBytes,
   type ContractClient,
 } from "@morrow/core-ts";
+import { ChallengeHandler } from "./challenge/handler.js";
 import { ClawbackIndexHandler } from "./clawback/index-handler.js";
 import { FileJobStore } from "./clawback/jobs.js";
 import { ClawbackRunner, guardianBroadcaster } from "./clawback/runner.js";
@@ -26,7 +27,7 @@ const config = loadConfig();
 
 let client: ContractClient;
 let clock: ChainClock;
-/** Builds the Guardian-signed client for begin_clawback and sign_input. */
+/** Builds the Guardian-signed client for begin_clawback, sign_input and veto_policy_change. */
 let guardianClient: (accountId: string, secretKey: string) => ContractClient;
 if (config.nearNetwork === "mock" || !config.nearRpcUrl) {
   const mock = new MockContractClient();
@@ -81,11 +82,13 @@ const indexLoop = new EventLoop({
   intervalMs: config.pollIntervalMs,
 });
 let runner: ClawbackRunner | null = null;
+let challengeLoop: EventLoop | null = null;
 if (config.guardian) {
   const backend = backendFromUrl(config.btcBackendUrl);
+  const guardianSigner = guardianClient(config.guardian.accountId, config.guardian.nearKey);
   runner = new ClawbackRunner({
     reader: client,
-    signer: guardianClient(config.guardian.accountId, config.guardian.nearKey),
+    signer: guardianSigner,
     guardianAccount: config.guardian.accountId,
     guardianKey: bytesToHex(secp256k1.getPublicKey(hexToBytes(config.guardian.btcKey), true)),
     backend,
@@ -98,6 +101,31 @@ if (config.guardian) {
   });
   if (!config.adminToken) {
     log("warn", "MORROW_WATCHER_ADMIN_TOKEN not set: POST /clawbacks is disabled");
+  }
+  if (config.challengeOwnerParent) {
+    // Own loop and cursor, so a veto that keeps failing never stalls alerts.
+    const challengeRunner = runner;
+    challengeLoop = new EventLoop({
+      client,
+      store: new FileStore(
+        join(
+          dirname(config.jobsFile),
+          `${basename(config.jobsFile, ".json")}.challenge-cursor.json`,
+        ),
+      ),
+      handlers: [
+        new ChallengeHandler({
+          reader: client,
+          signer: guardianSigner,
+          ownerParent: config.challengeOwnerParent,
+          enqueue: (vaultId, trigger) => challengeRunner.enqueue(vaultId, trigger),
+        }),
+      ],
+      clock,
+      log,
+      intervalMs: config.pollIntervalMs,
+    });
+    log("info", "challenge mode on", { owner_parent: config.challengeOwnerParent });
   }
 } else {
   log("warn", "Guardian account and keys not set: Auto-Clawback is disabled");
@@ -126,6 +154,7 @@ createApiServer(store, bot ? { links, botUsername } : undefined, clawbackApi).li
   },
 );
 loop.start();
+challengeLoop?.start();
 // The runner plans only once the index has caught up, or it could miss reserved or racing coins.
 void (async () => {
   for (;;) {
@@ -147,6 +176,7 @@ for (const signal of ["SIGINT", "SIGTERM"] as const) {
   process.on(signal, () => {
     loop.stop();
     indexLoop.stop();
+    challengeLoop?.stop();
     runner?.stop();
     void bot?.stop();
     log("info", "stopped", { signal });

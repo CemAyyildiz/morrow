@@ -50,3 +50,6 @@ pnpm-debug.log*
 
 # Local watcher state
 .watcher-state/
+
+# Local challenge round state (holds operator keys)
+.challenge-state/

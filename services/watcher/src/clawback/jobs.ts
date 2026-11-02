@@ -2,8 +2,8 @@ import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import { dirname } from "node:path";
 import type { Hex, Outpoint, SpendOpKind, SpendSource, U64 } from "@morrow/core-ts";
 
-/** What queued the job. Challenge mode (7.1) and duress (8.2) add their triggers later. */
-export type ClawbackTrigger = "manual";
+/** What queued the job: the admin API, or challenge mode (7.1). Duress (8.2) adds its trigger later. */
+export type ClawbackTrigger = "manual" | "challenge";
 
 /**
  * queued → running (planning, begin, signing) → broadcast | pinned → done | lost.
