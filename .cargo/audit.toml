@@ -1,0 +1,14 @@
+# cargo audit configuration.
+#
+# Each ignore below is reachable only through near-sdk's host-side dependencies
+# (near-primitives, used by unit tests), never through the contract wasm:
+#   cargo tree -e normal --target wasm32-unknown-unknown -p morrow-vault
+# shows none of these crates. The fixes need semver-major upgrades that
+# near-sdk 5.30.0 has not taken yet. Revisit whenever near-sdk is bumped.
+[advisories]
+ignore = [
+  "RUSTSEC-2026-0387", # crypto-bigint 0.5.5 timing variability (host-side only)
+  "RUSTSEC-2026-0391", # zstd 0.13.4 stream data leak (host-side only)
+  "RUSTSEC-2026-0398", # zstd-safe 7.4.0 Seekable::decompress length (host-side only)
+  "RUSTSEC-2026-0403", # zstd-safe 7.4.0 legacy frame uninitialized memory (host-side only)
+]
