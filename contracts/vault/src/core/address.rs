@@ -2,7 +2,8 @@
 
 use super::errors::{CoreResult, ErrorCode, Rejection};
 use super::policy::BtcNetwork;
-use bech32::{segwit, Hrp};
+use bech32::{segwit, Fe32, Hrp};
+use sha2::{Digest, Sha256};
 
 const fn hrp_for(network: BtcNetwork) -> Hrp {
     match network {
@@ -30,6 +31,13 @@ pub fn script_pubkey(address: &str, network: BtcNetwork) -> CoreResult<Vec<u8>> 
     script.push(u8::try_from(program.len()).map_err(|_| reject())?);
     script.extend_from_slice(&program);
     Ok(script)
+}
+
+/// P2WSH address of a witness script on the given network.
+pub fn p2wsh_address(script: &[u8], network: BtcNetwork) -> String {
+    let program = Sha256::digest(script);
+    segwit::encode(hrp_for(network), Fe32::Q, &program)
+        .expect("a 32-byte v0 program is always encodable")
 }
 
 #[cfg(test)]
