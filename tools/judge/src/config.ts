@@ -8,7 +8,7 @@ export interface JudgeConfig {
 }
 
 /** The current public demo deployment on NEAR testnet. */
-export const DEFAULT_VAULT_CONTRACT = "vault-dev1.timesafe-1029-31513.testnet";
+export const DEFAULT_VAULT_CONTRACT = "morrow-vault-dev2.testnet";
 
 export function loadJudgeConfig(env: NodeJS.ProcessEnv = process.env): JudgeConfig {
   return {
