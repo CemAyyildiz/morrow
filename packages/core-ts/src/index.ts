@@ -5,3 +5,4 @@ export * from "./bitcoin/index.js";
 export * from "./contract/index.js";
 export * from "./crypto/index.js";
 export * from "./near/index.js";
+export * from "./spend/index.js";

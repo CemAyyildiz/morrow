@@ -192,6 +192,9 @@ importers:
 
   packages/core-ts:
     dependencies:
+      '@noble/curves':
+        specifier: 2.4.0
+        version: 2.4.0
       bitcoinjs-lib:
         specifier: 7.0.5
         version: 7.0.5(typescript@6.0.3)

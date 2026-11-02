@@ -16,6 +16,7 @@
     "test": "vitest run"
   },
   "dependencies": {
+    "@noble/curves": "2.4.0",
     "bitcoinjs-lib": "7.0.5",
     "libsodium-wrappers-sumo": "0.8.4",
     "near-api-js": "7.4.0"
