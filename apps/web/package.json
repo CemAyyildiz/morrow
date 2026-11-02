@@ -1,0 +1,12 @@
+{
+  "name": "@morrow/web",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Owner, Guardian, Proof Page and public site.",
+  "type": "module",
+  "license": "MIT",
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run"
+  }
+}

@@ -1,0 +1,12 @@
+{
+  "name": "@morrow/escape",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Standalone offline Escape CLI. Depends on nothing else in this repository.",
+  "type": "module",
+  "license": "MIT",
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run"
+  }
+}
