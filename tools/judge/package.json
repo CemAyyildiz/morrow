@@ -8,5 +8,8 @@
   "scripts": {
     "typecheck": "tsc --noEmit",
     "test": "vitest run"
+  },
+  "dependencies": {
+    "@morrow/core-ts": "workspace:*"
   }
 }
