@@ -592,3 +592,119 @@ mod execution {
         assert!(message.contains("ERR_UNAUTHORIZED"), "{message}");
     }
 }
+
+mod signing {
+    use super::withdrawals_support::*;
+    use super::*;
+    use crate::core::policy::HOUR_NS;
+    use crate::core::spend::SpendOpState;
+    use near_sdk::PromiseOrValue;
+
+    fn mpc(byte: u8) -> MpcSignature {
+        MpcSignature {
+            big_r: MpcPoint {
+                affine_point: format!("02{}", format!("{byte:02x}").repeat(32)),
+            },
+            s: MpcScalar {
+                scalar: format!("{byte:02x}").repeat(32),
+            },
+        }
+    }
+
+    /// An active Vault with a frozen 2-input withdrawal, caller = owner.
+    fn frozen_op() -> (VaultContract, U64) {
+        let (mut contract, id) = active_vault();
+        let op = request(
+            &mut contract,
+            id,
+            vec![utxo(1, 150_000), utxo(2, 60_000)],
+            100_000,
+        );
+        at_time("owner.testnet", NOW + 24 * HOUR_NS);
+        contract.begin_execute(op, envelope());
+        (contract, op)
+    }
+
+    fn expect_panic(expected: &str, f: impl FnOnce() + std::panic::UnwindSafe) {
+        let message = panic_message(f);
+        assert!(
+            message.contains(expected),
+            "expected {expected}, got {message}"
+        );
+    }
+
+    #[test]
+    fn requests_an_mpc_signature_then_stores_it() {
+        let (mut contract, op) = frozen_op();
+        assert!(matches!(
+            contract.sign_input(op, 0),
+            PromiseOrValue::Promise(_)
+        ));
+        let stored = contract.on_signed(op, 0, Ok(mpc(0x11)));
+        assert_eq!(stored.len(), 130);
+        assert!(stored.starts_with("02"));
+        // A stored signature comes back without a new MPC call.
+        match contract.sign_input(op, 0) {
+            PromiseOrValue::Value(value) => assert_eq!(value, stored),
+            PromiseOrValue::Promise(_) => panic!("expected the stored signature"),
+        }
+        assert_eq!(contract.get_op(op).state, SpendOpState::Frozen);
+        assert_eq!(
+            contract.events_since(U64(0), 100).pop().unwrap().kind,
+            "input_signed"
+        );
+    }
+
+    #[test]
+    fn becomes_signed_when_every_input_is_signed() {
+        let (mut contract, op) = frozen_op();
+        contract.on_signed(op, 0, Ok(mpc(0x11)));
+        contract.on_signed(op, 1, Ok(mpc(0x22)));
+        let signed = contract.get_op(op);
+        assert_eq!(signed.state, SpendOpState::Signed);
+        assert!(signed.signatures.iter().all(Option::is_some));
+        assert_eq!(
+            contract.events_since(U64(0), 100).pop().unwrap().kind,
+            "op_signed"
+        );
+        // A late duplicate callback never replaces a stored signature.
+        assert_eq!(
+            contract.on_signed(op, 0, Ok(mpc(0x33))),
+            signed.signatures[0].clone().unwrap()
+        );
+    }
+
+    #[test]
+    fn rejects_bad_indexes_states_and_callers() {
+        expect_panic("ERR_INPUT_INDEX", || {
+            let (mut contract, op) = frozen_op();
+            let _ = contract.sign_input(op, 2);
+        });
+        expect_panic("ERR_BAD_OP_STATE", || {
+            let (mut contract, id) = active_vault();
+            let op = request(&mut contract, id, vec![utxo(1, 150_000)], 100_000);
+            let _ = contract.sign_input(op, 0);
+        });
+        expect_panic("ERR_UNAUTHORIZED", || {
+            let (mut contract, op) = frozen_op();
+            as_caller("emma.testnet");
+            let _ = contract.sign_input(op, 0);
+        });
+    }
+
+    #[test]
+    fn stores_nothing_when_the_signer_fails() {
+        expect_panic("ERR_SIGNER_FAILED", || {
+            let (mut contract, op) = frozen_op();
+            contract.on_signed(op, 0, Err(near_sdk::PromiseError::Failed));
+        });
+        expect_panic("ERR_SIGNER_FAILED", || {
+            let (mut contract, op) = frozen_op();
+            let mut bad = mpc(0x11);
+            bad.s.scalar = "zz".into();
+            contract.on_signed(op, 0, Ok(bad));
+        });
+        let (contract, op) = frozen_op();
+        assert_eq!(contract.get_op(op).signatures, vec![None, None]);
+    }
+}

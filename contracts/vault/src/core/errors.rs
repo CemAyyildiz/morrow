@@ -25,6 +25,8 @@ pub enum ErrorCode {
     ClawedBack,
     StorageBudget,
     FeeTooHigh,
+    InputIndex,
+    SignerFailed,
 }
 
 impl ErrorCode {
@@ -53,6 +55,8 @@ impl ErrorCode {
             Self::ClawedBack => "ERR_CLAWED_BACK",
             Self::StorageBudget => "ERR_STORAGE_BUDGET",
             Self::FeeTooHigh => "ERR_FEE_TOO_HIGH",
+            Self::InputIndex => "ERR_INPUT_INDEX",
+            Self::SignerFailed => "ERR_SIGNER_FAILED",
         }
     }
 }
