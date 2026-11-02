@@ -3,6 +3,7 @@ import {
   BitcoinBackendError,
   btcToSats,
   type BitcoinBackend,
+  type Spender,
   type TxStatus,
   type Utxo,
 } from "./backend.js";
@@ -96,5 +97,36 @@ export class BitcoindRpc implements BitcoinBackend {
 
   async broadcast(rawHex: Hex): Promise<Hex> {
     return this.call<string>("sendrawtransaction", [rawHex]);
+  }
+
+  /** `gettxspendingprevout` (mempool only) then `getmempoolentry` for the fee and descendant fees. */
+  async getSpender(outpoint: { txid: Hex; vout: number }): Promise<Spender | null> {
+    const [result] = await this.call<{ spendingtxid?: string; blockhash?: string }[]>(
+      "gettxspendingprevout",
+      [[{ txid: outpoint.txid, vout: outpoint.vout }]],
+    );
+    const spending = result?.spendingtxid;
+    if (!spending || result.blockhash) return null;
+    let entry: {
+      vsize: number;
+      vsize_bip141?: number;
+      fees: { base: number; descendant: number };
+    };
+    try {
+      entry = await this.call<typeof entry>("getmempoolentry", [spending]);
+    } catch (error) {
+      // The spender left the mempool between the two calls.
+      if (error instanceof BitcoinBackendError && /not in mempool/i.test(error.message)) {
+        return null;
+      }
+      throw error;
+    }
+    const fee = btcToSats(entry.fees.base);
+    return {
+      txid: spending,
+      fee_rate_sat_vb: Number(fee) / (entry.vsize_bip141 ?? entry.vsize),
+      fee_sats: fee,
+      descendant_fees_sats: btcToSats(entry.fees.descendant),
+    };
   }
 }

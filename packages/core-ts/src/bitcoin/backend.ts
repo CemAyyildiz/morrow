@@ -16,6 +16,16 @@ export interface TxStatus {
   block_height: number | null;
 }
 
+/** A mempool transaction spending a given outpoint. */
+export interface Spender {
+  txid: Hex;
+  /** The spender's own fee rate (fee / vsize). */
+  fee_rate_sat_vb: number;
+  fee_sats: U64;
+  /** Fees of the spender and all its in-mempool descendants (what a replacement must outbid). */
+  descendant_fees_sats: U64;
+}
+
 /** The only way Morrow components read or broadcast Bitcoin data. */
 export interface BitcoinBackend {
   getUtxos(address: string): Promise<Utxo[]>;
@@ -24,6 +34,8 @@ export interface BitcoinBackend {
   getTx(txid: Hex): Promise<TxStatus | null>;
   /** Returns the txid. */
   broadcast(rawHex: Hex): Promise<Hex>;
+  /** The unconfirmed (mempool) transaction spending this outpoint, or null. */
+  getSpender(outpoint: { txid: Hex; vout: number }): Promise<Spender | null>;
 }
 
 export class BitcoinBackendError extends Error {

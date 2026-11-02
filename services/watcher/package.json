@@ -12,9 +12,11 @@
   },
   "dependencies": {
     "@morrow/core-ts": "workspace:*",
+    "@noble/curves": "2.4.0",
     "grammy": "1.46.0"
   },
   "devDependencies": {
+    "near-api-js": "7.4.0",
     "tsx": "4.23.15"
   }
 }

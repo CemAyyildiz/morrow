@@ -1,4 +1,6 @@
+import { createHash, timingSafeEqual } from "node:crypto";
 import { createServer, type IncomingMessage, type Server } from "node:http";
+import type { ClawbackJob } from "./clawback/jobs.js";
 import type { WatcherStore } from "./store.js";
 import type { LinkRole, LinkStore } from "./telegram/links.js";
 
@@ -22,7 +24,21 @@ export interface LinkingOptions {
   botUsername: string;
 }
 
+/** Manual Auto-Clawback trigger; only served when an admin token and a Guardian are configured. */
+export interface ClawbackApiOptions {
+  adminToken: string;
+  enqueue(vaultId: string): Promise<ClawbackJob>;
+}
+
 const MAX_BODY_BYTES = 4_096;
+
+/** Constant-time bearer token check (hashing first makes the lengths equal). */
+function authorized(request: IncomingMessage, token: string): boolean {
+  const header = request.headers.authorization ?? "";
+  const presented = header.startsWith("Bearer ") ? header.slice("Bearer ".length) : "";
+  const digest = (value: string) => createHash("sha256").update(value).digest();
+  return presented.length > 0 && timingSafeEqual(digest(presented), digest(token));
+}
 
 async function readJson(request: IncomingMessage): Promise<unknown> {
   let body = "";
@@ -34,10 +50,16 @@ async function readJson(request: IncomingMessage): Promise<unknown> {
 }
 
 /**
- * The watcher's public HTTP API: `GET /heartbeat` and, when Telegram is configured,
- * `POST /link-codes {vault_id, account_id, role}` → `{code, deep_link}`. Everything else is 404.
+ * The watcher's public HTTP API: `GET /heartbeat`; when Telegram is configured,
+ * `POST /link-codes {vault_id, account_id, role}` → `{code, deep_link}`; when Auto-Clawback and an
+ * admin token are configured, `POST /clawbacks {vault_id}` with `Authorization: Bearer <token>`
+ * → 202 `{job_id, vault_id, status}`. Everything else is 404.
  */
-export function createApiServer(store: WatcherStore, linking?: LinkingOptions): Server {
+export function createApiServer(
+  store: WatcherStore,
+  linking?: LinkingOptions,
+  clawbacks?: ClawbackApiOptions,
+): Server {
   return createServer((request, response) => {
     const path = new URL(request.url ?? "/", "http://localhost").pathname;
     const json = (status: number, body: unknown) =>
@@ -78,6 +100,26 @@ export function createApiServer(store: WatcherStore, linking?: LinkingOptions): 
           });
         })
         .catch(() => json(400, { error: "invalid JSON" }));
+      return;
+    }
+    if (request.method === "POST" && path === "/clawbacks" && clawbacks) {
+      if (!authorized(request, clawbacks.adminToken)) {
+        request.resume();
+        return json(401, { error: "unauthorized" });
+      }
+      readJson(request).then(
+        (body) => {
+          const { vault_id } = (body ?? {}) as Record<string, unknown>;
+          if (typeof vault_id !== "string" || !/^\d+$/.test(vault_id)) {
+            return json(400, { error: "expected {vault_id}" });
+          }
+          clawbacks.enqueue(vault_id).then(
+            (job) => json(202, { job_id: job.job_id, vault_id: job.vault_id, status: job.status }),
+            () => json(503, { error: "unavailable" }),
+          );
+        },
+        () => json(400, { error: "invalid JSON" }),
+      );
       return;
     }
     json(404, { error: "not found" });

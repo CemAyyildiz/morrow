@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { BitcoinBackendError, btcToSats } from "./backend.js";
 import { BitcoindRpc } from "./bitcoind-rpc.js";
 import { Esplora } from "./esplora.js";
+import { backendFromUrl } from "./from-url.js";
 
 type Route = (url: string, init?: RequestInit) => { status?: number; body: unknown };
 
@@ -71,6 +72,113 @@ describe("BitcoindRpc", () => {
       })),
     );
     expect(await rpc.getTx("bb".repeat(32))).toBeNull();
+  });
+});
+
+describe("BitcoindRpc.getSpender", () => {
+  const spent = { txid: "aa".repeat(32), vout: 0 };
+  const thief = "ee".repeat(32);
+  const rpcWith = (spender: Record<string, unknown>, entry: unknown) =>
+    new BitcoindRpc(
+      "http://127.0.0.1:18443",
+      stubFetch((_url, init) => {
+        const { method, params } = JSON.parse(String(init?.body)) as {
+          method: string;
+          params: unknown[];
+        };
+        if (method === "gettxspendingprevout") {
+          expect(params).toEqual([[spent]]);
+          return { body: { result: [{ ...spent, ...spender }], error: null } };
+        }
+        if (entry === null) {
+          return {
+            status: 500,
+            body: { result: null, error: { code: -5, message: "Transaction not in mempool" } },
+          };
+        }
+        return { body: { result: entry, error: null } };
+      }),
+    );
+
+  it("returns the mempool spender with its fee rate and descendant fees", async () => {
+    const rpc = rpcWith(
+      { spendingtxid: thief },
+      { vsize: 200, vsize_bip141: 150, fees: { base: 0.0000045, descendant: 0.003 } },
+    );
+    expect(await rpc.getSpender(spent)).toEqual({
+      txid: thief,
+      fee_rate_sat_vb: 3,
+      fee_sats: "450",
+      descendant_fees_sats: "300000",
+    });
+  });
+
+  it("returns null when unspent, spent in a block or gone from the mempool", async () => {
+    expect(await rpcWith({}, {}).getSpender(spent)).toBeNull();
+    expect(
+      await rpcWith({ spendingtxid: thief, blockhash: "00".repeat(32) }, {}).getSpender(spent),
+    ).toBeNull();
+    expect(await rpcWith({ spendingtxid: thief }, null).getSpender(spent)).toBeNull();
+  });
+});
+
+describe("backendFromUrl", () => {
+  it("picks Bitcoin Core RPC for URLs with credentials and Esplora otherwise", () => {
+    expect(backendFromUrl("http://morrow:morrow@127.0.0.1:18443")).toBeInstanceOf(BitcoindRpc);
+    expect(backendFromUrl("https://mempool.space/signet/api")).toBeInstanceOf(Esplora);
+  });
+});
+
+describe("Esplora.getSpender", () => {
+  const funding = "aa".repeat(32);
+  const [thief, child, grandchild] = ["e1", "e2", "e3"].map((b) => b.repeat(32)) as [
+    string,
+    string,
+    string,
+  ];
+  const esplora = (outspend: unknown) =>
+    new Esplora(
+      "https://esplora.test/api",
+      stubFetch((url) => {
+        if (url.endsWith(`/tx/${funding}/outspend/1`)) return { body: outspend };
+        if (url.endsWith(`/tx/${thief}`)) return { body: { fee: 600, weight: 800 } };
+        if (url.endsWith(`/tx/${child}`)) return { body: { fee: 50_000, weight: 440 } };
+        if (url.endsWith(`/tx/${grandchild}`)) return { body: { fee: 1_000, weight: 440 } };
+        if (url.endsWith(`/tx/${thief}/outspends`)) {
+          return {
+            body: [{ spent: true, txid: child, status: { confirmed: false } }, { spent: false }],
+          };
+        }
+        if (url.endsWith(`/tx/${child}/outspends`)) {
+          return { body: [{ spent: true, txid: grandchild, status: { confirmed: false } }] };
+        }
+        if (url.endsWith(`/tx/${grandchild}/outspends`)) return { body: [{ spent: false }] };
+        return { status: 404, body: "not found" };
+      }),
+    );
+
+  it("sums the fees of unconfirmed descendants", async () => {
+    const spender = await esplora({
+      spent: true,
+      txid: thief,
+      status: { confirmed: false },
+    }).getSpender({ txid: funding, vout: 1 });
+    expect(spender).toEqual({
+      txid: thief,
+      fee_rate_sat_vb: 3,
+      fee_sats: "600",
+      descendant_fees_sats: "51600",
+    });
+  });
+
+  it("returns null when unspent or spent by a confirmed transaction", async () => {
+    expect(await esplora({ spent: false }).getSpender({ txid: funding, vout: 1 })).toBeNull();
+    expect(
+      await esplora({ spent: true, txid: thief, status: { confirmed: true } }).getSpender({
+        txid: funding,
+        vout: 1,
+      }),
+    ).toBeNull();
   });
 });
 
