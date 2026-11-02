@@ -5,3 +5,4 @@ pub mod errors;
 pub mod policy;
 pub mod script;
 pub mod spend;
+pub mod tx;

@@ -13,6 +13,7 @@ crate-type = ["cdylib", "rlib"]
 bech32 = { version = "=0.12.0", default-features = false, features = ["alloc"] }
 bs58 = { version = "=0.5.1", default-features = false, features = ["alloc"] }
 near-sdk.workspace = true
+omni-transaction = { version = "=0.5.0", default-features = false, features = ["bitcoin"] }
 sha2 = { version = "=0.10.9", default-features = false }
 
 [dev-dependencies]

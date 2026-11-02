@@ -1218,6 +1218,7 @@ dependencies = [
  "bech32",
  "bs58 0.5.1",
  "near-sdk",
+ "omni-transaction",
  "sha2 0.10.9",
 ]
 
@@ -1642,6 +1643,16 @@ checksum = "91df4bbde75afed763b708b7eee1e8e7651e02d97f6d5dd763e89367e957b23b"
 dependencies = [
  "hermit-abi",
  "libc",
+]
+
+[[package]]
+name = "omni-transaction"
+version = "0.5.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "6c29e3e53ff14dff841ad4bd83616ebb328009333fc90a6b8cb71450b351c665"
+dependencies = [
+ "hex",
+ "sha2 0.10.9",
 ]
 
 [[package]]

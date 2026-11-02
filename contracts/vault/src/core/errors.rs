@@ -24,6 +24,7 @@ pub enum ErrorCode {
     InsufficientFunds,
     ClawedBack,
     StorageBudget,
+    FeeTooHigh,
 }
 
 impl ErrorCode {
@@ -51,6 +52,7 @@ impl ErrorCode {
             Self::InsufficientFunds => "ERR_INSUFFICIENT_FUNDS",
             Self::ClawedBack => "ERR_CLAWED_BACK",
             Self::StorageBudget => "ERR_STORAGE_BUDGET",
+            Self::FeeTooHigh => "ERR_FEE_TOO_HIGH",
         }
     }
 }
