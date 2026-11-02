@@ -1,0 +1,263 @@
+import { describe, expect, it } from "vitest";
+import { MorrowContractError } from "./errors.js";
+import { DAY_NS, HOUR_NS, MINUTE_NS } from "./policy.js";
+import {
+  BACKUP,
+  DESTINATION,
+  EMMA,
+  ENVELOPE,
+  OWNER,
+  OWNER_KEY,
+  STRANGER,
+  setup,
+  signetPolicy,
+  utxo,
+} from "./test-fixtures.js";
+import { MockContractClient, MIN_VAULT_STORAGE_YOCTO } from "./mock.js";
+
+async function expectCode(promise: Promise<unknown>, code: string) {
+  await expect(promise).rejects.toSatisfy(
+    (error: unknown) => error instanceof MorrowContractError && error.code === code,
+  );
+}
+
+function withdrawal(vaultId: string, n = 1, amount = "500000") {
+  return {
+    vault_id: vaultId,
+    amount_sats: amount,
+    destination: DESTINATION,
+    fee_rate_sat_vb: 2,
+    utxos: [utxo(n)],
+    envelope: ENVELOPE,
+  };
+}
+
+describe("MockContractClient: I/O matrix", () => {
+  it("creates an active Vault from a preset and emits creation events", async () => {
+    const { mock, vaultId } = await setup();
+    const vault = await mock.getVault(vaultId);
+    expect(vault.state).toBe("active");
+    expect(vault.owner_account).toBe(OWNER);
+    expect(vault.addresses?.vault).toMatch(/^tb1q/);
+    const kinds = (await mock.eventsSince("0", 100)).map((e) => e.kind);
+    expect(kinds).toEqual(["vault_created", "vault_activated"]);
+  });
+
+  it("rejects a Delay below the bounds with ERR_POLICY_BOUNDS", async () => {
+    await expectCode(setup({ delay_ns: (30n * MINUTE_NS).toString() }), "ERR_POLICY_BOUNDS");
+  });
+
+  it("rejects an early execute with ERR_NOT_EXECUTABLE", async () => {
+    const { mock, vaultId } = await setup();
+    const opId = await mock.requestWithdrawal(withdrawal(vaultId));
+    await expectCode(mock.beginExecute(opId, ENVELOPE), "ERR_NOT_EXECUTABLE");
+  });
+
+  it("rejects an envelope that is not 160 hex chars with ERR_BAD_ENVELOPE", async () => {
+    const { mock, vaultId } = await setup();
+    await expectCode(
+      mock.requestWithdrawal({ ...withdrawal(vaultId), envelope: "a".repeat(159) }),
+      "ERR_BAD_ENVELOPE",
+    );
+  });
+
+  it("rejects a second request on the same outpoint with ERR_OUTPOINT_RESERVED", async () => {
+    const { mock, vaultId } = await setup();
+    await mock.requestWithdrawal(withdrawal(vaultId, 1));
+    await expectCode(mock.requestWithdrawal(withdrawal(vaultId, 1)), "ERR_OUTPOINT_RESERVED");
+  });
+
+  it("clawback voids live ops, closes the Vault and rejects later Owner calls", async () => {
+    const { mock, vaultId } = await setup();
+    const opId = await mock.requestWithdrawal(withdrawal(vaultId, 1));
+    const clawbackId = await mock.asCaller(BACKUP).beginClawback({
+      vault_id: vaultId,
+      utxos: [utxo(1), utxo(2)],
+      fee_rate_sat_vb: 5,
+    });
+    expect((await mock.getOp(opId)).state).toBe("voided");
+    const clawback = await mock.getOp(clawbackId);
+    expect(clawback.destination).toBe((await mock.getVault(vaultId)).policy.recovery_address);
+    expect(clawback.state).toBe("frozen");
+    expect((await mock.getVault(vaultId)).state).toBe("clawed_back");
+    mock.asCaller(OWNER).advance(DAY_NS);
+    await expectCode(mock.beginExecute(opId, ENVELOPE), "ERR_CLAWED_BACK");
+    await expectCode(mock.requestWithdrawal(withdrawal(vaultId, 3)), "ERR_CLAWED_BACK");
+  });
+
+  it("rejects a Script-bound change with ERR_SCRIPT_BOUND", async () => {
+    const { mock, vaultId } = await setup();
+    await expectCode(
+      mock.proposePolicyChange({
+        vault_id: vaultId,
+        changes: { guardians: [] },
+        envelope: ENVELOPE,
+      }),
+      "ERR_SCRIPT_BOUND",
+    );
+  });
+
+  it("rejects a second pending change with ERR_CHANGE_PENDING", async () => {
+    const { mock, vaultId } = await setup();
+    const change = { vault_id: vaultId, changes: { fee_cap_sats: "50000" }, envelope: ENVELOPE };
+    await mock.proposePolicyChange(change);
+    await expectCode(mock.proposePolicyChange(change), "ERR_CHANGE_PENDING");
+  });
+
+  it("rejects any Allowance spend when the limit is 0 with ERR_ALLOWANCE_LIMIT", async () => {
+    const { mock, vaultId } = await setup({ allowance_limit_sats: "0" });
+    await expectCode(
+      mock.spendAllowance({ ...withdrawal(vaultId), amount_sats: "1" }),
+      "ERR_ALLOWANCE_LIMIT",
+    );
+  });
+
+  it("rejects a fast approval from a Backup Device with ERR_NOT_TRUSTED_CONTACT", async () => {
+    const { mock, vaultId } = await setup({ fast_approval: true });
+    const opId = await mock.requestWithdrawal(withdrawal(vaultId));
+    await expectCode(mock.asCaller(BACKUP).fastApprove(opId), "ERR_NOT_TRUSTED_CONTACT");
+  });
+
+  it("pages events_since by seq", async () => {
+    const { mock, vaultId } = await setup();
+    await mock.requestWithdrawal(withdrawal(vaultId));
+    const first = await mock.eventsSince("0", 2);
+    expect(first.map((e) => e.seq)).toEqual(["1", "2"]);
+    const next = await mock.eventsSince(first.at(-1)?.seq ?? "0", 2);
+    expect(next.map((e) => e.kind)).toEqual(["withdrawal_requested"]);
+  });
+});
+
+describe("MockContractClient: lifecycles", () => {
+  it("request → Delay → execute → sign every input ends Signed with ordered events", async () => {
+    const { mock, vaultId } = await setup();
+    const opId = await mock.requestWithdrawal({
+      ...withdrawal(vaultId),
+      utxos: [utxo(1), utxo(2)],
+    });
+    mock.advance(24n * HOUR_NS);
+    const frozen = await mock.beginExecute(opId, ENVELOPE);
+    expect(frozen.state).toBe("frozen");
+    expect(frozen.sighashes).toHaveLength(2);
+    expect(frozen.witness_template?.path).toBe("withdrawal");
+    await mock.signInput(opId, 0);
+    const again = await mock.signInput(opId, 0);
+    expect(again).toBe("mock-signature-1-0");
+    await mock.signInput(opId, 1);
+    expect((await mock.getOp(opId)).state).toBe("signed");
+    const events = await mock.eventsSince("2", 100);
+    expect(events.map((e) => e.kind)).toEqual([
+      "withdrawal_requested",
+      "op_frozen",
+      "input_signed",
+      "input_signed",
+      "op_signed",
+    ]);
+    expect(events.map((e) => Number(e.seq))).toEqual([3, 4, 5, 6, 7]);
+  });
+
+  it("begin_execute is idempotent once frozen", async () => {
+    const { mock, vaultId } = await setup();
+    const opId = await mock.requestWithdrawal(withdrawal(vaultId));
+    mock.advance(DAY_NS);
+    const first = await mock.beginExecute(opId, ENVELOPE);
+    const second = await mock.beginExecute(opId, ENVELOPE);
+    expect(second.unsigned_tx_hex).toBe(first.unsigned_tx_hex);
+  });
+
+  it("Owner and Guardians can cancel; strangers cannot", async () => {
+    const { mock, vaultId } = await setup();
+    const a = await mock.requestWithdrawal(withdrawal(vaultId, 1));
+    const b = await mock.requestWithdrawal(withdrawal(vaultId, 2));
+    await expectCode(mock.asCaller(STRANGER).cancel(a), "ERR_UNAUTHORIZED");
+    await expectCode(mock.asCaller(OWNER).cancel(a), "ERR_BAD_ENVELOPE");
+    await mock.cancel(a, ENVELOPE);
+    await mock.asCaller(EMMA).cancel(b);
+    expect((await mock.getOp(a)).state).toBe("cancelled");
+    expect((await mock.getOp(b)).state).toBe("cancelled");
+    // Cancelled ops release their outpoints.
+    await mock.asCaller(OWNER).requestWithdrawal(withdrawal(vaultId, 1));
+  });
+
+  it("a Policy Change applies only after its delay and updates the Policy", async () => {
+    const { mock, vaultId } = await setup();
+    const changeId = await mock.proposePolicyChange({
+      vault_id: vaultId,
+      changes: { delay_ns: (48n * HOUR_NS).toString() },
+      envelope: ENVELOPE,
+    });
+    await expectCode(mock.applyPolicyChange(changeId), "ERR_CHANGE_NOT_EFFECTIVE");
+    mock.advance(7n * DAY_NS);
+    await mock.asCaller(STRANGER).applyPolicyChange(changeId);
+    const vault = await mock.getVault(vaultId);
+    expect(vault.policy.delay_ns).toBe((48n * HOUR_NS).toString());
+    expect(vault.pending_change).toBeNull();
+  });
+
+  it("a Guardian vetoes and the Owner withdraws a pending change", async () => {
+    const { mock, vaultId } = await setup();
+    const change = { vault_id: vaultId, changes: { fee_cap_sats: "50000" }, envelope: ENVELOPE };
+    const vetoed = await mock.proposePolicyChange(change);
+    await mock.asCaller(EMMA).vetoPolicyChange(vetoed);
+    const withdrawn = await mock.asCaller(OWNER).proposePolicyChange(change);
+    await mock.vetoPolicyChange(withdrawn, ENVELOPE);
+    const kinds = (await mock.eventsSince("0", 100)).map((e) => e.kind);
+    expect(kinds).toContain("policy_change_vetoed");
+    expect(kinds).toContain("policy_change_withdrawn");
+  });
+
+  it("a Trusted Contact fast approval lowers executable_at to now + floor", async () => {
+    const { mock, vaultId } = await setup({ fast_approval: true });
+    const opId = await mock.requestWithdrawal(withdrawal(vaultId));
+    await mock.asCaller(EMMA).fastApprove(opId);
+    const op = await mock.getOp(opId);
+    expect(op.executable_at).toBe((mock.now() + 10n * MINUTE_NS).toString());
+    mock.advance(10n * MINUTE_NS).asCaller(OWNER);
+    expect((await mock.beginExecute(opId, ENVELOPE)).state).toBe("frozen");
+  });
+
+  it("Allowance spends within the rolling 24 h limit and rejects beyond it", async () => {
+    const { mock, vaultId } = await setup({ allowance_limit_sats: "100000" });
+    const spend = (n: number, amount: string) => ({
+      ...withdrawal(vaultId, n),
+      amount_sats: amount,
+    });
+    expect((await mock.spendAllowance(spend(1, "60000"))).state).toBe("frozen");
+    await expectCode(mock.spendAllowance(spend(2, "50000")), "ERR_ALLOWANCE_LIMIT");
+    mock.advance(DAY_NS + 1n);
+    expect((await mock.spendAllowance(spend(3, "50000"))).state).toBe("frozen");
+  });
+
+  it("Refresh pays only the Vault Address", async () => {
+    const { mock, vaultId } = await setup();
+    const op = await mock.refresh({
+      vault_id: vaultId,
+      fee_rate_sat_vb: 1,
+      utxos: [utxo(1)],
+      envelope: ENVELOPE,
+    });
+    expect(op.destination).toBe((await mock.getVault(vaultId)).addresses?.vault);
+  });
+
+  it("enforces the creator allowlist", async () => {
+    const mock = new MockContractClient({
+      allowedNetworks: ["signet"],
+      creatorAllowlist: ["operator.near"],
+    });
+    await expectCode(
+      mock.asCaller(OWNER).createVault({
+        owner_key: OWNER_KEY,
+        policy: signetPolicy(),
+        deposit_yocto: MIN_VAULT_STORAGE_YOCTO.toString(),
+      }),
+      "ERR_CREATOR_NOT_ALLOWED",
+    );
+  });
+
+  it("rejects a fee above the cap with ERR_FEE_TOO_HIGH", async () => {
+    const { mock, vaultId } = await setup();
+    const opId = await mock.requestWithdrawal({ ...withdrawal(vaultId), fee_rate_sat_vb: 1000 });
+    mock.advance(DAY_NS);
+    await expectCode(mock.beginExecute(opId, ENVELOPE), "ERR_FEE_TOO_HIGH");
+  });
+});
