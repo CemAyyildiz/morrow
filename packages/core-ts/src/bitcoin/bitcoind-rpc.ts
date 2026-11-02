@@ -53,6 +53,7 @@ export class BitcoindRpc implements BitcoinBackend {
     return body.result as T;
   }
 
+  /** Confirmed UTXOs only: `scantxoutset` reads the UTXO set, not the mempool. */
   async getUtxos(address: string): Promise<Utxo[]> {
     const scan = await this.call<{
       unspents: { txid: string; vout: number; amount: number; height: number }[];
