@@ -5,10 +5,14 @@ pub mod core;
 pub mod events;
 
 use crate::core::address::p2wsh_address;
+use crate::core::address::script_pubkey;
 use crate::core::errors::{ErrorCode, Rejection};
 use crate::core::policy::{is_compressed_key, validate_policy, BtcNetwork, Policy};
 use crate::core::script::{
     build_vault_script, compress_derived_key, hex, parse_key, witness_templates, WitnessTemplate,
+};
+use crate::core::spend::{
+    check_amount, check_envelope, check_inputs, Outpoint, SpendOp, SpendOpKind, SpendOpState,
 };
 use crate::events::{record, EventView, StoredEvent, EVENTS_SINCE_MAX_LIMIT};
 use near_sdk::json_types::{U128, U64};
@@ -30,6 +34,8 @@ pub const MIN_VAULT_STORAGE: NearToken = NearToken::from_millinear(500);
 enum StorageKey {
     Vaults,
     Events,
+    Ops,
+    Reservations,
 }
 
 #[near(serializers = [borsh, json])]
@@ -107,6 +113,10 @@ pub struct VaultContract {
     vaults: LookupMap<u64, Vault>,
     next_vault_id: u64,
     events: Vector<StoredEvent>,
+    ops: LookupMap<u64, SpendOp>,
+    next_op_id: u64,
+    /// Outpoint key ("txid:vout") → the non-terminal, non-clawback op holding it.
+    reservations: LookupMap<String, u64>,
 }
 
 fn reject(rejection: &Rejection) -> ! {
@@ -136,6 +146,9 @@ impl VaultContract {
             vaults: LookupMap::new(StorageKey::Vaults),
             next_vault_id: 1,
             events: Vector::new(StorageKey::Events),
+            ops: LookupMap::new(StorageKey::Ops),
+            next_op_id: 1,
+            reservations: LookupMap::new(StorageKey::Reservations),
         }
     }
 
@@ -261,7 +274,113 @@ impl VaultContract {
         );
     }
 
+    /// Starts a withdrawal. It stays Pending, in public, until `executable_at = now + Delay`.
+    #[allow(clippy::too_many_arguments)]
+    pub fn request_withdrawal(
+        &mut self,
+        vault_id: U64,
+        amount_sats: U64,
+        destination: String,
+        fee_rate_sat_vb: u32,
+        utxos: Vec<Outpoint>,
+        envelope: String,
+    ) -> U64 {
+        let storage_before = env::storage_usage();
+        let vault = self.owner_action(vault_id.0, Some(&envelope)).clone();
+        if let Err(r) = script_pubkey(&destination, vault.policy.btc_network) {
+            reject(&r);
+        }
+        let total = check_inputs(&utxos).unwrap_or_else(|r| reject(&r));
+        check_amount(amount_sats.0, total).unwrap_or_else(|r| reject(&r));
+        self.check_unreserved(&utxos);
+
+        let op_id = self.next_op_id;
+        self.next_op_id += 1;
+        let now = env::block_timestamp();
+        let executable_at = now.saturating_add(vault.policy.delay_ns.0);
+        for utxo in &utxos {
+            self.reservations.insert(utxo.key(), op_id);
+        }
+        self.emit(
+            vault_id.0,
+            "withdrawal_requested",
+            json!({
+                "op_id": U64(op_id),
+                "amount_sats": amount_sats,
+                "destination": destination,
+                "executable_at": U64(executable_at),
+                "utxos": utxos,
+                "envelope": envelope,
+            }),
+        );
+        self.ops.insert(
+            op_id,
+            SpendOp {
+                op_id: U64(op_id),
+                vault_id,
+                kind: SpendOpKind::Withdrawal,
+                state: SpendOpState::Pending,
+                amount_sats,
+                destination,
+                fee_rate_sat_vb,
+                utxos,
+                created_at: U64(now),
+                executable_at: Some(U64(executable_at)),
+                unsigned_tx_hex: None,
+                sighashes: vec![],
+                signatures: vec![],
+                witness_template: None,
+            },
+        );
+        self.flush_and_charge(vault_id.0, storage_before);
+        U64(op_id)
+    }
+
+    /// Cancels a pending withdrawal. The Owner needs an envelope; any Guardian may cancel.
+    pub fn cancel(&mut self, op_id: U64, envelope: Option<String>) {
+        let storage_before = env::storage_usage();
+        let op = self
+            .ops
+            .get(&op_id.0)
+            .cloned()
+            .unwrap_or_else(|| fail(ErrorCode::OpNotFound));
+        let vault = self.active_vault(op.vault_id.0).clone();
+        let caller = env::predecessor_account_id();
+        if caller == vault.owner_account {
+            check_envelope(envelope.as_deref()).unwrap_or_else(|r| reject(&r));
+        } else if !vault
+            .policy
+            .guardians
+            .iter()
+            .any(|g| g.guardian_account == caller)
+        {
+            fail(ErrorCode::Unauthorized);
+        }
+        if op.kind != SpendOpKind::Withdrawal || op.state != SpendOpState::Pending {
+            fail(ErrorCode::BadOpState);
+        }
+        for utxo in &op.utxos {
+            self.reservations.remove(&utxo.key());
+        }
+        if let Some(stored) = self.ops.get_mut(&op_id.0) {
+            stored.state = SpendOpState::Cancelled;
+        }
+        self.emit(
+            op.vault_id.0,
+            "withdrawal_cancelled",
+            json!({ "op_id": op_id, "by": caller }),
+        );
+        self.flush_and_charge(op.vault_id.0, storage_before);
+    }
+
     // Views
+
+    pub fn get_op(&self, op_id: U64) -> SpendOp {
+        self.ops
+            .get(&op_id.0)
+            .cloned()
+            .unwrap_or_else(|| fail(ErrorCode::OpNotFound))
+    }
 
     pub fn get_vault(&self, vault_id: U64) -> Vault {
         self.vaults
@@ -343,6 +462,61 @@ impl VaultContract {
     }
 
     /// Debits the storage added since `storage_before` from the Vault's storage balance.
+    /// An active (not clawed back) Vault.
+    fn active_vault(&self, vault_id: u64) -> &Vault {
+        let vault = self
+            .vaults
+            .get(&vault_id)
+            .unwrap_or_else(|| fail(ErrorCode::VaultNotFound));
+        match vault.state {
+            VaultState::Active => vault,
+            VaultState::ClawedBack => fail(ErrorCode::ClawedBack),
+            VaultState::PendingKeys => fail(ErrorCode::VaultNotActive),
+        }
+    }
+
+    /// An Owner action: active Vault, Owner caller, valid envelope.
+    fn owner_action(&self, vault_id: u64, envelope: Option<&str>) -> &Vault {
+        let vault = self.active_vault(vault_id);
+        if env::predecessor_account_id() != vault.owner_account {
+            fail(ErrorCode::Unauthorized);
+        }
+        check_envelope(envelope).unwrap_or_else(|r| reject(&r));
+        vault
+    }
+
+    fn check_unreserved(&self, utxos: &[Outpoint]) {
+        for utxo in utxos {
+            if let Some(holder) = self.reservations.get(&utxo.key()) {
+                let live = self
+                    .ops
+                    .get(holder)
+                    .is_some_and(|op| !op.state.is_terminal());
+                if live {
+                    fail(ErrorCode::OutpointReserved);
+                }
+            }
+        }
+    }
+
+    /// Flushes collections and charges the added storage to the Vault, failing when it is short.
+    fn flush_and_charge(&mut self, vault_id: u64, storage_before: u64) {
+        self.vaults.flush();
+        self.events.flush();
+        self.ops.flush();
+        self.reservations.flush();
+        let used = u128::from(env::storage_usage().saturating_sub(storage_before));
+        let cost = env::storage_byte_cost().as_yoctonear() * used;
+        let vault = self
+            .vaults
+            .get_mut(&vault_id)
+            .unwrap_or_else(|| fail(ErrorCode::VaultNotFound));
+        if cost > vault.storage_balance.0 {
+            fail(ErrorCode::StorageBudget);
+        }
+        vault.storage_balance = U128(vault.storage_balance.0 - cost);
+    }
+
     fn charge_storage(&mut self, vault_id: u64, storage_before: u64) {
         let used = u128::from(env::storage_usage().saturating_sub(storage_before));
         let cost = env::storage_byte_cost().as_yoctonear() * used;
