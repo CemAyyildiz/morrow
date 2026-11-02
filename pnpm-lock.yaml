@@ -198,7 +198,11 @@ importers:
 
   tools/escape: {}
 
-  tools/judge: {}
+  tools/judge:
+    dependencies:
+      '@morrow/core-ts':
+        specifier: workspace:*
+        version: link:../../packages/core-ts
 
 packages:
 
