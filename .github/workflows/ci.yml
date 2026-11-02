@@ -62,6 +62,9 @@ jobs:
   security:
     name: Secrets and dependency audit
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: read # gitleaks lists the PR's commits through the API
     steps:
       - uses: actions/checkout@v4
         with:
