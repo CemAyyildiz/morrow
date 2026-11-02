@@ -1,0 +1,31 @@
+{
+  "lanes": {
+    "a": ["contracts/**", "tools/escape/**"],
+    "b": [
+      "packages/core-ts/**",
+      "services/watcher/**",
+      "tools/judge/**",
+      "tools/challenge/**",
+      "infra/**"
+    ],
+    "c": ["apps/web/**"]
+  },
+  "shared": [
+    ".github/**",
+    "evidence/**",
+    "README.md",
+    "LICENSE",
+    ".gitignore",
+    ".prettierignore",
+    ".prettierrc.json",
+    ".nvmrc",
+    "package.json",
+    "pnpm-workspace.yaml",
+    "pnpm-lock.yaml",
+    "tsconfig.base.json",
+    "eslint.config.js",
+    "Cargo.toml",
+    "Cargo.lock",
+    "rust-toolchain.toml"
+  ]
+}
