@@ -5,7 +5,7 @@ pub mod core;
 pub mod events;
 
 use crate::core::address::p2wsh_address;
-use crate::core::address::script_pubkey;
+use crate::core::address::{p2wsh_script_pubkey, script_pubkey};
 use crate::core::errors::{ErrorCode, Rejection};
 use crate::core::policy::{is_compressed_key, validate_policy, BtcNetwork, Policy};
 use crate::core::script::{
@@ -14,6 +14,7 @@ use crate::core::script::{
 use crate::core::spend::{
     check_amount, check_envelope, check_inputs, Outpoint, SpendOp, SpendOpKind, SpendOpState,
 };
+use crate::core::tx::{build_payment, withdrawal_fee_cap, PaymentPlan};
 use crate::events::{record, EventView, StoredEvent, EVENTS_SINCE_MAX_LIMIT};
 use near_sdk::json_types::{U128, U64};
 use near_sdk::serde_json::json;
@@ -334,6 +335,68 @@ impl VaultContract {
         );
         self.flush_and_charge(vault_id.0, storage_before);
         U64(op_id)
+    }
+
+    /// Builds the withdrawal transaction once the Delay has passed and freezes it with its
+    /// sighashes. The contract builds every byte; callers only choose the fee rate up front.
+    /// Calling it again returns the same frozen transaction.
+    pub fn begin_execute(&mut self, op_id: U64, envelope: String) -> SpendOp {
+        let storage_before = env::storage_usage();
+        let op = self
+            .ops
+            .get(&op_id.0)
+            .cloned()
+            .unwrap_or_else(|| fail(ErrorCode::OpNotFound));
+        let vault = self.owner_action(op.vault_id.0, Some(&envelope)).clone();
+        if op.kind != SpendOpKind::Withdrawal {
+            fail(ErrorCode::BadOpState);
+        }
+        match op.state {
+            SpendOpState::Frozen | SpendOpState::Signed => return op,
+            SpendOpState::Pending => {}
+            _ => fail(ErrorCode::BadOpState),
+        }
+        let executable_at = op.executable_at.map_or(u64::MAX, |t| t.0);
+        if env::block_timestamp() < executable_at {
+            fail(ErrorCode::NotExecutable);
+        }
+
+        let (vault_script, _) = vault_scripts(&vault).unwrap_or_else(|| fail(ErrorCode::BadKey));
+        let destination =
+            script_pubkey(&op.destination, vault.policy.btc_network).unwrap_or_else(|r| reject(&r));
+        let change_to = p2wsh_script_pubkey(&vault_script);
+        let built = build_payment(&PaymentPlan {
+            inputs: &op.utxos,
+            amount_sats: op.amount_sats.0,
+            destination: &destination,
+            change_to: &change_to,
+            fee_rate_sat_vb: op.fee_rate_sat_vb,
+            fee_cap_sats: withdrawal_fee_cap(vault.policy.fee_cap_sats.0, op.amount_sats.0),
+            witness_script: &vault_script,
+        })
+        .unwrap_or_else(|r| reject(&r));
+
+        let frozen = {
+            let stored = self
+                .ops
+                .get_mut(&op_id.0)
+                .unwrap_or_else(|| fail(ErrorCode::OpNotFound));
+            stored.unsigned_tx_hex = Some(hex(&built.unsigned));
+            stored.sighashes = built.sighashes.iter().map(|s| hex(s)).collect();
+            stored.signatures = vec![None; built.sighashes.len()];
+            stored.witness_template = witness_templates()
+                .into_iter()
+                .find(|t| t.path == "withdrawal");
+            stored.state = SpendOpState::Frozen;
+            stored.clone()
+        };
+        self.emit(
+            op.vault_id.0,
+            "op_frozen",
+            json!({ "op_id": op_id, "kind": "withdrawal", "envelope": envelope, "fee_sats": U64(built.fee_sats) }),
+        );
+        self.flush_and_charge(op.vault_id.0, storage_before);
+        frozen
     }
 
     /// Cancels a pending withdrawal. The Owner needs an envelope; any Guardian may cancel.

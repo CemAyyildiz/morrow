@@ -318,18 +318,17 @@ mod activation {
     }
 }
 
-mod withdrawals {
+mod withdrawals_support {
     use super::*;
-    use crate::core::policy::HOUR_NS;
-    use crate::core::spend::{Outpoint, SpendOpState};
+    use crate::core::spend::Outpoint;
 
-    fn envelope() -> String {
+    pub fn envelope() -> String {
         "ab".repeat(80)
     }
-    const DESTINATION: &str = "tb1qw508d6qejxtdg4y5r3zarvary0c5xw7kxpjzsx";
-    const NOW: u64 = 1_762_070_400_000_000_000;
+    pub const DESTINATION: &str = "tb1qw508d6qejxtdg4y5r3zarvary0c5xw7kxpjzsx";
+    pub const NOW: u64 = 1_762_070_400_000_000_000;
 
-    fn utxo(n: u8, value: u64) -> Outpoint {
+    pub fn utxo(n: u8, value: u64) -> Outpoint {
         Outpoint {
             txid: format!("{n:02x}").repeat(32),
             vout: 0,
@@ -337,12 +336,12 @@ mod withdrawals {
         }
     }
 
-    fn as_caller(caller: &str) {
+    pub fn as_caller(caller: &str) {
         context(caller, NearToken::from_yoctonear(0));
     }
 
     /// An active signet Vault owned by owner.testnet with Guardians emma.testnet and backup.testnet.
-    fn active_vault() -> (VaultContract, U64) {
+    pub fn active_vault() -> (VaultContract, U64) {
         let mut contract = testnet_contract(vec![]);
         context("owner.testnet", MIN_VAULT_STORAGE);
         let id = create(&mut contract, standard_policy());
@@ -353,10 +352,29 @@ mod withdrawals {
         (contract, id)
     }
 
-    fn request(contract: &mut VaultContract, id: U64, utxos: Vec<Outpoint>, amount: u64) -> U64 {
+    pub fn request(
+        contract: &mut VaultContract,
+        id: U64,
+        utxos: Vec<Outpoint>,
+        amount: u64,
+    ) -> U64 {
         as_caller("owner.testnet");
         contract.request_withdrawal(id, U64(amount), DESTINATION.into(), 2, utxos, envelope())
     }
+
+    pub fn at_time(caller: &str, timestamp: u64) {
+        testing_env!(VMContextBuilder::new()
+            .predecessor_account_id(caller.parse().unwrap())
+            .block_timestamp(timestamp)
+            .build());
+    }
+}
+
+mod withdrawals {
+    use super::withdrawals_support::*;
+    use super::*;
+    use crate::core::policy::HOUR_NS;
+    use crate::core::spend::SpendOpState;
 
     fn rejects(expected: &str, f: impl FnOnce(&mut VaultContract, U64) + std::panic::UnwindSafe) {
         let message = panic_message(move || {
@@ -496,5 +514,81 @@ mod withdrawals {
         let before = contract.get_vault(id).storage_balance.0;
         request(&mut contract, id, vec![utxo(1, 10)], 5);
         assert!(contract.get_vault(id).storage_balance.0 < before);
+    }
+}
+
+mod execution {
+    use super::withdrawals_support::*;
+    use super::*;
+    use crate::core::policy::HOUR_NS;
+    use crate::core::spend::SpendOpState;
+
+    #[test]
+    fn rejects_execute_before_the_delay() {
+        let message = panic_message(|| {
+            let (mut contract, id) = active_vault();
+            let op = request(&mut contract, id, vec![utxo(1, 200_000)], 100_000);
+            contract.begin_execute(op, envelope());
+        });
+        assert!(message.contains("ERR_NOT_EXECUTABLE"), "{message}");
+    }
+
+    #[test]
+    fn freezes_a_contract_built_transaction_after_the_delay() {
+        let (mut contract, id) = active_vault();
+        let op_id = request(
+            &mut contract,
+            id,
+            vec![utxo(1, 150_000), utxo(2, 60_000)],
+            100_000,
+        );
+        at_time("owner.testnet", NOW + 24 * HOUR_NS);
+        let op = contract.begin_execute(op_id, envelope());
+        assert_eq!(op.state, SpendOpState::Frozen);
+        assert_eq!(op.sighashes.len(), 2);
+        assert_eq!(op.signatures, vec![None, None]);
+        assert_eq!(
+            op.witness_template.as_ref().map(|t| t.path.as_str()),
+            Some("withdrawal")
+        );
+        let tx = op.unsigned_tx_hex.clone().unwrap();
+        assert!(tx.starts_with("02000000"), "version 2");
+        assert_eq!(tx.matches("fdffffff").count(), 2, "RBF on every input");
+        let event = contract.events_since(U64(0), 100).pop().unwrap();
+        assert_eq!(event.kind, "op_frozen");
+
+        // A second call returns the same frozen transaction.
+        let again = contract.begin_execute(op_id, envelope());
+        assert_eq!(again.unsigned_tx_hex, op.unsigned_tx_hex);
+    }
+
+    #[test]
+    fn rejects_fees_above_the_cap() {
+        let message = panic_message(|| {
+            let (mut contract, id) = active_vault();
+            as_caller("owner.testnet");
+            let op = contract.request_withdrawal(
+                id,
+                U64(100_000),
+                DESTINATION.into(),
+                200,
+                vec![utxo(1, 300_000)],
+                envelope(),
+            );
+            at_time("owner.testnet", NOW + 24 * HOUR_NS);
+            contract.begin_execute(op, envelope());
+        });
+        assert!(message.contains("ERR_FEE_TOO_HIGH"), "{message}");
+    }
+
+    #[test]
+    fn only_the_owner_executes() {
+        let message = panic_message(|| {
+            let (mut contract, id) = active_vault();
+            let op = request(&mut contract, id, vec![utxo(1, 200_000)], 100_000);
+            at_time("emma.testnet", NOW + 24 * HOUR_NS);
+            contract.begin_execute(op, envelope());
+        });
+        assert!(message.contains("ERR_UNAUTHORIZED"), "{message}");
     }
 }
