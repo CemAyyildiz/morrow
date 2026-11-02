@@ -7,6 +7,17 @@
   "license": "MIT",
   "scripts": {
     "typecheck": "tsc --noEmit",
-    "test": "vitest run"
+    "test": "vitest run",
+    "escape": "tsx src/cli.ts"
+  },
+  "dependencies": {
+    "@noble/curves": "2.4.0",
+    "bitcoinjs-lib": "7.0.5"
+  },
+  "devDependencies": {
+    "tsx": "4.23.15"
+  },
+  "bin": {
+    "morrow-escape": "./src/cli.ts"
   }
 }
