@@ -41,6 +41,26 @@ jobs:
       - run: pnpm typecheck
       - run: pnpm test
 
+  regtest:
+    name: Regtest integration and Judge Mode
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: make regtest-up
+      - name: core-ts tests including regtest integration
+        env:
+          MORROW_REGTEST_RPC: http://morrow:morrow@127.0.0.1:18443
+        run: pnpm --filter @morrow/core-ts test
+      - run: make demo
+      - if: always()
+        run: make regtest-down
+
   repo:
     name: Repository hygiene and lanes
     runs-on: ubuntu-latest
