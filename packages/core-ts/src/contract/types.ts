@@ -70,6 +70,9 @@ export interface Outpoint {
 
 export type SpendOpKind = "withdrawal" | "allowance" | "refresh" | "clawback";
 
+/** Which address a spend's coins come from; decides the witness script and the signing path. */
+export type SpendSource = "vault" | "allowance";
+
 /** Stored states. `executable` is derived at read time from `executable_at`. */
 export type SpendOpState = "pending" | "frozen" | "signed" | "cancelled" | "voided";
 
@@ -91,6 +94,7 @@ export interface SpendOp {
   op_id: U64;
   vault_id: U64;
   kind: SpendOpKind;
+  source: SpendSource;
   state: SpendOpState;
   amount_sats: U64;
   destination: string;
@@ -169,6 +173,8 @@ export interface BeginClawbackArgs {
   vault_id: U64;
   utxos: Outpoint[];
   fee_rate_sat_vb: number;
+  /** Defaults to "vault". */
+  source?: SpendSource;
 }
 
 export interface ProposePolicyChangeArgs {
