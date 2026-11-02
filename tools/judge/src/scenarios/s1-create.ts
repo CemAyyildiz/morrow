@@ -1,64 +1,15 @@
-import { secp256k1 } from "@noble/curves/secp256k1.js";
-import {
-  BitcoindRpc,
-  MIN_VAULT_STORAGE_YOCTO,
-  NearContractClient,
-  RegtestControl,
-  bytesToHex,
-  createTestnetAccount,
-  generateEnvelopeKeypair,
-  presetPolicy,
-  recomputeAddress,
-} from "@morrow/core-ts";
-import { KeyPair } from "near-api-js";
-import type { JudgeConfig } from "../config.js";
+import { recomputeAddress } from "@morrow/core-ts";
 import type { ScenarioContext } from "../scenarios.js";
-
-/** A fresh, unique testnet account id for this run. */
-export function judgeAccountId(now = Date.now(), random = Math.random()): string {
-  return `morrow-judge-${now.toString(36)}-${random.toString(36).slice(2, 8)}.testnet`;
-}
-
-const newBitcoinKey = () =>
-  bytesToHex(secp256k1.getPublicKey(secp256k1.utils.randomSecretKey(), true));
+import { createJudgeVault, judgeSession } from "../session.js";
 
 /** S-1 Create: a real Vault on NEAR testnet whose addresses anyone can recompute. */
-export async function runCreate(config: JudgeConfig, ctx: ScenarioContext): Promise<void> {
-  const regtest = new RegtestControl(new BitcoindRpc(config.regtestRpcUrl));
-  const recoveryAddress = await regtest.newAddress();
+export async function runCreate(ctx: ScenarioContext): Promise<void> {
+  const session = await judgeSession();
+  const { config, client } = session;
+  ctx.log(`Owner account ${session.accountId} created through the testnet faucet`);
 
-  const nearKey = KeyPair.fromRandom("ed25519");
-  const accountId = judgeAccountId();
-  await createTestnetAccount(accountId, nearKey.getPublicKey().toString());
-  ctx.log(`Owner account ${accountId} created through the testnet faucet`);
-
-  const client = new NearContractClient({
-    contractId: config.vaultContract,
-    rpcUrl: config.nearRpcUrl,
-    signer: { accountId, secretKey: nearKey.toString() },
-  });
-  const watcher = await generateEnvelopeKeypair();
-  const policy = presetPolicy("standard", {
-    plannedDepositSats: 10_000_000n,
-    guardians: [
-      {
-        guardian_key: newBitcoinKey(),
-        guardian_account: "morrow-judge-guardian.testnet",
-        kind: "backup_device",
-      },
-    ],
-    recoveryAddress,
-    network: "regtest",
-    watcherX25519Pk: watcher.publicKeyHex,
-  });
-
-  const vaultId = await client.createVault({
-    owner_key: newBitcoinKey(),
-    policy,
-    deposit_yocto: MIN_VAULT_STORAGE_YOCTO.toString(),
-  });
-  const createTx = client.lastTransactionHash ?? "";
-  ctx.log(`Vault ${vaultId} created on ${config.vaultContract}: ${config.explorerTxUrl(createTx)}`);
+  const { vaultId, tx } = await createJudgeVault(session);
+  ctx.log(`Vault ${vaultId} created on ${config.vaultContract}: ${config.explorerTxUrl(tx)}`);
 
   const vault = await client.getVault(vaultId);
   if (vault.state !== "active")

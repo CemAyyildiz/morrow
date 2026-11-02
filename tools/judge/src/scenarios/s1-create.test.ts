@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { judgeAccountId } from "./s1-create.js";
+import { judgeAccountId } from "../session.js";
 
 describe("judgeAccountId", () => {
   it("is a valid, unique-looking testnet account id", () => {
