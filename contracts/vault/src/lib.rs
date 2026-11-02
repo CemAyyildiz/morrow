@@ -21,11 +21,47 @@ use near_sdk::serde_json::json;
 use near_sdk::store::{LookupMap, Vector};
 use near_sdk::{
     env, near, AccountId, BorshStorageKey, Gas, NearToken, PanicOnDefault, Promise, PromiseError,
+    PromiseOrValue,
 };
 
 /// Gas for one `derived_public_key` call to the MPC signer (measured: ~5 Tgas).
 const DERIVE_GAS: Gas = Gas::from_tgas(10);
 const ACTIVATE_GAS: Gas = Gas::from_tgas(20);
+/// Gas for one MPC `sign` call (measured: ~8 Tgas burnt) and for storing its result.
+const SIGN_GAS: Gas = Gas::from_tgas(50);
+const ON_SIGNED_GAS: Gas = Gas::from_tgas(10);
+
+/// The MPC signer's secp256k1 response.
+#[near(serializers = [json])]
+#[derive(Clone, Debug)]
+pub struct MpcSignature {
+    pub big_r: MpcPoint,
+    pub s: MpcScalar,
+}
+
+#[near(serializers = [json])]
+#[derive(Clone, Debug)]
+pub struct MpcPoint {
+    pub affine_point: String,
+}
+
+#[near(serializers = [json])]
+#[derive(Clone, Debug)]
+pub struct MpcScalar {
+    pub scalar: String,
+}
+
+impl MpcSignature {
+    /// Stored form: compressed big_r (33 bytes) followed by s (32 bytes), lowercase hex.
+    fn stored(&self) -> Option<String> {
+        let r = self.big_r.affine_point.to_ascii_lowercase();
+        let s = self.s.scalar.to_ascii_lowercase();
+        let hex_ok =
+            |v: &str, len: usize| v.len() == len && v.bytes().all(|b| b.is_ascii_hexdigit());
+        (hex_ok(&r, 66) && (r.starts_with("02") || r.starts_with("03")) && hex_ok(&s, 64))
+            .then(|| format!("{r}{s}"))
+    }
+}
 
 /// Minimum `create_vault` deposit: 0.5 NEAR.
 pub const MIN_VAULT_STORAGE: NearToken = NearToken::from_millinear(500);
@@ -397,6 +433,120 @@ impl VaultContract {
         );
         self.flush_and_charge(op.vault_id.0, storage_before);
         frozen
+    }
+
+    /// Asks the NEAR MPC network to co-sign one input of a frozen op. Only the sighash the
+    /// contract stored is ever sent. A signature already stored is returned without a new call.
+    pub fn sign_input(&mut self, op_id: U64, input_index: u32) -> PromiseOrValue<String> {
+        let op = self
+            .ops
+            .get(&op_id.0)
+            .cloned()
+            .unwrap_or_else(|| fail(ErrorCode::OpNotFound));
+        let vault = self
+            .vaults
+            .get(&op.vault_id.0)
+            .cloned()
+            .unwrap_or_else(|| fail(ErrorCode::VaultNotFound));
+        let caller = env::predecessor_account_id();
+        if op.kind == SpendOpKind::Clawback {
+            if !vault
+                .policy
+                .guardians
+                .iter()
+                .any(|g| g.guardian_account == caller)
+            {
+                fail(ErrorCode::Unauthorized);
+            }
+        } else {
+            match vault.state {
+                VaultState::ClawedBack => fail(ErrorCode::ClawedBack),
+                VaultState::PendingKeys => fail(ErrorCode::VaultNotActive),
+                VaultState::Active => {}
+            }
+            if caller != vault.owner_account {
+                fail(ErrorCode::Unauthorized);
+            }
+        }
+        if !matches!(op.state, SpendOpState::Frozen | SpendOpState::Signed) {
+            fail(ErrorCode::BadOpState);
+        }
+        let index = input_index as usize;
+        let Some(sighash) = op.sighashes.get(index) else {
+            fail(ErrorCode::InputIndex)
+        };
+        if let Some(Some(signature)) = op.signatures.get(index) {
+            return PromiseOrValue::Value(signature.clone());
+        }
+        let role = if op.kind == SpendOpKind::Allowance {
+            "allowance"
+        } else {
+            "vault"
+        };
+        let args = json!({
+            "request": {
+                "payload_v2": { "Ecdsa": sighash },
+                "path": format!("morrow/v1/{}/{role}", op.vault_id.0),
+                "domain_id": 0,
+            }
+        });
+        Promise::new(self.signer_account.clone())
+            .function_call(
+                "sign",
+                args.to_string().into_bytes(),
+                NearToken::from_yoctonear(1),
+                SIGN_GAS,
+            )
+            .then(
+                Self::ext(env::current_account_id())
+                    .with_static_gas(ON_SIGNED_GAS)
+                    .on_signed(op_id, input_index),
+            )
+            .into()
+    }
+
+    /// Stores one MPC signature; the op becomes Signed when every input has one.
+    #[private]
+    pub fn on_signed(
+        &mut self,
+        op_id: U64,
+        input_index: u32,
+        #[callback_result] result: Result<MpcSignature, PromiseError>,
+    ) -> String {
+        let storage_before = env::storage_usage();
+        let signature = result
+            .ok()
+            .and_then(|s| s.stored())
+            .unwrap_or_else(|| fail(ErrorCode::SignerFailed));
+        let index = input_index as usize;
+        let (vault_id, complete, stored) = {
+            let op = self
+                .ops
+                .get_mut(&op_id.0)
+                .unwrap_or_else(|| fail(ErrorCode::OpNotFound));
+            if let Some(Some(existing)) = op.signatures.get(index) {
+                return existing.clone();
+            }
+            if op.state != SpendOpState::Frozen || index >= op.signatures.len() {
+                fail(ErrorCode::BadOpState);
+            }
+            op.signatures[index] = Some(signature.clone());
+            let complete = op.signatures.iter().all(Option::is_some);
+            if complete {
+                op.state = SpendOpState::Signed;
+            }
+            (op.vault_id.0, complete, signature)
+        };
+        self.emit(
+            vault_id,
+            "input_signed",
+            json!({ "op_id": op_id, "input_index": input_index }),
+        );
+        if complete {
+            self.emit(vault_id, "op_signed", json!({ "op_id": op_id }));
+        }
+        self.flush_and_charge(vault_id, storage_before);
+        stored
     }
 
     /// Cancels a pending withdrawal. The Owner needs an envelope; any Guardian may cancel.
