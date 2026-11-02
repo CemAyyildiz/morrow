@@ -1,8 +1,11 @@
+import { dirname, join } from "node:path";
 import type { Policy } from "@morrow/core-ts";
 
 /** What `status` and `serve` need: no secrets. */
 export interface BaseConfig {
   stateFile: string;
+  /** The Attempt Log, next to the state file. */
+  attemptsFile: string;
   btcBackendUrl: string;
   port: number;
 }
@@ -30,7 +33,52 @@ export interface NearConfig {
   parentKey: string;
 }
 
+/** What `run` needs on top of `open`. The admin token is never logged. */
+export interface RunConfig {
+  /** `MORROW_WATCHER_URL`: the watcher's API, for `POST /clawbacks`. */
+  watcherUrl: string;
+  watcherAdminToken: string;
+  /** Rotate this many blocks before the rotation deadline (default 144, about a day). */
+  rotationMarginBlocks: number;
+  /** `MORROW_FASTNEAR_TX_URL`; default: FastNEAR's transactions API for the NEAR network. */
+  fastnearTxUrl: string | undefined;
+  /** `MORROW_NEAR_ARCHIVAL_RPC_URL` for tx status; default: the NEAR RPC URL. */
+  archivalRpcUrl: string | undefined;
+}
+
+/** Default rotation margin: 144 signet blocks, about a day. */ export const DEFAULT_ROTATION_MARGIN_BLOCKS = 144;
 type Env = NodeJS.ProcessEnv;
+
+function httpUrl(name: string, value: string): string {
+  let url: URL;
+  try {
+    url = new URL(value);
+  } catch {
+    throw new Error(`${name} must be an http(s) URL`);
+  }
+  if (url.protocol !== "http:" && url.protocol !== "https:") {
+    throw new Error(`${name} must be an http(s) URL`);
+  }
+  return value;
+}
+
+export function loadRunConfig(env: Env = process.env): RunConfig {
+  const optionalUrl = (name: string) => {
+    const value = env[name];
+    return value ? httpUrl(name, value) : undefined;
+  };
+  return {
+    watcherUrl: httpUrl("MORROW_WATCHER_URL", required(env, "MORROW_WATCHER_URL")),
+    watcherAdminToken: required(env, "MORROW_WATCHER_ADMIN_TOKEN"),
+    rotationMarginBlocks: positiveInteger(
+      env,
+      "MORROW_CHALLENGE_ROTATION_MARGIN_BLOCKS",
+      DEFAULT_ROTATION_MARGIN_BLOCKS,
+    ),
+    fastnearTxUrl: optionalUrl("MORROW_FASTNEAR_TX_URL"),
+    archivalRpcUrl: optionalUrl("MORROW_NEAR_ARCHIVAL_RPC_URL"),
+  };
+}
 
 function required(env: Env, name: string): string {
   const value = env[name];
@@ -65,8 +113,10 @@ function positiveInteger(env: Env, name: string, fallback: number): number {
 }
 
 export function loadBaseConfig(env: Env = process.env): BaseConfig {
+  const stateFile = env.MORROW_CHALLENGE_STATE_FILE ?? ".challenge-state/rounds.json";
   return {
-    stateFile: env.MORROW_CHALLENGE_STATE_FILE ?? ".challenge-state/rounds.json",
+    stateFile,
+    attemptsFile: join(dirname(stateFile), "attempts.json"),
     btcBackendUrl: env.MORROW_BTC_BACKEND_URL ?? "https://mempool.space/signet/api",
     port: positiveInteger(env, "MORROW_CHALLENGE_PORT", 8081),
   };

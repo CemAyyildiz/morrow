@@ -1,5 +1,6 @@
 /** X-Ray data assembly: one op (or refused call) through script, rule, MPC signature and Bitcoin tx. */
 export { RECEIPTS_UNAVAILABLE, buildXRay, type XRayDeps } from "./build.js";
+export { failureKind, txFailure, type TxFailure } from "./failure.js";
 export { bitcoinTxUrl, nearTxUrl, type NearNetwork } from "./links.js";
 export {
   FastNearLocator,
@@ -16,6 +17,7 @@ export {
   type RpcOutcome,
   type RpcReceipt,
   type RpcTxStatus,
+  type SignedTx,
   type TxHint,
   type TxLocator,
   type TxQuery,

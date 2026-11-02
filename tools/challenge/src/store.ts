@@ -1,3 +1,4 @@
+import { closeSync, mkdirSync, openSync, readFileSync, unlinkSync, writeSync } from "node:fs";
 import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import { dirname } from "node:path";
 import type { AccountId, BtcNetwork, Hex, U64 } from "@morrow/core-ts";
@@ -29,6 +30,16 @@ export interface RoundRecord {
   near_function_call_key: string;
   near_function_call_public_key: string;
   function_call_key_added: boolean;
+  /**
+   * A replacement function-call key, saved before it is added on chain so a crash never loses
+   * it; swapped into `near_function_call_key` once added. Never published while pending.
+   */
+  next_function_call_key?: string | null;
+  next_function_call_public_key?: string | null;
+  /** Replaced published keys still to delete from the Owner Account. */
+  retired_function_call_public_keys?: string[];
+  /** Set once a retired round's published key is deleted; the round is no longer scanned. */
+  published_key_deleted?: boolean;
   vault_id: U64 | null;
   vault_address: string | null;
   allowance_address: string | null;
@@ -85,11 +96,30 @@ export function rotationDeadline(fundingHeight: number, escapeTimelockBlocks: nu
   return fundingHeight + Math.floor((escapeTimelockBlocks * 4) / 5);
 }
 
-interface State {
-  rounds: RoundRecord[];
+/** An old round's Vault the watcher must claw back (rotation): its keys are public. */
+export interface PendingSweep {
+  round: number;
+  vault_id: U64;
+  added_at: string;
 }
 
-const empty = (): State => ({ rounds: [] });
+/** A NEAR top-up the operator paid (storage or Owner Account balance), for the rate limits. */
+export interface TopUp {
+  /** `storage:<vault_id>` or `balance:<account_id>`. */
+  target: string;
+  /** Milliseconds since the Unix epoch. */
+  at: number;
+}
+
+interface State {
+  rounds: RoundRecord[];
+  pending_sweeps: PendingSweep[];
+  top_ups: TopUp[];
+}
+
+const empty = (): State => ({ rounds: [], pending_sweeps: [], top_ups: [] });
+
+const TOP_UP_HISTORY_MS = 2 * 24 * 60 * 60_000;
 
 /** Every round, oldest first. Writes are serialized per instance. */
 export abstract class RoundStore {
@@ -161,6 +191,74 @@ export abstract class RoundStore {
       return structuredClone(round);
     });
   }
+
+  /**
+   * Re-reads the store and sets only `fields` on round `number`, if it is still open. Returns
+   * the updated round, or null when it is gone or no longer open.
+   */
+  patchOpen(number: number, fields: Partial<RoundRecord>): Promise<RoundRecord | null> {
+    return this.patch(number, fields, ["open"]);
+  }
+
+  /** `patchOpen` for a round whose status is one of `statuses`. */
+  patch(
+    number: number,
+    fields: Partial<RoundRecord>,
+    statuses: RoundStatus[],
+  ): Promise<RoundRecord | null> {
+    return this.exclusive(async () => {
+      const state = await this.load();
+      const round = state.rounds.find((r) => r.round === number);
+      if (!round || !statuses.includes(round.status)) return null;
+      Object.assign(round, structuredClone(fields), {
+        round: number,
+        status: round.status,
+        updated_at: new Date().toISOString(),
+      });
+      await this.save(state);
+      return structuredClone(round);
+    });
+  }
+
+  async pendingSweeps(): Promise<PendingSweep[]> {
+    return (await this.load()).pending_sweeps;
+  }
+
+  /** Records a Vault to claw back; a Vault already listed is kept as is. */
+  addPendingSweep(round: number, vaultId: U64): Promise<void> {
+    return this.exclusive(async () => {
+      const state = await this.load();
+      if (state.pending_sweeps.some((s) => s.vault_id === vaultId)) return;
+      state.pending_sweeps.push({ round, vault_id: vaultId, added_at: new Date().toISOString() });
+      await this.save(state);
+    });
+  }
+
+  /** Top-ups of the last two days, oldest first. */
+  async topUps(): Promise<TopUp[]> {
+    return (await this.load()).top_ups;
+  }
+
+  addTopUp(target: string, at: number): Promise<void> {
+    return this.exclusive(async () => {
+      const state = await this.load();
+      state.top_ups = [
+        ...state.top_ups.filter((t) => t.at > at - TOP_UP_HISTORY_MS),
+        { target, at },
+      ];
+      await this.save(state);
+    });
+  }
+
+  removePendingSweep(vaultId: U64): Promise<void> {
+    return this.exclusive(async () => {
+      const state = await this.load();
+      const kept = state.pending_sweeps.filter((s) => s.vault_id !== vaultId);
+      if (kept.length === state.pending_sweeps.length) return;
+      state.pending_sweeps = kept;
+      await this.save(state);
+    });
+  }
 }
 
 export class InMemoryRoundStore extends RoundStore {
@@ -196,4 +294,65 @@ export class FileRoundStore extends RoundStore {
     await writeFile(temporary, JSON.stringify(state, null, 2), { mode: 0o600 });
     await rename(temporary, this.path);
   }
+}
+
+const pidAlive = (pid: number): boolean => {
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch (error) {
+    // EPERM: the process exists but belongs to someone else.
+    return (error as NodeJS.ErrnoException).code === "EPERM";
+  }
+};
+
+/**
+ * Takes the single-writer lock `<stateFile>.lock` (created with O_EXCL, holding the pid) for
+ * `run` and `open`. A lock whose pid is no longer alive is taken over. Throws when another live
+ * process holds it. The lock is removed on `release()` and on process exit.
+ */
+export function acquireStateLock(stateFile: string): { path: string; release(): void } {
+  const path = `${stateFile}.lock`;
+  mkdirSync(dirname(path), { recursive: true, mode: 0o700 });
+  for (let attempt = 0; attempt < 2; attempt++) {
+    try {
+      const fd = openSync(path, "wx", 0o600);
+      writeSync(fd, String(process.pid));
+      closeSync(fd);
+      let held = true;
+      const release = () => {
+        if (!held) return;
+        held = false;
+        process.off("exit", release);
+        try {
+          if (readFileSync(path, "utf8").trim() === String(process.pid)) unlinkSync(path);
+        } catch {
+          // Already gone.
+        }
+      };
+      process.on("exit", release);
+      return { path, release };
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== "EEXIST") throw error;
+      let pid = Number.NaN;
+      try {
+        pid = Number(readFileSync(path, "utf8").trim());
+      } catch {
+        // Removed in between: retry.
+      }
+      if (Number.isSafeInteger(pid) && pid > 0 && pidAlive(pid)) {
+        throw new Error(
+          `STATE_LOCKED: ${path} is held by pid ${pid}; another run or open is active`,
+          { cause: error },
+        );
+      }
+      // Stale: its process is gone.
+      try {
+        unlinkSync(path);
+      } catch {
+        // Someone else removed it.
+      }
+    }
+  }
+  throw new Error(`STATE_LOCKED: could not take ${path}`);
 }

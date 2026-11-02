@@ -364,6 +364,10 @@ describe("nearRound", () => {
           calls.push({ as: accountId, method: "createSubAccount", args }),
         addFunctionCallAccessKey: async (args) =>
           calls.push({ as: accountId, method: "addFunctionCallAccessKey", args }),
+        getAccessKey: async () => ({ permission: "FullAccess" }),
+        deleteKey: async () => undefined,
+        getState: async () => ({ balance: { available: 0n } }),
+        transfer: async () => undefined,
       }),
     });
     await near.createOwnerAccount(`r1.${PARENT}`, "ed25519:full");

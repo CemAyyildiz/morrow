@@ -15,6 +15,7 @@ import type {
   VaultKit,
   WitnessTemplate,
 } from "../contract/types.js";
+import { functionCall, functionCallError } from "./failure.js";
 import { bitcoinTxUrl, nearTxUrl, type NearNetwork } from "./links.js";
 import {
   NearRpcError,
@@ -24,8 +25,6 @@ import {
   viewRef,
   type NearRpc,
   type RpcBlockHeader,
-  type RpcFunctionCall,
-  type RpcOutcome,
   type RpcReceipt,
   type RpcTxStatus,
   type TxLocator,
@@ -110,13 +109,6 @@ const notReached = {
   }),
 };
 
-function functionCall(receipt: RpcReceipt | undefined): RpcFunctionCall | null {
-  for (const action of receipt?.receipt.Action?.actions ?? []) {
-    if (typeof action !== "string" && action.FunctionCall) return action.FunctionCall;
-  }
-  return null;
-}
-
 function parseJson(base64: string | undefined): unknown {
   if (base64 === undefined || base64 === "") return null;
   try {
@@ -128,13 +120,6 @@ function parseJson(base64: string | undefined): unknown {
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
-}
-
-function functionCallError(outcome: RpcOutcome): unknown {
-  const failure = outcome.outcome.status.Failure;
-  if (!isRecord(failure) || !isRecord(failure.ActionError)) return undefined;
-  const kind = failure.ActionError.kind;
-  return isRecord(kind) ? kind.FunctionCallError : undefined;
 }
 
 class Context {

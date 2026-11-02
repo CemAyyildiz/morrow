@@ -1,5 +1,11 @@
 import { describe, expect, it } from "vitest";
-import { loadBaseConfig, loadNearConfig, loadPolicyConfig } from "./config.js";
+import {
+  DEFAULT_ROTATION_MARGIN_BLOCKS,
+  loadBaseConfig,
+  loadNearConfig,
+  loadPolicyConfig,
+  loadRunConfig,
+} from "./config.js";
 
 const policyEnv = {
   MORROW_CHALLENGE_GUARDIAN_ACCOUNT: "watcher-guardian.testnet",
@@ -17,11 +23,18 @@ describe("loadBaseConfig", () => {
   it("defaults the state file, the signet backend and the port", () => {
     expect(loadBaseConfig({})).toEqual({
       stateFile: ".challenge-state/rounds.json",
+      attemptsFile: ".challenge-state/attempts.json",
       btcBackendUrl: "https://mempool.space/signet/api",
       port: 8081,
     });
     expect(loadBaseConfig({ MORROW_CHALLENGE_PORT: "9000" }).port).toBe(9000);
     expect(() => loadBaseConfig({ MORROW_CHALLENGE_PORT: "0" })).toThrow(/MORROW_CHALLENGE_PORT/);
+    expect(
+      loadBaseConfig({ MORROW_CHALLENGE_STATE_FILE: "/var/lib/challenge/state.json" }),
+    ).toMatchObject({
+      stateFile: "/var/lib/challenge/state.json",
+      attemptsFile: "/var/lib/challenge/attempts.json",
+    });
   });
 });
 
@@ -74,6 +87,47 @@ describe("loadPolicyConfig", () => {
         /MORROW_CHALLENGE_POLICY must be a JSON object/,
       );
     }
+  });
+});
+
+describe("loadRunConfig", () => {
+  const runEnv = {
+    MORROW_WATCHER_URL: "https://watcher.example",
+    MORROW_WATCHER_ADMIN_TOKEN: "admin-token",
+  };
+
+  it("needs the watcher URL and admin token; defaults the margin to 144 blocks", () => {
+    expect(loadRunConfig(runEnv)).toEqual({
+      watcherUrl: "https://watcher.example",
+      watcherAdminToken: "admin-token",
+      rotationMarginBlocks: DEFAULT_ROTATION_MARGIN_BLOCKS,
+      fastnearTxUrl: undefined,
+      archivalRpcUrl: undefined,
+    });
+    expect(
+      loadRunConfig({
+        ...runEnv,
+        MORROW_CHALLENGE_ROTATION_MARGIN_BLOCKS: "288",
+        MORROW_FASTNEAR_TX_URL: "https://tx.test.fastnear.com",
+      }),
+    ).toMatchObject({ rotationMarginBlocks: 288, fastnearTxUrl: "https://tx.test.fastnear.com" });
+    expect(DEFAULT_ROTATION_MARGIN_BLOCKS).toBe(144);
+    expect(
+      loadRunConfig({ ...runEnv, MORROW_NEAR_ARCHIVAL_RPC_URL: "https://archival.example" })
+        .archivalRpcUrl,
+    ).toBe("https://archival.example");
+    expect(() =>
+      loadRunConfig({ ...runEnv, MORROW_NEAR_ARCHIVAL_RPC_URL: "wss://archival.example" }),
+    ).toThrow(/MORROW_NEAR_ARCHIVAL_RPC_URL must be an http/);
+    expect(() => loadRunConfig({ ...runEnv, MORROW_WATCHER_ADMIN_TOKEN: "" })).toThrow(
+      /MORROW_WATCHER_ADMIN_TOKEN/,
+    );
+    expect(() => loadRunConfig({ ...runEnv, MORROW_WATCHER_URL: "ftp://x" })).toThrow(
+      /MORROW_WATCHER_URL must be an http/,
+    );
+    expect(() =>
+      loadRunConfig({ ...runEnv, MORROW_CHALLENGE_ROTATION_MARGIN_BLOCKS: "-1" }),
+    ).toThrow(/MORROW_CHALLENGE_ROTATION_MARGIN_BLOCKS/);
   });
 });
 

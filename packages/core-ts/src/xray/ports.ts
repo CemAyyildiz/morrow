@@ -393,4 +393,43 @@ export class FastNearLocator implements TxLocator {
     const [tx] = await this.transactions([hash]);
     return tx?.transaction.signer_id ?? null;
   }
+
+  /**
+   * Transactions signed by `accountId`, newest first, successful or not. Pages of 200 are read
+   * until a page holds a hash `isKnown` accepts (everything older was read before), the history
+   * ends, or `maxPages` is reached.
+   */
+  async signedBy(
+    accountId: AccountId,
+    isKnown: (hash: string) => boolean = () => false,
+  ): Promise<SignedTx[]> {
+    const out: SignedTx[] = [];
+    let resumeToken: string | undefined;
+    for (let page = 0; page < this.maxPages; page++) {
+      const result = await this.post<{ account_txs: FastNearAccountTx[]; resume_token?: string }>(
+        "/v0/account",
+        {
+          account_id: accountId,
+          is_signer: true,
+          limit: FASTNEAR_PAGE,
+          ...(resumeToken === undefined ? {} : { resume_token: resumeToken }),
+        },
+      );
+      let reachedKnown = false;
+      for (const tx of result.account_txs) {
+        if (isKnown(tx.transaction_hash)) reachedKnown = true;
+        out.push({ hash: tx.transaction_hash, blockTimestampNs: tx.tx_block_timestamp });
+      }
+      resumeToken = result.resume_token;
+      if (reachedKnown || !resumeToken || result.account_txs.length === 0) return out;
+    }
+    this.log(`FastNEAR: stopped after ${this.maxPages} pages of ${accountId} signed transactions`);
+    return out;
+  }
+}
+
+/** A transaction hash and its block time (ns), as the indexer lists it. */
+export interface SignedTx {
+  hash: string;
+  blockTimestampNs: U64;
 }

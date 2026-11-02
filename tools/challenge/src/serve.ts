@@ -1,11 +1,15 @@
 import { createServer, type Server } from "node:http";
+import type { AttemptStore } from "./attempts.js";
 import { publicRound, type RoundStore } from "./store.js";
 
 /**
- * Public round metadata for the challenge page (Story 7.2): `GET /round` → the current open
- * round's published keys and addresses once its funding has confirmed, 404 before that. Only `publicRound` fields are served.
+ * Public data for the challenge page (Story 7.2), with CORS:
+ * - `GET /round`: the current open round's published keys and addresses once its funding has
+ *   confirmed, 404 before that. Only `publicRound` fields are served.
+ * - `GET /attempts` (when an attempt store is given): `{ entries }`, newest first: rejected calls
+ *   (they emit no contract event) and published-key rotations.
  */
-export function createRoundServer(store: RoundStore): Server {
+export function createRoundServer(store: RoundStore, attempts?: AttemptStore): Server {
   return createServer((request, response) => {
     const json = (status: number, body: unknown) =>
       response
@@ -35,6 +39,13 @@ export function createRoundServer(store: RoundStore): Server {
           }
           return json(200, publicRound(round));
         },
+        () => json(503, { error: "unavailable" }),
+      );
+      return;
+    }
+    if (request.method === "GET" && path === "/attempts" && attempts) {
+      attempts.entries().then(
+        (entries) => json(200, { entries }),
         () => json(503, { error: "unavailable" }),
       );
       return;
