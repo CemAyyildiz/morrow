@@ -14,5 +14,12 @@
   "scripts": {
     "typecheck": "tsc --noEmit",
     "test": "vitest run"
+  },
+  "dependencies": {
+    "bitcoinjs-lib": "7.0.5",
+    "libsodium-wrappers-sumo": "0.8.4"
+  },
+  "devDependencies": {
+    "@types/libsodium-wrappers-sumo": "0.8.2"
   }
 }
