@@ -33,6 +33,12 @@ pub fn script_pubkey(address: &str, network: BtcNetwork) -> CoreResult<Vec<u8>> 
     Ok(script)
 }
 
+/// P2WSH output script (`OP_0 <sha256(script)>`) of a witness script.
+pub fn p2wsh_script_pubkey(script: &[u8]) -> Vec<u8> {
+    let hash: [u8; 32] = Sha256::digest(script).into();
+    [&[0x00, 0x20][..], &hash].concat()
+}
+
 /// P2WSH address of a witness script on the given network.
 pub fn p2wsh_address(script: &[u8], network: BtcNetwork) -> String {
     let program = Sha256::digest(script);
