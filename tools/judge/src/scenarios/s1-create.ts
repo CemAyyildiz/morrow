@@ -6,7 +6,9 @@ import { createJudgeVault, judgeSession } from "../session.js";
 export async function runCreate(ctx: ScenarioContext): Promise<void> {
   const session = await judgeSession();
   const { config, client } = session;
-  ctx.log(`Owner account ${session.accountId} created through the testnet faucet`);
+  ctx.log(
+    `Owner account ${session.accountId} created${config.funder ? "" : " through the testnet faucet"}`,
+  );
 
   const { vaultId, tx } = await createJudgeVault(session);
   ctx.log(`Vault ${vaultId} created on ${config.vaultContract}: ${config.explorerTxUrl(tx)}`);
