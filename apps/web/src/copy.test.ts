@@ -54,8 +54,24 @@ describe("shell copy", () => {
     expect(text).not.toMatch(HYPE);
   });
 
-  it.each(strings)("$path has no relative times", ({ text }) => {
-    expect(text).not.toMatch(RELATIVE_TIME);
+  // Story 1.9b fixes the heartbeat line as "Alerts: watcher last seen N min ago": an age,
+  // not a time of day. Only that template is exempt.
+  const RELATIVE_TIME_EXEMPT = /^copy\.system\.alertsSeen\(/;
+
+  it.each(strings.filter(({ path }) => !RELATIVE_TIME_EXEMPT.test(path)))(
+    "$path has no relative times",
+    ({ text }) => {
+      expect(text).not.toMatch(RELATIVE_TIME);
+    },
+  );
+
+  it("exempts only the heartbeat age from the relative-time rule", () => {
+    expect(copy.system.alertsSeen(3)).toBe("Alerts: watcher last seen 3 min ago");
+    const exempt = strings.filter(({ path }) => RELATIVE_TIME_EXEMPT.test(path));
+    expect(exempt.length).toBeGreaterThan(0);
+    for (const { text } of exempt) {
+      expect(text).toMatch(/^Alerts: watcher last seen .+ min ago$/);
+    }
   });
 
   it("the lint patterns catch what they should", () => {

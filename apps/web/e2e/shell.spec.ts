@@ -1,4 +1,5 @@
 import { expect, test, type Locator, type Page, type Request } from "@playwright/test";
+import { BACKEND_URL, RPC_URL, WATCHER_URL } from "./services.ts";
 
 const NAV_ROUTES = ["/vault", "/challenge", "/guardians", "/policy", "/proof", "/x-ray"];
 const ROUTES = [...NAV_ROUTES, "/g/7/clawback", "/nope"];
@@ -7,6 +8,9 @@ const NAV_LABELS = ["Vault", "Challenge", "Guardians", "Policy", "Proof", "X-Ray
 const INK = "rgb(243, 241, 236)";
 const ORANGE = "rgb(255, 122, 26)";
 const OK = "rgb(126, 226, 168)";
+
+/** The only origins besides the page's own that the CSP lets it reach. */
+const CONFIGURED = new Set([RPC_URL, BACKEND_URL, WATCHER_URL].map((url) => new URL(url).origin));
 
 const isPhone = (projectName: string) => projectName === "phone";
 
@@ -47,7 +51,10 @@ test.describe("every route", () => {
       const requests = await open(page, path);
       const origin = new URL(page.url()).origin;
 
-      const foreign = requests.map((r) => r.url()).filter((url) => new URL(url).origin !== origin);
+      // No third-party request: only the page's origin and the three configured services.
+      const foreign = requests
+        .map((r) => r.url())
+        .filter((url) => new URL(url).origin !== origin && !CONFIGURED.has(new URL(url).origin));
       expect(foreign).toEqual([]);
 
       const fonts = requests.filter((r) => r.resourceType() === "font");
@@ -100,7 +107,7 @@ test("the markup carries no inline script or style", async ({ page }) => {
   await expect(page.locator("html")).toHaveAttribute("lang", "en");
 });
 
-test("/challenge matches the mockup's desktop product screen", async ({ page }, info) => {
+test("the desktop shell matches the mockup", async ({ page }, info) => {
   test.skip(isPhone(info.project.name), "desktop layout");
   await open(page, "/challenge");
 
@@ -112,87 +119,67 @@ test("/challenge matches the mockup's desktop product screen", async ({ page }, 
     "aria-current",
     "page",
   );
-  await expect(sidebar).toContainText("signet · NEAR testnet");
-  await expect(sidebar).toContainText("contract locked");
-  await expect(sidebar).toContainText("co-signer v1.signer");
-  await expect(page.getByTestId("system-dot")).toHaveCSS("background-color", OK);
   await expect(page.getByTestId("phone-bar")).toBeHidden();
-
-  expect(await orangeElements(page)).toBe(1);
-  await expect(page.getByRole("button", { name: "Try with these keys" })).toHaveCSS(
-    "background-color",
-    ORANGE,
-  );
-
-  const hero = page.getByTestId("hero");
-  const heroColumns = await hero.evaluate((el) => getComputedStyle(el).gridTemplateColumns);
-  expect(heroColumns.split(" ")).toHaveLength(2);
-
-  const stats = page.getByTestId("stat");
-  await expect(stats).toHaveCount(4);
-  const tops = await stats.evaluateAll((els) => els.map((el) => el.getBoundingClientRect().top));
-  expect(new Set(tops).size).toBe(1);
 
   const fonts = await page.evaluate(() => {
     const family = (el: Element | null) => (el ? getComputedStyle(el).fontFamily : "");
     return {
       heading: family(document.querySelector("h1")),
-      numeral: family(document.querySelector("[data-testid=hero] .text-numeral-hero")),
-      stat: family(document.querySelector("[data-testid=stat] .text-numeral")),
       nav: family(document.querySelector("[data-testid=sidebar] a")),
-      button: family(document.querySelector("button")),
+      system: family(document.querySelector("[data-testid=system-card]")),
       loaded: [
         document.fonts.check('500 26px "Funnel Display"'),
-        document.fonts.check('300 92px "Funnel Display"'),
+        document.fonts.check('400 22px "Funnel Display"'),
         document.fonts.check('400 15px "Funnel Sans"'),
-        document.fonts.check('600 14px "Funnel Sans"'),
         document.fonts.check('400 12px "Geist Mono"'),
       ],
     };
   });
   expect(fonts.heading).toMatch(/^"Funnel Display"/);
-  expect(fonts.numeral).toMatch(/^"Funnel Display"/);
-  expect(fonts.stat).toMatch(/^"Funnel Display"/);
   expect(fonts.nav).toMatch(/^"Funnel Sans"/);
-  expect(fonts.button).toMatch(/^"Funnel Sans"/);
-  expect(fonts.loaded).toEqual([true, true, true, true, true]);
-});
+  expect(fonts.system).toMatch(/^"Geist Mono"/);
+  expect(fonts.loaded).toEqual([true, true, true, true]);
 
-test("/challenge shows the mockup's values", async ({ page }) => {
-  await open(page, "/challenge");
-  const header = page.locator("main header");
-  await expect(header.locator("[data-slot=badge]")).toHaveText(["round 7", "keys published"]);
-
+  await open(page, "/vault");
   const hero = page.getByTestId("hero");
-  await expect(hero.locator(".text-numeral-hero")).toHaveText(/^06:12/);
-  await expect(hero.locator(".text-numeral-hero")).toContainText("tomorrow");
-  await expect(hero.getByRole("progressbar")).toHaveAttribute("aria-valuenow", "21");
-  await expect(hero).toContainText("Requested yesterday, 06:12");
-  await expect(hero).toContainText("18 h 59 m left");
-  await expect(page.getByTestId("attempts-count")).toHaveText("13");
-  await expect(hero).toContainText("attempts · 0 sats out");
-  await expect(hero).toContainText("Round 7 · last 24 h");
-  await expect(hero).toContainText("Last attempt 03:11");
-
+  const heroColumns = await hero.evaluate((el) => getComputedStyle(el).gridTemplateColumns);
+  expect(heroColumns.split(" ")).toHaveLength(2);
   const stats = page.getByTestId("stat");
-  await expect(stats.locator("[data-testid=stat-value]")).toHaveText([
-    "0.01000000",
-    "24 h",
-    "0",
-    "11/16",
-  ]);
-  await expect(stats.nth(0)).toContainText("Held in vault");
-  await expect(stats.nth(0).locator("small")).toHaveText("sBTC");
-  await expect(stats.nth(1)).toContainText("Delay");
-  await expect(stats.nth(1).locator("small")).toHaveText("per withdrawal");
-  await expect(stats.nth(2)).toContainText("Sats taken");
-  await expect(stats.nth(2).locator("[data-testid=stat-value]")).toHaveCSS("color", OK);
-  await expect(stats.nth(3)).toContainText("Co-signer");
+  await expect(stats).toHaveCount(4);
+  const tops = await stats.evaluateAll((els) => els.map((el) => el.getBoundingClientRect().top));
+  expect(new Set(tops).size).toBe(1);
 });
 
-test("/challenge re-flows on a phone", async ({ page }, info) => {
-  test.skip(!isPhone(info.project.name), "phone layout");
+test("the system card shows the live config, lock state and heartbeat", async ({ page }, info) => {
+  test.skip(isPhone(info.project.name), "the system card lives in the sidebar");
   await open(page, "/challenge");
+  const card = page.getByTestId("system-card");
+  await expect(card).toContainText("signet · NEAR testnet");
+  await expect(card).toContainText("contract locked");
+  await expect(card).toContainText("co-signer v1.signer-prod.testnet");
+  await expect(page.getByTestId("system-alerts")).toHaveText("Alerts: watcher last seen 1 min ago");
+  await expect(page.getByTestId("system-alerts")).toHaveAttribute("data-alarm", "false");
+  await expect(page.getByTestId("system-dot")).toHaveCSS("background-color", OK);
+});
+
+test("/challenge shows the honest empty state in production", async ({ page }) => {
+  await open(page, "/challenge");
+  await expect(page.getByRole("heading", { level: 1 })).toHaveText("Challenge vault");
+  const empty = page.getByTestId("challenge-empty");
+  await expect(empty).toBeVisible();
+  await expect(empty.getByRole("heading", { level: 2 })).toHaveText("No round is open yet");
+  // No sample values, no round chips, no actions without a round.
+  await expect(page.getByTestId("hero")).toHaveCount(0);
+  await expect(page.getByTestId("stat")).toHaveCount(0);
+  await expect(page.locator("main header [data-slot=badge]")).toHaveCount(0);
+  await expect(page.getByTestId("header-actions")).toHaveCount(0);
+  await expect(page.locator("main")).not.toContainText(/06:12|18 h 59 m|round 7|0\.01000000/);
+  expect(await orangeElements(page)).toBe(0);
+});
+
+test("the shell re-flows on a phone", async ({ page }, info) => {
+  test.skip(!isPhone(info.project.name), "phone layout");
+  await open(page, "/vault");
 
   await expect(page.getByTestId("sidebar")).toBeHidden();
   await expect(page.getByTestId("phone-bar")).toBeVisible();
@@ -210,10 +197,10 @@ test("/challenge re-flows on a phone", async ({ page }, info) => {
   expect(new Set(boxes.map((b) => Math.round(b.left))).size).toBe(2);
   expect(new Set(boxes.map((b) => Math.round(b.top))).size).toBe(2);
 
+  await open(page, "/challenge");
   const header = await box(page.locator("main header"));
-  const primary = await box(page.getByRole("button", { name: "Try with these keys" }));
-  expect(Math.round(primary.width)).toBe(Math.round(header.width));
-  expect(await orangeElements(page)).toBe(1);
+  const empty = await box(page.getByTestId("challenge-empty"));
+  expect(Math.round(empty.width)).toBe(Math.round(header.width));
 });
 
 test("other nav routes show the shell, a title and skeletons, without a primary action", async ({
@@ -252,8 +239,8 @@ test("unknown routes show a Not found card linking to /challenge", async ({ page
 test("Tab shows the focus ring through the nav and the header", async ({ page }, info) => {
   await open(page, "/challenge");
   const expected = isPhone(info.project.name)
-    ? ["Skip to content", "Open menu", "Download keys", "Try with these keys"]
-    : ["Skip to content", ...NAV_LABELS, "Download keys", "Try with these keys"];
+    ? ["Skip to content", "Open menu"]
+    : ["Skip to content", ...NAV_LABELS];
 
   const seen: string[] = [];
   for (let i = 0; i < expected.length; i++) {
@@ -378,14 +365,18 @@ test("the phone menu opens, traps focus, locks scroll and closes", async ({ page
 
 test("reduced motion stops the shimmer and the number fade-in", async ({ page }) => {
   await page.emulateMedia({ reducedMotion: "reduce" });
-  await open(page, "/challenge");
-  const fades = await page
-    .locator(".animate-fade-in")
-    .evaluateAll((els) => els.map((el) => getComputedStyle(el).animationName));
-  expect(fades.length).toBeGreaterThan(0);
-  expect(new Set(fades)).toEqual(new Set(["none"]));
-
   await open(page, "/vault");
+  // Production has no round, so no number fades in yet: probe the rule with a stand-in.
+  const fade = await page.evaluate(() => {
+    const probe = document.createElement("div");
+    probe.className = "animate-fade-in";
+    document.body.append(probe);
+    const name = getComputedStyle(probe).animationName;
+    probe.remove();
+    return name;
+  });
+  expect(fade).toBe("none");
+
   const shimmers = await page
     .locator("[data-slot=skeleton]")
     .evaluateAll((els) => els.map((el) => getComputedStyle(el).animationName));

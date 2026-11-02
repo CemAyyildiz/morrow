@@ -1,7 +1,8 @@
 import { useAppData } from "@/app/data";
 import { HeroCard } from "@/components/HeroCard";
-import { DotGrid, StatCard, StatSkeletonRow } from "@/components/StatCard";
+import { DotGrid, StatCard } from "@/components/StatCard";
 import { Button } from "@/components/ui/button";
+import { Card, CardDescription, CardTitle } from "@/components/ui/card";
 import { copy } from "@/copy";
 import { PageHeader } from "@/shell/PageHeader";
 
@@ -9,12 +10,19 @@ import { PageHeader } from "@/shell/PageHeader";
 export function ChallengeView() {
   const { challenge } = useAppData();
 
+  // No round data source exists before stories 7.1 and 7.2: say so instead of showing
+  // skeletons that would suggest something is loading.
   if (!challenge) {
     return (
       <>
         <PageHeader title={copy.titles.challenge} />
-        <HeroCard />
-        <StatSkeletonRow />
+        <Card
+          data-testid="challenge-empty"
+          className="flex flex-col items-start gap-3 p-card-pad-mobile desktop:p-card-pad"
+        >
+          <CardTitle>{copy.challenge.noRound}</CardTitle>
+          <CardDescription className="max-w-[460px]">{copy.challenge.noRoundBody}</CardDescription>
+        </Card>
       </>
     );
   }

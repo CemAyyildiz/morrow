@@ -50,10 +50,34 @@ export const copy = {
   system: {
     contract: "contract",
     coSigner: "co-signer",
-    contractState: { locked: "locked", unlocked: "unlocked" },
+    contractState: {
+      locked: "locked",
+      unlocked: "unlocked",
+      checking: "checking",
+      unknown: "unknown",
+    },
+    /**
+     * The heartbeat's age, wording fixed by story 1.9b. A duration since the watcher's last
+     * report, not a time of day, so copy.test.ts exempts it from the relative-time rule.
+     */
+    alertsSeen: (minutes: number) => `Alerts: watcher last seen ${minutes} min ago`,
+    alertsNone: "Alerts: no watcher configured",
+    alertsChecking: "Alerts: checking watcher",
+    alertsUnreachable: "Alerts: watcher unreachable",
+    alertsSilent: "Alerts: watcher has not reported",
+  },
+
+  config: {
+    loading: "Loading the deployment configuration",
+    failedTitle: "Configuration unavailable",
+    failedBody:
+      "This deployment did not serve a valid /config.json, so the app cannot tell which networks or contract it belongs to.",
   },
 
   challenge: {
+    noRound: "No round is open yet",
+    noRoundBody:
+      "When a round opens, its vault, the published owner keys and every attempt to use them appear here.",
     round: (round: number) => `round ${round}`,
     keysPublished: "keys published",
     downloadKeys: "Download keys",

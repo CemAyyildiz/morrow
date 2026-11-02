@@ -6,7 +6,10 @@
     "moduleResolution": "Bundler",
     "types": ["node"],
     "noEmit": true,
-    "declaration": false
+    "declaration": false,
+    // server/ runs on Node 24 type stripping: `.ts` import specifiers, erasable syntax only.
+    "allowImportingTsExtensions": true,
+    "erasableSyntaxOnly": true
   },
-  "include": ["vite.config.ts", "playwright.config.ts", "e2e"]
+  "include": ["vite.config.ts", "playwright.config.ts", "e2e", "server"]
 }

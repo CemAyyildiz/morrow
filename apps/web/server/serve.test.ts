@@ -1,0 +1,202 @@
+import { spawnSync } from "node:child_process";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { request, type IncomingHttpHeaders, type Server } from "node:http";
+import type { AddressInfo } from "node:net";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { fileURLToPath } from "node:url";
+import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { contentSecurityPolicy, loadConfig } from "./config.ts";
+import { createWebServer, parsePort } from "./serve.ts";
+
+const ENV = {
+  MORROW_NEAR_NETWORK: "testnet",
+  MORROW_VAULT_CONTRACT: "vault.morrow.testnet",
+  MORROW_BTC_NETWORK: "signet",
+  MORROW_BTC_BACKEND_URL: "https://mempool.space/signet/api",
+  MORROW_WATCHER_URL: "https://watcher.example.org",
+};
+const config = loadConfig(ENV);
+const INDEX = '<!doctype html><script type="module" src="/assets/index-abc123.js"></script>';
+
+let dir: string;
+let server: Server;
+let port: number;
+
+beforeAll(async () => {
+  // dist/ inside a parent that holds a file the server must never reach.
+  dir = mkdtempSync(join(tmpdir(), "morrow-web-"));
+  writeFileSync(join(dir, "package.json"), '{"secret":true}');
+  const dist = join(dir, "dist");
+  mkdirSync(join(dist, "assets"), { recursive: true });
+  writeFileSync(join(dist, "index.html"), INDEX);
+  writeFileSync(join(dist, "assets", "index-abc123.js"), "console.log(1);");
+  writeFileSync(join(dist, "assets", "font-def456.woff2"), "woff2");
+  writeFileSync(join(dist, ".env"), "SECRET=1");
+  server = createWebServer({ config, distDir: dist });
+  await new Promise<void>((done) => server.listen(0, "127.0.0.1", done));
+  port = (server.address() as AddressInfo).port;
+});
+
+afterAll(async () => {
+  await new Promise((done) => server.close(done));
+  rmSync(dir, { recursive: true, force: true });
+});
+
+interface Reply {
+  status: number;
+  headers: IncomingHttpHeaders;
+  body: string;
+}
+
+/** Sends `path` as-is (no client-side normalization of `..` or `%2e`). */
+function get(path: string, method = "GET"): Promise<Reply> {
+  return new Promise((done, fail) => {
+    const req = request({ host: "127.0.0.1", port, path, method }, (res) => {
+      let body = "";
+      res.setEncoding("utf8");
+      res.on("data", (chunk: string) => (body += chunk));
+      res.on("end", () => done({ status: res.statusCode ?? 0, headers: res.headers, body }));
+    });
+    req.on("error", fail);
+    req.end();
+  });
+}
+
+function expectSecurityHeaders(headers: IncomingHttpHeaders) {
+  expect(headers["content-security-policy"]).toBe(contentSecurityPolicy(config));
+  expect(headers["strict-transport-security"]).toBe("max-age=31536000; includeSubDomains");
+  expect(headers["x-content-type-options"]).toBe("nosniff");
+  expect(headers["referrer-policy"]).toBe("no-referrer");
+}
+
+describe("web server", () => {
+  it("serves /config.json with the whitelist only, no-store", async () => {
+    const reply = await get("/config.json");
+    expect(reply.status).toBe(200);
+    expect(reply.headers["content-type"]).toMatch(/^application\/json/);
+    expect(reply.headers["cache-control"]).toBe("no-store");
+    expectSecurityHeaders(reply.headers);
+    expect(JSON.parse(reply.body)).toEqual(config);
+    expect(Object.keys(JSON.parse(reply.body)).sort()).toEqual([
+      "btc_backend_url",
+      "btc_network",
+      "near_network",
+      "near_rpc_url",
+      "vault_contract",
+      "watcher_url",
+    ]);
+  });
+
+  it.each(["/", "/challenge", "/g/42", "/g/42/clawback", "/index.html", "/challenge?x=1"])(
+    "%s serves index.html, no-store",
+    async (path) => {
+      const reply = await get(path);
+      expect(reply.status).toBe(200);
+      expect(reply.body).toBe(INDEX);
+      expect(reply.headers["content-type"]).toMatch(/^text\/html/);
+      expect(reply.headers["cache-control"]).toBe("no-store");
+      expectSecurityHeaders(reply.headers);
+    },
+  );
+
+  it("serves hashed assets as immutable with their type", async () => {
+    const js = await get("/assets/index-abc123.js");
+    expect(js.status).toBe(200);
+    expect(js.body).toBe("console.log(1);");
+    expect(js.headers["content-type"]).toMatch(/^text\/javascript/);
+    expect(js.headers["cache-control"]).toBe("public, max-age=31536000, immutable");
+    expectSecurityHeaders(js.headers);
+
+    const font = await get("/assets/font-def456.woff2");
+    expect(font.headers["content-type"]).toBe("font/woff2");
+  });
+
+  it.each([
+    "/assets/nope.js",
+    "/nope.css",
+    "/../package.json",
+    "/%2e%2e/package.json",
+    "/%2E%2E/%2E%2E/etc/passwd",
+    "/assets/..%2f..%2fpackage.json",
+    "/..%5cpackage.json",
+    "/.env",
+    "/%2eenv",
+    "/assets/%00.js",
+    "/%E0%A4%A",
+  ])("%s is a 404 with the headers", async (path) => {
+    const reply = await get(path);
+    expect(reply.status).toBe(404);
+    expect(reply.body).not.toContain("secret");
+    expect(reply.body).not.toContain("SECRET");
+    expect(reply.headers["cache-control"]).toBe("no-store");
+    expectSecurityHeaders(reply.headers);
+  });
+
+  it("answers HEAD without a body and refuses other methods", async () => {
+    const head = await get("/challenge", "HEAD");
+    expect(head.status).toBe(200);
+    expect(head.body).toBe("");
+    expectSecurityHeaders(head.headers);
+
+    const post = await get("/config.json", "POST");
+    expect(post.status).toBe(405);
+    expect(post.headers.allow).toBe("GET, HEAD");
+    expectSecurityHeaders(post.headers);
+  });
+});
+
+describe("startup", () => {
+  const serve = fileURLToPath(new URL("./serve.ts", import.meta.url));
+  /** Runs `node server/serve.ts` with only `env` and returns how it exited. */
+  const start = (env: Record<string, string>) =>
+    spawnSync(process.execPath, [serve], { env, encoding: "utf8", timeout: 10_000 });
+
+  it.each([
+    ["MORROW_VAULT_CONTRACT", { ...ENV, MORROW_VAULT_CONTRACT: "" }, ""],
+    ["MORROW_NEAR_NETWORK", { ...ENV, MORROW_NEAR_NETWORK: "betanet" }, "betanet"],
+    [
+      "MORROW_BTC_BACKEND_URL",
+      { ...ENV, MORROW_BTC_BACKEND_URL: "https://user:hunter2@mempool.space/api" },
+      "hunter2",
+    ],
+    [
+      "MORROW_WATCHER_URL",
+      { ...ENV, MORROW_WATCHER_URL: "http://watcher.example.org" },
+      "watcher.example.org",
+    ],
+    ["PORT", { ...ENV, PORT: "0" }, ""],
+    ["PORT", { ...ENV, PORT: "70000" }, "70000"],
+    ["PORT", { ...ENV, PORT: "80x" }, "80x"],
+  ])("exits 1 on a bad %s, naming it without its value", (variable, env, value) => {
+    const result = start(env);
+    expect(result.status).toBe(1);
+    expect(result.stderr).toContain(variable);
+    if (value) {
+      expect(result.stderr).not.toContain(value);
+      expect(result.stdout).not.toContain(value);
+    }
+    expect(JSON.parse(result.stderr.trim())).toMatchObject({
+      level: "error",
+      msg: "invalid config",
+      variable,
+    });
+  });
+});
+
+describe("parsePort", () => {
+  it("treats an unset or blank PORT as 8080", () => {
+    expect(parsePort(undefined)).toBe(8080);
+    expect(parsePort("")).toBe(8080);
+    expect(parsePort("   ")).toBe(8080);
+  });
+
+  it("takes 1 to 65535 and rejects anything else", () => {
+    expect(parsePort("1")).toBe(1);
+    expect(parsePort(" 4173 ")).toBe(4173);
+    expect(parsePort("65535")).toBe(65535);
+    for (const bad of ["0", "65536", "-1", "80.5", "1e3", "0x50", "80x", "eighty"]) {
+      expect(parsePort(bad)).toBeNull();
+    }
+  });
+});

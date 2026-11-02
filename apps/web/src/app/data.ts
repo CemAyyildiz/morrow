@@ -8,12 +8,39 @@ export interface NetworkPair {
   near: NearNetwork;
 }
 
+/**
+ * `locked` only when the contract account has no full-access key; `checking` until the first
+ * answer; `unknown` when the check failed or there is no RPC to ask.
+ */
+export type ContractState = "locked" | "unlocked" | "checking" | "unknown";
+
+/** What the system card knows about the watcher's heartbeat. */
+export type HeartbeatState =
+  /** `MORROW_WATCHER_URL` is unset. */
+  | { kind: "none" }
+  /** The first poll has not answered yet. */
+  | { kind: "checking" }
+  /** The last poll failed or returned something that is not a heartbeat. */
+  | { kind: "unreachable" }
+  /** The watcher answers but has not recorded progress yet (`updated_at: null`). */
+  | { kind: "silent" }
+  /** Whole minutes between the heartbeat's `updated_at` and now; stale after 5. */
+  | { kind: "seen"; minutes: number; stale: boolean };
+
 /** Deployment facts the shell shows: the banner and the sidebar system card. */
 export interface AppConfig {
   network: NetworkPair;
-  contract: "locked" | "unlocked";
+  /** The Morrow vault contract account. */
+  contractId: string;
+  /** NEAR JSON-RPC endpoint; null for the mock contract without one. */
+  nearRpcUrl: string | null;
+  btcBackendUrl: string;
+  /** Watcher base URL; its heartbeat is `<watcherUrl>/heartbeat`. */
+  watcherUrl: string | null;
+  contract: ContractState;
   /** The NEAR account of the co-signer, e.g. `v1.signer`. */
   coSigner: string;
+  heartbeat: HeartbeatState;
 }
 
 /** Values the Challenge screen shows. Times are absolute display strings. */

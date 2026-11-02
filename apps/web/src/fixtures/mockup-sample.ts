@@ -1,13 +1,18 @@
-// Sample data from the approved mockup. Remove before any public deploy.
+// Sample data from the approved mockup, for the dev server only.
 //
-// Only src/app/SampleDataProvider.tsx imports this module. Deleting it touches only
-// src/fixtures/ and that provider.
+// Only src/app/SampleDataProvider.tsx imports this module, and main.tsx loads that provider
+// only under `import.meta.env.DEV`. `vite build` fails if this module enters the bundle.
 import type { AppConfig, ChallengeData } from "@/app/data";
 
 export const sampleConfig: AppConfig = {
   network: { btc: "signet", near: "testnet" },
+  contractId: "challenge.morrow.testnet",
+  nearRpcUrl: null,
+  btcBackendUrl: "http://localhost:3002",
+  watcherUrl: null,
   contract: "locked",
-  coSigner: "v1.signer",
+  coSigner: "v1.signer-prod.testnet",
+  heartbeat: { kind: "seen", minutes: 1, stale: false },
 };
 
 export const sampleChallenge: ChallengeData = {
