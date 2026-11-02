@@ -6,6 +6,10 @@ export interface WatcherConfig {
   port: number;
   pollIntervalMs: number;
   stateFile: string;
+  linksFile: string;
+  /** Fixed app domain for alert buttons; alerts carry no links without it. */
+  appUrl: string | null;
+  telegramToken: string | null;
 }
 
 const NEAR_RPC: Record<"testnet" | "mainnet", string> = {
@@ -24,6 +28,10 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): WatcherConfig 
   if (nearNetwork !== "mock" && nearNetwork !== "testnet" && nearNetwork !== "mainnet") {
     throw new Error("MORROW_NEAR_NETWORK must be mock, testnet or mainnet");
   }
+  const appUrl = env.MORROW_APP_URL ?? null;
+  if (appUrl !== null && !/^https:\/\/[a-z0-9.-]+(:\d+)?\/?$/i.test(appUrl)) {
+    throw new Error("MORROW_APP_URL must be an https origin, e.g. https://app.example");
+  }
   return {
     nearNetwork,
     nearRpcUrl: nearNetwork === "mock" ? null : (env.MORROW_NEAR_RPC_URL ?? NEAR_RPC[nearNetwork]),
@@ -32,5 +40,8 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): WatcherConfig 
     port: Number(env.MORROW_WATCHER_PORT ?? 8080),
     pollIntervalMs: Number(env.MORROW_POLL_INTERVAL_MS ?? 5_000),
     stateFile: env.MORROW_WATCHER_STATE_FILE ?? ".watcher-state/state.json",
+    linksFile: env.MORROW_WATCHER_LINKS_FILE ?? ".watcher-state/links.json",
+    appUrl,
+    telegramToken: env.MORROW_TELEGRAM_BOT_TOKEN ?? null,
   };
 }

@@ -1,42 +1,71 @@
-import { MockContractClient } from "@morrow/core-ts";
+import { MockContractClient, NearContractClient, type ContractClient } from "@morrow/core-ts";
 import { NearFinalBlockClock, type ChainClock } from "./clock.js";
 import { loadConfig } from "./config.js";
-import { createHeartbeatServer } from "./heartbeat.js";
+import { createApiServer } from "./heartbeat.js";
 import { createLogger } from "./log.js";
-import { EventLoop } from "./loop.js";
+import { EventLoop, type EventHandler } from "./loop.js";
 import { FileStore } from "./store.js";
+import { TelegramBot } from "./telegram/bot.js";
+import { AlertsHandler } from "./telegram/handler.js";
+import { FileLinkStore } from "./telegram/links.js";
 
 const log = createLogger("watcher");
 const config = loadConfig();
 
-if (config.nearNetwork !== "mock") {
-  // The NEAR contract client arrives with the Vault Contract (Epic 2).
-  log("error", "only MORROW_NEAR_NETWORK=mock is supported until the contract client lands");
-  process.exit(1);
+let client: ContractClient;
+let clock: ChainClock;
+if (config.nearNetwork === "mock" || !config.nearRpcUrl) {
+  const mock = new MockContractClient();
+  client = mock;
+  clock = { now: async () => mock.now() };
+} else {
+  client = new NearContractClient({ contractId: config.vaultContract, rpcUrl: config.nearRpcUrl });
+  clock = new NearFinalBlockClock(config.nearRpcUrl);
 }
 
-const client = new MockContractClient();
-const clock: ChainClock = config.nearRpcUrl
-  ? new NearFinalBlockClock(config.nearRpcUrl)
-  : { now: async () => client.now() };
 const store = new FileStore(config.stateFile);
+const links = new FileLinkStore(config.linksFile);
+const handlers: EventHandler[] = [];
+let bot: TelegramBot | null = null;
+let botUsername = "";
+
+if (config.telegramToken) {
+  bot = new TelegramBot(config.telegramToken, links, log);
+  botUsername = await bot.username();
+  handlers.push(
+    new AlertsHandler({
+      links,
+      sender: bot,
+      appUrl: config.appUrl,
+      getOp: (id) => client.getOp(id),
+    }),
+  );
+  bot.start();
+} else {
+  log("warn", "MORROW_TELEGRAM_BOT_TOKEN not set: alerts are disabled");
+}
+
 const loop = new EventLoop({
   client,
   store,
-  handlers: [],
+  handlers,
   clock,
   log,
   intervalMs: config.pollIntervalMs,
 });
-
-createHeartbeatServer(store).listen(config.port, () => {
-  log("info", "heartbeat listening", { port: config.port, contract: config.vaultContract });
+createApiServer(store, bot ? { links, botUsername } : undefined).listen(config.port, () => {
+  log("info", "watcher listening", {
+    port: config.port,
+    contract: config.vaultContract,
+    network: config.nearNetwork,
+  });
 });
 loop.start();
 
 for (const signal of ["SIGINT", "SIGTERM"] as const) {
   process.on(signal, () => {
     loop.stop();
+    void bot?.stop();
     log("info", "stopped", { signal });
     process.exit(0);
   });
