@@ -1216,7 +1216,9 @@ name = "morrow-vault"
 version = "0.1.0"
 dependencies = [
  "bech32",
+ "bs58 0.5.1",
  "near-sdk",
+ "sha2 0.10.9",
 ]
 
 [[package]]
