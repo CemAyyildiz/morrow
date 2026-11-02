@@ -40,6 +40,9 @@ jobs:
       - run: pnpm lint
       - run: pnpm typecheck
       - run: pnpm test
+      - run: pnpm --filter @morrow/web build
+      - run: pnpm --filter @morrow/web exec playwright install --with-deps chromium
+      - run: pnpm --filter @morrow/web e2e
 
   regtest:
     name: Regtest integration and Judge Mode

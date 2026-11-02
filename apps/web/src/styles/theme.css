@@ -1,0 +1,226 @@
+/* Morrow brand layer. Every value comes from DESIGN.md; the mockup's off-token values map onto these. */
+@import "tailwindcss";
+
+/* Self-hosted fonts (Fontsource, latin subset). No font is ever fetched from a third party. */
+@import "@fontsource/funnel-display/latin-300.css";
+@import "@fontsource/funnel-display/latin-400.css";
+@import "@fontsource/funnel-display/latin-500.css";
+@import "@fontsource/funnel-sans/latin-400.css";
+@import "@fontsource/funnel-sans/latin-500.css";
+@import "@fontsource/funnel-sans/latin-600.css";
+@import "@fontsource/geist-mono/latin-400.css";
+@import "@fontsource/geist-mono/latin-500.css";
+/* Registered for the landing (Epic 9). Never used inside the product. */
+@import "@fontsource/anton/latin-400.css";
+@import "@fontsource/doto/latin-900.css";
+
+@custom-variant dark (&:where(.dark, .dark *));
+
+@theme {
+  /* The shell re-flows below 900 px: `desktop:` is the 900 px and wider layout. */
+  --breakpoint-desktop: 900px;
+
+  /* Only DESIGN.md colors exist: the default palette is removed. */
+  --color-*: initial;
+
+  /* Product surfaces (dark) */
+  --color-page: #07080b;
+  --color-card: #0c0e12;
+  --color-card-raised: #111419;
+  --color-line: #1c2028;
+  /* The lit top edge of a card: DESIGN.md components.card `linear-gradient(180deg,#0F1216,…)`. */
+  --color-card-highlight: #0f1216;
+
+  /* Text on dark. `faint` is 2.3:1 and never carries text. */
+  --color-ink: #f3f1ec;
+  --color-muted: #8a909b;
+  --color-faint: #4a505b;
+
+  /* Signals. Orange is the one primary action only, never status or charts. */
+  --color-orange: #ff7a1a;
+  --color-orange-foreground: #160a01;
+  --color-ok: #7ee2a8;
+  --color-alarm: #ff6b5b;
+  --color-alarm-foreground: #1a0402;
+
+  /* Editorial surfaces (light): defined for Epic 9, unused in the product. */
+  --color-cream: #ece9e2;
+  --color-cream-deep: #e2ded5;
+  --color-ink-on-cream: #16151a;
+  --color-muted-on-cream: #6b6760;
+  --color-sky-ink: #1b1a20;
+
+  --radius-sm: 10px;
+  --radius-md: 14px;
+  --radius-lg: 18px;
+  --radius-xl: 22px;
+  --radius-device: 44px;
+  --radius-full: 9999px;
+
+  --spacing-gutter: 32px;
+  --spacing-gutter-mobile: 18px;
+  --spacing-card-pad: 28px;
+  --spacing-card-pad-mobile: 16px;
+  --spacing-stack: 14px;
+
+  --font-display: "Funnel Display", ui-sans-serif, system-ui, sans-serif;
+  --font-sans: "Funnel Sans", ui-sans-serif, system-ui, sans-serif;
+  --font-mono: "Geist Mono", ui-monospace, monospace;
+  --font-marquee: "Anton", sans-serif;
+  --font-wordmark: "Doto", monospace;
+
+  /* Funnel Display styles: pair with `font-display`. Numerals are tabular everywhere (see base). */
+  --text-display: 74px;
+  --text-display--line-height: 1.02;
+  --text-display--letter-spacing: -0.035em;
+  --text-display--font-weight: 400;
+  --text-section: 34px;
+  --text-section--line-height: 1.18;
+  --text-section--letter-spacing: -0.02em;
+  --text-section--font-weight: 400;
+  --text-numeral-hero: 92px;
+  --text-numeral-hero--line-height: 1;
+  --text-numeral-hero--letter-spacing: -0.045em;
+  --text-numeral-hero--font-weight: 300;
+  --text-numeral: 30px;
+  --text-numeral--line-height: 1;
+  --text-numeral--letter-spacing: -0.03em;
+  --text-numeral--font-weight: 300;
+
+  /* Funnel Sans and Geist Mono styles */
+  --text-body: 16px;
+  --text-body--line-height: 1.55;
+  --text-label: 13px;
+  --text-label--font-weight: 500;
+  --text-mono: 12px;
+  --text-mono--letter-spacing: 0.02em;
+
+  /* Landing only (Epic 9) */
+  --text-marquee: 230px;
+  --text-marquee--line-height: 1;
+  --text-wordmark: 22px;
+  --text-wordmark--font-weight: 900;
+
+  --animate-shimmer: shimmer 1.6s ease-in-out infinite;
+  --animate-fade-in: fade-in 0.45s ease-out both;
+
+  @keyframes shimmer {
+    from {
+      background-position: 100% 0;
+    }
+    to {
+      background-position: -100% 0;
+    }
+  }
+
+  @keyframes fade-in {
+    from {
+      opacity: 0;
+    }
+    to {
+      opacity: 1;
+    }
+  }
+}
+
+/* shadcn/ui variables, mapped onto the brand tokens. The product is dark only. */
+:root {
+  --background: var(--color-page);
+  --foreground: var(--color-ink);
+  --card: var(--color-card);
+  --card-foreground: var(--color-ink);
+  --popover: var(--color-card-raised);
+  --popover-foreground: var(--color-ink);
+  --primary: var(--color-orange);
+  --primary-foreground: var(--color-orange-foreground);
+  --secondary: var(--color-card-raised);
+  --secondary-foreground: var(--color-ink);
+  --muted: var(--color-card-raised);
+  --muted-foreground: var(--color-muted);
+  --accent: var(--color-card-raised);
+  --accent-foreground: var(--color-ink);
+  --destructive: var(--color-alarm);
+  --destructive-foreground: var(--color-alarm-foreground);
+  --border: var(--color-line);
+  --input: var(--color-line);
+  --ring: var(--color-ink);
+  --radius: var(--radius-lg);
+}
+
+/* `card` and `muted` keep their DESIGN.md meaning (`muted` is a text color), so shadcn's
+   `--card` and `--muted` are not re-mapped onto those utility names. */
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-destructive-foreground: var(--destructive-foreground);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+}
+
+@layer base {
+  :root {
+    color-scheme: dark;
+  }
+
+  html {
+    background-color: var(--color-page);
+    color: var(--color-ink);
+    font-family: var(--font-sans);
+    font-variant-numeric: tabular-nums;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+
+  body {
+    font-size: var(--text-body);
+    line-height: var(--text-body--line-height);
+  }
+
+  :focus-visible {
+    outline: 2px solid var(--color-ink);
+    outline-offset: 2px;
+  }
+
+  /* The phone menu locks page scroll by toggling this class, never with injected styles. */
+  html.scroll-locked,
+  html.scroll-locked body {
+    overflow: hidden;
+  }
+}
+
+/* Card surface from DESIGN.md: a lit top edge fading into `card`. */
+@utility bg-card-surface {
+  background-color: var(--color-card);
+  background-image: linear-gradient(180deg, var(--color-card-highlight), var(--color-card) 40%);
+}
+
+/* A skeleton block: a slow sweep between the two raised layers. */
+@utility skeleton-sweep {
+  background-color: var(--color-card-raised);
+  background-image: linear-gradient(
+    90deg,
+    var(--color-card-raised) 0%,
+    var(--color-line) 50%,
+    var(--color-card-raised) 100%
+  );
+  background-size: 200% 100%;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .animate-shimmer,
+  .animate-fade-in {
+    animation: none;
+  }
+}
