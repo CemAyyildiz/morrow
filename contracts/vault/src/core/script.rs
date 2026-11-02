@@ -113,7 +113,7 @@ pub fn parse_key(value: &str) -> CoreResult<[u8; 33]> {
         .map_err(|_| Rejection::with(ErrorCode::BadKey, value))
 }
 
-#[near(serializers = [json])]
+#[near(serializers = [borsh, json])]
 #[serde(tag = "kind", rename_all = "snake_case")]
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum WitnessSlot {
@@ -123,7 +123,7 @@ pub enum WitnessSlot {
     Script,
 }
 
-#[near(serializers = [json])]
+#[near(serializers = [borsh, json])]
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct WitnessTemplate {
     pub path: String,

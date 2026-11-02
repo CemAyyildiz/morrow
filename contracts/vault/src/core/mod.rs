@@ -4,3 +4,4 @@ pub mod address;
 pub mod errors;
 pub mod policy;
 pub mod script;
+pub mod spend;

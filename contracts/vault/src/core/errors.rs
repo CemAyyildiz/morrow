@@ -14,6 +14,16 @@ pub enum ErrorCode {
     BadKey,
     DepositTooLow,
     CreatorNotAllowed,
+    OpNotFound,
+    BadOpState,
+    BadEnvelope,
+    NotExecutable,
+    OutpointReserved,
+    TooManyInputs,
+    NoInputs,
+    InsufficientFunds,
+    ClawedBack,
+    StorageBudget,
 }
 
 impl ErrorCode {
@@ -31,6 +41,16 @@ impl ErrorCode {
             Self::BadKey => "ERR_BAD_KEY",
             Self::DepositTooLow => "ERR_DEPOSIT_TOO_LOW",
             Self::CreatorNotAllowed => "ERR_CREATOR_NOT_ALLOWED",
+            Self::OpNotFound => "ERR_OP_NOT_FOUND",
+            Self::BadOpState => "ERR_BAD_OP_STATE",
+            Self::BadEnvelope => "ERR_BAD_ENVELOPE",
+            Self::NotExecutable => "ERR_NOT_EXECUTABLE",
+            Self::OutpointReserved => "ERR_OUTPOINT_RESERVED",
+            Self::TooManyInputs => "ERR_TOO_MANY_INPUTS",
+            Self::NoInputs => "ERR_NO_INPUTS",
+            Self::InsufficientFunds => "ERR_INSUFFICIENT_FUNDS",
+            Self::ClawedBack => "ERR_CLAWED_BACK",
+            Self::StorageBudget => "ERR_STORAGE_BUDGET",
         }
     }
 }
