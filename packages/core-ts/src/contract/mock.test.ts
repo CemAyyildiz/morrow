@@ -289,6 +289,32 @@ describe("MockContractClient: lifecycles", () => {
     expect((await refresh(3)).state).toBe("frozen");
   });
 
+  it("an Allowance Refresh pays the Allowance Address, with its own rate limit", async () => {
+    const { mock, vaultId } = await setup();
+    const refresh = (n: number, source?: "vault" | "allowance") =>
+      mock.refresh({
+        vault_id: vaultId,
+        fee_rate_sat_vb: 1,
+        utxos: [utxo(n)],
+        envelope: ENVELOPE,
+        ...(source ? { source } : {}),
+      });
+    const vault = await mock.getVault(vaultId);
+    const allowance = await refresh(1, "allowance");
+    expect(allowance.source).toBe("allowance");
+    expect(allowance.destination).toBe(vault.addresses?.allowance);
+    const fromVault = await refresh(2);
+    expect(fromVault.source).toBe("vault");
+    expect(fromVault.destination).toBe(vault.addresses?.vault);
+    await expectCode(refresh(3, "allowance"), "ERR_REFRESH_TOO_SOON");
+    await expectCode(refresh(3, "vault"), "ERR_REFRESH_TOO_SOON");
+    await mock.cancel(allowance.op_id, ENVELOPE);
+    expect((await mock.getOp(allowance.op_id)).state).toBe("cancelled");
+    await expectCode(refresh(3, "allowance"), "ERR_REFRESH_TOO_SOON");
+    mock.advance(BigInt(vault.policy.delay_ns));
+    expect((await refresh(1, "allowance")).state).toBe("frozen");
+  });
+
   it("the Owner cancels a Frozen Refresh until every input is signed", async () => {
     const { mock, vaultId } = await setup();
     const args = { vault_id: vaultId, fee_rate_sat_vb: 1, envelope: ENVELOPE };

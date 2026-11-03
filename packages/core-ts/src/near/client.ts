@@ -133,7 +133,8 @@ export class NearContractClient implements ContractClient {
   }
 
   refresh(args: RefreshArgs): Promise<SpendOp> {
-    return this.call("refresh", args);
+    const { source, ...rest } = args;
+    return this.call("refresh", source === undefined ? rest : { ...rest, source });
   }
 
   proposePolicyChange(args: ProposePolicyChangeArgs): Promise<U64> {

@@ -166,6 +166,8 @@ export interface RefreshArgs {
   fee_rate_sat_vb: number;
   utxos: Outpoint[];
   envelope: Hex;
+  /** Which address the coins sit on and go back to. Defaults to "vault". */
+  source?: SpendSource;
 }
 
 /** At most 5 coins per call; larger sweeps call again (a ClawedBack Vault still accepts begin_clawback). */

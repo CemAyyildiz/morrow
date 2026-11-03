@@ -871,7 +871,7 @@ mod refresh {
 
     fn refresh(contract: &mut VaultContract, id: U64, utxos: Vec<Outpoint>, rate: u32) -> SpendOp {
         as_caller("owner.testnet");
-        contract.refresh(id, utxos, rate, envelope())
+        contract.refresh(id, utxos, rate, envelope(), None)
     }
 
     /// The outputs of an unsigned transaction in hex: (value, scriptPubKey).
@@ -962,21 +962,7 @@ mod refresh {
                 near_sdk::PromiseOrValue::Promise(_)
             ));
         }
-        let paths: Vec<String> = get_created_receipts()
-            .into_iter()
-            .flat_map(|r| r.actions)
-            .filter_map(|action| match action {
-                MockAction::FunctionCallWeight {
-                    method_name, args, ..
-                } if method_name == b"sign" => {
-                    let args: near_sdk::serde_json::Value =
-                        near_sdk::serde_json::from_slice(&args).unwrap();
-                    Some(args["request"]["path"].as_str().unwrap().to_string())
-                }
-                _ => None,
-            })
-            .collect();
-        assert_eq!(paths, vec![format!("morrow/v1/{}/vault", id.0); 2]);
+        assert_eq!(sign_paths(), vec![format!("morrow/v1/{}/vault", id.0); 2]);
 
         // While frozen, its own coins are reserved against another refresh or a withdrawal.
         for coins in [
@@ -1073,7 +1059,7 @@ mod refresh {
             expect_panic("ERR_UNAUTHORIZED", move || {
                 let (mut contract, id) = active_vault();
                 as_caller(caller);
-                contract.refresh(id, vec![utxo(1, 150_000)], 2, envelope());
+                contract.refresh(id, vec![utxo(1, 150_000)], 2, envelope(), None);
             });
         }
     }
@@ -1108,7 +1094,7 @@ mod refresh {
         expect_panic("ERR_BAD_ENVELOPE", || {
             let (mut contract, id) = active_vault();
             as_caller("owner.testnet");
-            contract.refresh(id, vec![utxo(1, 150_000)], 2, "a".repeat(159));
+            contract.refresh(id, vec![utxo(1, 150_000)], 2, "a".repeat(159), None);
         });
         expect_panic("ERR_NO_INPUTS", || {
             let (mut contract, id) = active_vault();
@@ -1147,7 +1133,7 @@ mod refresh {
 
     fn refresh_at(contract: &mut VaultContract, id: U64, utxos: Vec<Outpoint>, at: u64) -> SpendOp {
         at_time("owner.testnet", at);
-        contract.refresh(id, utxos, 2, envelope())
+        contract.refresh(id, utxos, 2, envelope(), None)
     }
 
     /// The newest refresh's fate does not matter: the next one waits one Delay from its creation.
@@ -1293,6 +1279,174 @@ mod refresh {
                 .unwrap()
                 .vault = other;
             refresh(&mut contract, id, vec![utxo(1, 150_000)], 2);
+        });
+    }
+
+    /// An active Vault whose Vault and Allowance Co-signer keys differ, so the two addresses do.
+    fn two_address_vault() -> (VaultContract, U64) {
+        let mut contract = testnet_contract(vec![]);
+        context("owner.testnet", MIN_VAULT_STORAGE);
+        let id = create(&mut contract, standard_policy());
+        let key = |byte: u8| {
+            let mut point = [byte; 64];
+            point[63] = 1;
+            format!("secp256k1:{}", bs58::encode(point).into_string())
+        };
+        contract.on_keys_derived(id, Ok(key(0x11)), Ok(key(0x55)));
+        let addresses = contract.get_vault(id).addresses.unwrap();
+        assert_ne!(addresses.vault, addresses.allowance);
+        (contract, id)
+    }
+
+    fn refresh_from(
+        contract: &mut VaultContract,
+        id: U64,
+        utxos: Vec<Outpoint>,
+        source: SpendSource,
+    ) -> SpendOp {
+        as_caller("owner.testnet");
+        contract.refresh(id, utxos, 2, envelope(), Some(source))
+    }
+
+    fn sign_paths() -> Vec<String> {
+        get_created_receipts()
+            .into_iter()
+            .flat_map(|r| r.actions)
+            .filter_map(|action| match action {
+                MockAction::FunctionCallWeight {
+                    method_name, args, ..
+                } if method_name == b"sign" => {
+                    let args: near_sdk::serde_json::Value =
+                        near_sdk::serde_json::from_slice(&args).unwrap();
+                    Some(args["request"]["path"].as_str().unwrap().to_string())
+                }
+                _ => None,
+            })
+            .collect()
+    }
+
+    #[test]
+    fn an_allowance_refresh_pays_only_the_allowance_address() {
+        let (mut contract, id) = two_address_vault();
+        let coins = vec![utxo(1, 150_000), utxo(2, 60_000)];
+        let op = refresh_from(&mut contract, id, coins, SpendSource::Allowance);
+        assert_eq!(op.kind, SpendOpKind::Refresh);
+        assert_eq!(op.source, SpendSource::Allowance);
+        assert_eq!(op.state, SpendOpState::Frozen);
+        let addresses = contract.get_vault(id).addresses.unwrap();
+        assert_eq!(op.destination, addresses.allowance);
+        assert_eq!(
+            op.witness_template.as_ref().map(|t| t.path.as_str()),
+            Some("withdrawal")
+        );
+        let kit = contract.get_vault_kit(id);
+        let allowance = p2wsh_script_pubkey(&from_hex(&kit.allowance_script_hex).unwrap());
+        assert_ne!(allowance, vault_script_pubkey(&contract, id));
+        assert_eq!(
+            outputs(op.unsigned_tx_hex.as_deref().unwrap()),
+            vec![(op.amount_sats.0, allowance)]
+        );
+        // The same coins and rate from the Vault Address sign with the other script.
+        let (mut other, other_id) = two_address_vault();
+        let from_vault = refresh_from(
+            &mut other,
+            other_id,
+            vec![utxo(1, 150_000), utxo(2, 60_000)],
+            SpendSource::Vault,
+        );
+        assert_ne!(from_vault.sighashes, op.sighashes);
+
+        as_caller("owner.testnet");
+        for index in 0..2 {
+            let _ = contract.sign_input(op.op_id, index);
+        }
+        assert_eq!(
+            sign_paths(),
+            vec![format!("morrow/v1/{}/allowance", id.0); 2]
+        );
+    }
+
+    #[test]
+    fn the_rate_limit_counts_per_source() {
+        let (mut contract, id) = two_address_vault();
+        refresh_from(
+            &mut contract,
+            id,
+            vec![utxo(1, 150_000)],
+            SpendSource::Vault,
+        );
+        let allowance = refresh_from(
+            &mut contract,
+            id,
+            vec![utxo(2, 150_000)],
+            SpendSource::Allowance,
+        );
+        assert_eq!(allowance.state, SpendOpState::Frozen);
+        for source in [SpendSource::Allowance, SpendSource::Vault] {
+            let message = panic_message(std::panic::AssertUnwindSafe(|| {
+                refresh_from(&mut contract, id, vec![utxo(3, 150_000)], source);
+            }));
+            assert!(message.contains("ERR_REFRESH_TOO_SOON"), "{message}");
+        }
+        // An allowance refresh first does not block the Vault's either.
+        let (mut contract, id) = two_address_vault();
+        refresh_from(
+            &mut contract,
+            id,
+            vec![utxo(1, 150_000)],
+            SpendSource::Allowance,
+        );
+        refresh_from(
+            &mut contract,
+            id,
+            vec![utxo(2, 150_000)],
+            SpendSource::Vault,
+        );
+    }
+
+    #[test]
+    fn the_owner_cancels_an_allowance_refresh() {
+        let (mut contract, id) = two_address_vault();
+        let coins = vec![utxo(1, 150_000), utxo(2, 60_000)];
+        let op = refresh_from(&mut contract, id, coins.clone(), SpendSource::Allowance);
+        contract.on_signed(op.op_id, 0, Ok(signing_mpc(0x11)));
+        as_caller("owner.testnet");
+        contract.cancel(op.op_id, Some(envelope()));
+        assert_eq!(contract.get_op(op.op_id).state, SpendOpState::Cancelled);
+        let event = contract.events_since(U64(0), 100).pop().unwrap();
+        assert_eq!(event.kind, "refresh_cancelled");
+        // Its coins are free again; the allowance clock still runs.
+        let next = request(&mut contract, id, coins, 100_000);
+        assert_eq!(contract.get_op(next).state, SpendOpState::Pending);
+        expect_panic("ERR_REFRESH_TOO_SOON", move || {
+            refresh_from(
+                &mut contract,
+                id,
+                vec![utxo(3, 150_000)],
+                SpendSource::Allowance,
+            );
+        });
+    }
+
+    #[test]
+    fn refuses_an_allowance_address_that_is_not_its_script() {
+        expect_panic("ERR_BAD_KEY", || {
+            let (mut contract, id) = two_address_vault();
+            let vault = contract.get_vault(id).addresses.unwrap().vault;
+            contract
+                .vaults
+                .get_mut(&id.0)
+                .unwrap()
+                .addresses
+                .as_mut()
+                .unwrap()
+                .allowance = vault;
+            refresh_from(
+                &mut contract,
+                id,
+                vec![utxo(1, 150_000)],
+                SpendSource::Allowance,
+            );
         });
     }
 }

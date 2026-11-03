@@ -263,15 +263,16 @@ export class MockContractClient implements ContractClient {
   async refresh(args: RefreshArgs): Promise<SpendOp> {
     const vault = this.ownerAction(args.vault_id, args.envelope);
     this.checkInputs(args.utxos, false);
-    // One Refresh per Delay, from the newest one's created_at, whatever became of it.
+    const source = args.source ?? "vault";
+    // One Refresh per Delay and source, from the newest one's created_at, whatever became of it.
     const last = [...this.ops.values()]
       .reverse()
-      .find((o) => o.vault_id === vault.vault_id && o.kind === "refresh");
+      .find((o) => o.vault_id === vault.vault_id && o.kind === "refresh" && o.source === source);
     if (last && this.nowNs < BigInt(last.created_at) + BigInt(vault.policy.delay_ns)) {
       this.fail("ERR_REFRESH_TOO_SOON");
     }
     const total = args.utxos.reduce((sum, u) => sum + BigInt(u.value_sats), 0n);
-    const destination = vault.addresses?.vault ?? "";
+    const destination = vault.addresses?.[source] ?? "";
     const op = this.newOp(vault, "refresh", "pending", total.toString(), destination, args);
     try {
       this.freeze(vault, op, args.envelope);

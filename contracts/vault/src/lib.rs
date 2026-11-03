@@ -448,38 +448,45 @@ impl VaultContract {
         frozen
     }
 
-    /// Re-locks up to 5 Vault coins: sweeps them back to the Vault Address, the only output, so
-    /// their Escape Timelock starts again. No Delay: the op is frozen at once and the Owner signs
-    /// it through `sign_input`. Fee ≤ min(Fee Cap, 5% of the input total).
+    /// Re-locks up to 5 coins of one source (the Vault Address by default, or the Allowance
+    /// Address): sweeps them back to that same address, the only output, so their Escape
+    /// Timelock starts again. No Delay: the op is frozen at once and the Owner signs it through
+    /// `sign_input`. Fee ≤ min(Fee Cap, 5% of the input total).
     pub fn refresh(
         &mut self,
         vault_id: U64,
         utxos: Vec<Outpoint>,
         fee_rate_sat_vb: u32,
         envelope: String,
+        source: Option<SpendSource>,
     ) -> SpendOp {
         let storage_before = env::storage_usage();
+        let source = source.unwrap_or_default();
         let vault = self.owner_action(vault_id.0, Some(&envelope)).clone();
         let total = check_inputs(&utxos).unwrap_or_else(|r| reject(&r));
         self.check_unreserved(&utxos);
-        self.check_refresh_rate(&vault);
+        self.check_refresh_rate(&vault, source);
 
-        let (vault_script, _) = vault_scripts(&vault).unwrap_or_else(|| fail(ErrorCode::BadKey));
-        let vault_address = vault
+        let (vault_script, allowance_script) =
+            vault_scripts(&vault).unwrap_or_else(|| fail(ErrorCode::BadKey));
+        let addresses = vault
             .addresses
-            .as_ref()
-            .map(|a| a.vault.clone())
+            .clone()
             .unwrap_or_else(|| fail(ErrorCode::VaultNotActive));
-        // The stored Vault Address must be the very output the builder pays.
-        let stored = script_pubkey(&vault_address, vault.policy.btc_network).ok();
-        if stored != Some(p2wsh_script_pubkey(&vault_script)) {
+        let (script, address) = match source {
+            SpendSource::Vault => (vault_script, addresses.vault),
+            SpendSource::Allowance => (allowance_script, addresses.allowance),
+        };
+        // The stored address must be the very output the builder pays.
+        let stored = script_pubkey(&address, vault.policy.btc_network).ok();
+        if stored != Some(p2wsh_script_pubkey(&script)) {
             fail(ErrorCode::BadKey);
         }
         let built = build_refresh(
             &utxos,
             fee_rate_sat_vb,
             vault.policy.fee_cap_sats.0,
-            &vault_script,
+            &script,
         )
         .unwrap_or_else(|r| reject(&r));
 
@@ -492,10 +499,10 @@ impl VaultContract {
             op_id: U64(op_id),
             vault_id,
             kind: SpendOpKind::Refresh,
-            source: SpendSource::Vault,
+            source,
             state: SpendOpState::Frozen,
             amount_sats: U64(total - built.fee_sats),
-            destination: vault_address,
+            destination: address,
             fee_rate_sat_vb,
             utxos,
             created_at: U64(env::block_timestamp()),
@@ -925,14 +932,14 @@ impl VaultContract {
         }
     }
 
-    /// At most one Refresh per Delay, counted from the newest Refresh's `created_at`, whatever
-    /// became of it.
-    fn check_refresh_rate(&self, vault: &Vault) {
+    /// At most one Refresh per Delay and source, counted from the `created_at` of the newest
+    /// Refresh of that source, whatever became of it.
+    fn check_refresh_rate(&self, vault: &Vault, source: SpendSource) {
         let last = self.vault_ops.get(&vault.vault_id.0).and_then(|ids| {
             ids.iter().rev().find_map(|id| {
                 self.ops
                     .get(id)
-                    .filter(|op| op.kind == SpendOpKind::Refresh)
+                    .filter(|op| op.kind == SpendOpKind::Refresh && op.source == source)
                     .map(|op| op.created_at.0)
             })
         });
