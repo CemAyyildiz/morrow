@@ -1,10 +1,12 @@
 // "Try with these keys" on the landing while no round is live: the mockup's simulated attempt
 // over the illustration. The X-Ray lights its four steps one by one, then the attempt log
 // gains a row and the outcome is announced as an illustration. Attempts go up by one per run;
-// sats out never moves. With a live round nothing is simulated: the landing sends the visitor
-// to the real Challenge screen, and live data is shown untouched.
+// sats out never moves. With a live round nothing is simulated: the button sends the real
+// full-balance request in place (story 7.2b), the X-Ray follows that attempt and the log shows
+// the feed, so every row and step on the laptop is real.
 import { useCallback, useEffect, useReducer, useRef } from "react";
 import type { AttemptRow, ChallengeData } from "@/app/data";
+import type { TryControl } from "@/app/useChallengeFeed";
 import type { XRayState, XRayStep } from "@/components/XRaySteps";
 import { landingCopy } from "./copy";
 import { illustrationChallenge, illustrationLog, xrayScript } from "./illustration";
@@ -92,18 +94,24 @@ function withoutLinks(row: AttemptRow): AttemptRow {
 /**
  * What the laptop shows. A live round (`challenge` non-null) is shown as it is: simulated runs
  * never touch it, the log shows the newest rows of the feed (without their explorer links: the
- * laptop copy keeps the mockup's row height) and the X-Ray steps wait (story 7.2b). Without
- * one, the illustration plus the runs in `state`.
+ * laptop copy keeps the mockup's row height) and the X-Ray follows the real attempt of the try
+ * session (`attempt`). Without one, the illustration plus the runs in `state`.
  */
-export function demoView(challenge: ChallengeData | null, state: DemoState): DemoView {
+export function demoView(
+  challenge: ChallengeData | null,
+  state: DemoState,
+  attempt: TryControl | null = null,
+): DemoView {
   if (challenge !== null) {
     return {
       data: challenge,
       illustration: false,
       rows: challenge.log === null ? null : challenge.log.slice(0, LOG_ROWS).map(withoutLinks),
-      steps: xrayScript.map((step) => ({ ...step, state: "pending" })),
-      running: false,
-      announcement: "",
+      steps: attempt
+        ? attempt.steps
+        : xrayScript.map((step) => ({ ...step, state: "pending" as const })),
+      running: attempt?.busy ?? false,
+      announcement: attempt?.announcement ?? "",
     };
   }
   const base = illustrationChallenge;
@@ -129,9 +137,9 @@ function clock(): string {
   return new Date().toTimeString().slice(0, 5);
 }
 
-export function useAttemptDemo(challenge: ChallengeData | null) {
+export function useAttemptDemo(challenge: ChallengeData | null, attempt: TryControl | null = null) {
   const [state, dispatch] = useReducer(demoReducer, IDLE);
-  const view = demoView(challenge, state);
+  const view = demoView(challenge, state, attempt);
   const timers = useRef<number[]>([]);
   const running = useRef(false);
   const count = useRef(view.data.attempts?.count ?? 0);
@@ -146,7 +154,7 @@ export function useAttemptDemo(challenge: ChallengeData | null) {
 
   const illustration = view.illustration;
   const run = useCallback(() => {
-    // Live data is never simulated on (the landing routes "Try" to /challenge instead).
+    // Live data is never simulated on (the landing sends the real attempt instead).
     if (!illustration || running.current) return;
     running.current = true;
     dispatch({ type: "start", n: count.current + 1 });

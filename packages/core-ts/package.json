@@ -20,7 +20,10 @@
     "test": "vitest run"
   },
   "dependencies": {
+    "@noble/ciphers": "2.2.0",
     "@noble/curves": "2.4.0",
+    "@noble/hashes": "2.4.0",
+    "@scure/base": "2.2.0",
     "bitcoinjs-lib": "7.0.5",
     "libsodium-wrappers-sumo": "0.8.4",
     "near-api-js": "7.4.0"

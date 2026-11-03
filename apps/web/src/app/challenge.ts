@@ -9,6 +9,7 @@ import {
   nearAccountUrl,
   nearTxUrl,
   type BtcNetwork as CoreBtcNetwork,
+  type Outpoint,
 } from "@morrow/core-ts/browser";
 import { copy } from "@/copy";
 import type {
@@ -297,11 +298,35 @@ export function utxoSats(body: unknown): number | null {
   return total;
 }
 
-export async function fetchVaultSats(
+/**
+ * The confirmed coins of an Esplora `/address/<a>/utxo` answer (`{txid, vout, value,
+ * status.confirmed}`), as the contract's `Outpoint`s; null when it is not one.
+ */
+export function confirmedOutpoints(body: unknown): Outpoint[] | null {
+  if (!Array.isArray(body)) return null;
+  const outpoints: Outpoint[] = [];
+  for (const utxo of body as unknown[]) {
+    if (!isRecord(utxo) || !isCount(utxo.value)) return null;
+    if (!isString(utxo.txid) || !/^[0-9a-f]{64}$/.test(utxo.txid) || !isCount(utxo.vout)) {
+      return null;
+    }
+    if (!isRecord(utxo.status) || utxo.status.confirmed !== true) continue;
+    outpoints.push({ txid: utxo.txid, vout: utxo.vout, value_sats: String(utxo.value) });
+  }
+  return outpoints;
+}
+
+/** The Vault Address's coins: the total (confirmed or not) and the confirmed outpoints. */
+export interface VaultUtxos {
+  sats: number;
+  outpoints: Outpoint[];
+}
+
+export async function fetchVaultUtxos(
   btcBackendUrl: string,
   address: string,
   signal: AbortSignal,
-): Promise<number | null> {
+): Promise<VaultUtxos | null> {
   try {
     const response = await fetch(
       join(btcBackendUrl, `/address/${encodeURIComponent(address)}/utxo`),
@@ -311,7 +336,11 @@ export async function fetchVaultSats(
       },
     );
     if (!response.ok) return null;
-    return utxoSats(await response.json());
+    const body: unknown = await response.json();
+    const sats = utxoSats(body);
+    const outpoints = confirmedOutpoints(body);
+    // Coins that cannot be read as outpoints still count in the balance: none can be spent here.
+    return sats === null ? null : { sats, outpoints: outpoints ?? [] };
   } catch {
     return null;
   }
@@ -387,12 +416,19 @@ export async function viewCall(
 export interface VaultFacts {
   delayNs: string;
   ownerAccount: string;
+  /** The watcher's X25519 key Watcher Envelopes are sealed to; null when unreadable. */
+  watcherPk: string | null;
 }
 
 export function vaultFacts(vault: unknown): VaultFacts | null {
   if (!isRecord(vault) || !isString(vault.owner_account) || !isRecord(vault.policy)) return null;
-  if (!isNs(vault.policy.delay_ns)) return null;
-  return { delayNs: vault.policy.delay_ns, ownerAccount: vault.owner_account };
+  const { delay_ns: delayNs, watcher_x25519_pk: watcherPk } = vault.policy;
+  if (!isNs(delayNs)) return null;
+  return {
+    delayNs,
+    ownerAccount: vault.owner_account,
+    watcherPk: isString(watcherPk) && /^[0-9a-f]{64}$/.test(watcherPk) ? watcherPk : null,
+  };
 }
 
 export async function fetchVaultFacts(
@@ -725,7 +761,11 @@ export function challengeData(
         })
       : null,
     pending: pending
-      ? { n: pending.n, executableAt: absoluteTime(nsToMs(pending.executable_at), now) }
+      ? {
+          n: pending.n,
+          opId: pending.op_id,
+          executableAt: absoluteTime(nsToMs(pending.executable_at), now),
+        }
       : null,
   };
 }

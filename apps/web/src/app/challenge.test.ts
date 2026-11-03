@@ -3,10 +3,12 @@ import {
   absoluteTime,
   attemptRows,
   challengeData,
+  confirmedOutpoints,
   coreBtcNetwork,
   fetchAttempts,
   fetchRound,
   fetchTipHeight,
+  fetchVaultUtxos,
   formatBtc,
   formatDuration,
   hourly,
@@ -120,7 +122,9 @@ const inputs = (overrides: Partial<FeedInputs> = {}): FeedInputs => ({
   fresh: new Set(),
   balanceSats: 1_000_000,
   tip: 291_600,
-  vaults: { "42": { delayNs: ns(24 * 3_600_000), ownerAccount: "r7.challenge.testnet" } },
+  vaults: {
+    "42": { delayNs: ns(24 * 3_600_000), ownerAccount: "r7.challenge.testnet", watcherPk: null },
+  },
   coSigner: { threshold: 11, total: 16 },
   ...overrides,
 });
@@ -340,7 +344,7 @@ describe("challengeData", () => {
       remaining: "20 h 42 m",
       elapsed: (NOW - at(3, 6, 12)) / (24 * 3_600_000),
     });
-    expect(data.pending).toEqual({ n: 3, executableAt: "4 Nov 06:12" });
+    expect(data.pending).toEqual({ n: 3, opId: "7", executableAt: "4 Nov 06:12" });
   });
 
   it("each part is null until its own answer arrives; nothing is invented", () => {
@@ -403,8 +407,20 @@ describe("NEAR and Bitcoin answers", () => {
   it("reads the Delay and Owner Account of get_vault", () => {
     expect(
       vaultFacts({ owner_account: "r7.challenge.testnet", policy: { delay_ns: "86400000000000" } }),
-    ).toEqual({ delayNs: "86400000000000", ownerAccount: "r7.challenge.testnet" });
+    ).toEqual({
+      delayNs: "86400000000000",
+      ownerAccount: "r7.challenge.testnet",
+      watcherPk: null,
+    });
     expect(vaultFacts({ owner_account: "x", policy: {} })).toBeNull();
+    const pk = "ab".repeat(32);
+    expect(
+      vaultFacts({ owner_account: "x", policy: { delay_ns: "1", watcher_x25519_pk: pk } }),
+    ).toEqual({ delayNs: "1", ownerAccount: "x", watcherPk: pk });
+    expect(
+      vaultFacts({ owner_account: "x", policy: { delay_ns: "1", watcher_x25519_pk: "ab" } })
+        ?.watcherPk,
+    ).toBeNull();
   });
 
   it("reads the MPC threshold from the signer's state view", () => {
@@ -434,6 +450,20 @@ describe("NEAR and Bitcoin answers", () => {
     expect(utxoSats([])).toBe(0);
     expect(utxoSats([{ value: "1" }])).toBeNull();
     expect(utxoSats({})).toBeNull();
+  });
+
+  it("keeps the confirmed coins of an Esplora UTXO list as outpoints", () => {
+    const txid = "f0".repeat(32);
+    expect(
+      confirmedOutpoints([
+        { txid, vout: 1, value: 600_000, status: { confirmed: true, block_height: 9 } },
+        { txid: "e1".repeat(32), vout: 0, value: 400_000, status: { confirmed: false } },
+      ]),
+    ).toEqual([{ txid, vout: 1, value_sats: "600000" }]);
+    expect(confirmedOutpoints([])).toEqual([]);
+    expect(confirmedOutpoints([{ txid: "zz", vout: 0, value: 1, status: {} }])).toBeNull();
+    expect(confirmedOutpoints([{ txid, vout: -1, value: 1, status: {} }])).toBeNull();
+    expect(confirmedOutpoints({})).toBeNull();
   });
 });
 
@@ -477,6 +507,29 @@ describe("fetches", () => {
       vi.fn(async () => new Response("291600\n")),
     );
     expect(await fetchTipHeight("https://b.example.org", signal)).toBe(291_600);
+  });
+
+  it("the Vault's coins: unreadable outpoints keep the balance, with none to spend", async () => {
+    const signal = new AbortController().signal;
+    const txid = "f0".repeat(32);
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () =>
+        Response.json([{ txid, vout: 0, value: 7_000, status: { confirmed: true } }]),
+      ),
+    );
+    expect(await fetchVaultUtxos("https://b.example.org", "tb1qv", signal)).toEqual({
+      sats: 7_000,
+      outpoints: [{ txid, vout: 0, value_sats: "7000" }],
+    });
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => Response.json([{ txid: "zz", vout: 0, value: 7_000, status: {} }])),
+    );
+    expect(await fetchVaultUtxos("https://b.example.org", "tb1qv", signal)).toEqual({
+      sats: 7_000,
+      outpoints: [],
+    });
   });
 });
 

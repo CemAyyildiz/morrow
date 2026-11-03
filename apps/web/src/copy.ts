@@ -155,6 +155,80 @@ export const copy = {
     notReached: "not reached",
   },
 
+  tryKeys: {
+    title: "Try with these keys",
+    intro:
+      "Sign real NEAR transactions in this browser with the round's published function-call key. The key stays in this page's memory: nothing is stored, and a reload forgets it.",
+    destination: "Destination",
+    randomTag: "random",
+    destinationHelp:
+      "A fresh address made in this browser. Nobody holds its key. Edit it to name your own.",
+    requestFull: "Request the full balance",
+    executeEarly: "Execute early",
+    executeTarget: (opId: string) => `Executes request op ${opId}`,
+    xrayToggle: "X-Ray",
+    reasons: {
+      noRpc: "This deployment has no NEAR RPC to send through.",
+      badKey: "The published key cannot be read.",
+      spent:
+        "This key is out of allowance. A fresh key is being published; the buttons come back when it is.",
+      noVault: "This round has no vault yet.",
+      readingWatcher: "Reading the vault's watcher key.",
+      noWatcher: "The vault's watcher key cannot be read, so no envelope can be sealed.",
+      readingCoins: "Reading the vault's coins.",
+      noCoins: "The vault holds no coins. A new round opens after each Clawback.",
+      unconfirmed: "The coins are not confirmed yet.",
+      belowFee: "The vault's coins do not cover the fee of a withdrawal.",
+      ownPending: "Your request holds the coins until it is clawed back.",
+      noPending: "No withdrawal request is pending. Request the full balance first.",
+    },
+    destinationProblem: {
+      malformed: "This is not a valid SegWit address. Nothing was signed.",
+      network: "This address belongs to another Bitcoin network. Nothing was signed.",
+      version: "The vault pays SegWit v0 and Taproot addresses only. Nothing was signed.",
+      program: "This address has a witness program the vault does not accept. Nothing was signed.",
+    },
+    steps: {
+      request: "Request",
+      requestIdle: "request_withdrawal or begin_execute",
+      signing: "signing",
+      notSent: "not sent",
+      rule: "Contract rule",
+      ruleIdle: "the contract checks the Delay",
+      ruleWaiting: "waiting for the transaction result",
+      ruleUnknown: "no result to read",
+      accepted: "Accepted",
+      executeAccepted: "Accepted · the contract took the early execute",
+      acceptedAt: (at: string) => `Accepted · executable at ${at}`,
+      refused: (code: string, meaning: string | null) =>
+        meaning === null ? `Refused · ${code}` : `Refused · ${code} · ${meaning}`,
+      mpc: "MPC co-signature",
+      mpcIdle: "the NEAR MPC network",
+      mpcAfterDelay: "the contract asks the MPC network only after the Delay",
+      mpcAsked: "the contract asks the MPC network to co-sign",
+      bitcoin: "Bitcoin",
+      bitcoinIdle: "the guardian claws every request back",
+      waiting: (seconds: number) => `Waiting for the guardian · ${seconds} s`,
+      noOpId: "the op id could not be read · the Attempt Log will show the request",
+      clawedBack: (seconds: number, txid: string) => `Clawed back in ${seconds} s · ${txid}`,
+    },
+    notice: {
+      seal: "The Watcher Envelope could not be sealed. Nothing was signed.",
+      unreachable: "Could not reach NEAR. Nothing was sent.",
+      unreadable:
+        "The transaction may have been sent, but its result could not be read. The steps stay pending until the Attempt Log shows it.",
+      invalidTx: (kind: string) => `NEAR refused the transaction before it ran · ${kind}`,
+      nonce: "Other visitors used the key at the same time, twice in a row. Nothing was sent.",
+    },
+    links: {
+      near: "NEAR",
+      nearLabel: "NEAR transaction of this attempt",
+      bitcoin: "Bitcoin",
+      bitcoinLabel: "Bitcoin Clawback transaction of this attempt",
+    },
+    announce: (title: string, detail: string) => `${title}: ${detail}`,
+  },
+
   placeholder: "This screen is not part of this build.",
 
   notFound: {

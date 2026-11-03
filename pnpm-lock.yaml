@@ -257,9 +257,18 @@ importers:
 
   packages/core-ts:
     dependencies:
+      '@noble/ciphers':
+        specifier: 2.2.0
+        version: 2.2.0
       '@noble/curves':
         specifier: 2.4.0
         version: 2.4.0
+      '@noble/hashes':
+        specifier: 2.4.0
+        version: 2.4.0
+      '@scure/base':
+        specifier: 2.2.0
+        version: 2.2.0
       bitcoinjs-lib:
         specifier: 7.0.5
         version: 7.0.5(typescript@6.0.3)

@@ -3,14 +3,15 @@ import { Card, CardDescription, CardTitle } from "@/components/ui/card";
 import { copy } from "@/copy";
 import { AppDataContext, type AppData, type ContractState, type HeartbeatState } from "./data";
 import { fetchConfig, fetchContractState, fetchHeartbeat, poll, type BaseConfig } from "./live";
-import { useChallengeFeed } from "./useChallengeFeed";
+import { useChallengeFeed, useTrySession } from "./useChallengeFeed";
 
 type Load = { kind: "loading" } | { kind: "failed" } | { kind: "ready"; config: BaseConfig };
 
 // The production data provider. Reads `/config.json` once, then checks the contract's lock
 // state over NEAR RPC and the watcher heartbeat every 30 s for the system card, and follows
 // the challenge feed (`MORROW_CHALLENGE_URL`) for `challenge`: null without a feed or an open
-// round.
+// round. The "Try with these keys" session lives here too, so an attempt started on the
+// landing is still followed on /challenge.
 export function ConfigProvider({ children }: { children: ReactNode }) {
   const [load, setLoad] = useState<Load>({ kind: "loading" });
   const [contract, setContract] = useState<ContractState>("checking");
@@ -50,12 +51,15 @@ export function ConfigProvider({ children }: { children: ReactNode }) {
     return poll((signal) => fetchHeartbeat(watcherUrl, signal), setHeartbeat);
   }, [ready, watcherUrl]);
 
-  const { challenge, status: challengeStatus } = useChallengeFeed(config);
+  const { challenge, status: challengeStatus, feed } = useChallengeFeed(config);
+  const attempt = useTrySession(config, feed);
 
   const data = useMemo<AppData | null>(
     () =>
-      config ? { config: { ...config, contract, heartbeat }, challenge, challengeStatus } : null,
-    [config, contract, heartbeat, challenge, challengeStatus],
+      config
+        ? { config: { ...config, contract, heartbeat }, challenge, challengeStatus, attempt }
+        : null,
+    [config, contract, heartbeat, challenge, challengeStatus, attempt],
   );
 
   if (load.kind === "failed") return <ConfigFailed />;

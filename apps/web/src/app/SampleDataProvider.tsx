@@ -9,6 +9,7 @@ const SAMPLE: AppData = {
   config: sampleConfig,
   challenge: sampleChallenge,
   challengeStatus: "round",
+  attempt: null,
 };
 
 export function SampleDataProvider({ children }: { children: ReactNode }) {

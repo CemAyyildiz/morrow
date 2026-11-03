@@ -8,6 +8,9 @@ import * as everything from "./index.js";
 
 const SRC = dirname(fileURLToPath(import.meta.url));
 
+/** The only packages the browser entry may reach: small, pure, audited. */
+const ALLOWED_PACKAGES = /^(@noble\/(curves|hashes|ciphers)|@scure\/base)$/;
+
 /** Every module `entry` reaches through static imports and re-exports, and their bare imports. */
 function graph(entry: string, root = SRC): { modules: string[]; bare: string[] } {
   const modules = new Set<string>();
@@ -37,16 +40,44 @@ function graph(entry: string, root = SRC): { modules: string[]; bare: string[] }
 }
 
 describe("@morrow/core-ts/browser", () => {
-  it("reaches only pure modules: no package import at all", () => {
+  it("reaches only pure modules, and of packages only the small pure ones allowed", () => {
     const { modules, bare } = graph("browser.ts");
-    expect(bare).toEqual([]);
+    const packageOf = (specifier: string) =>
+      specifier.startsWith("@")
+        ? specifier.split("/").slice(0, 2).join("/")
+        : specifier.split("/")[0];
+    expect([...new Set(bare.map(packageOf))].sort()).toEqual([
+      "@noble/ciphers",
+      "@noble/curves",
+      "@noble/hashes",
+      "@scure/base",
+    ]);
+    for (const specifier of bare) expect(packageOf(specifier)).toMatch(ALLOWED_PACKAGES);
     expect(modules.sort()).toEqual([
+      "bitcoin/browser-address.ts",
       "browser.ts",
       "contract/errors.ts",
       "contract/events.ts",
+      "contract/policy.ts",
       "contract/types.ts",
+      "crypto/browser-envelope.ts",
+      "near/browser-tx.ts",
+      "xray/failure.ts",
       "xray/links.ts",
+      "xray/ports.ts",
+      "xray/types.ts",
     ]);
+  });
+
+  it("the allowlist keeps out the heavy packages", () => {
+    for (const heavy of [
+      "near-api-js",
+      "libsodium-wrappers-sumo",
+      "bitcoinjs-lib",
+      "@near-js/crypto",
+    ]) {
+      expect(heavy).not.toMatch(ALLOWED_PACKAGES);
+    }
   });
 
   it("the graph walk does see the heavy dependencies of the full entry", () => {
@@ -81,5 +112,16 @@ describe("@morrow/core-ts/browser", () => {
     expect(browser.bitcoinTxUrl("regtest", "ab")).toBeNull();
     expect(browser.ERROR_CODES.ERR_NOT_EXECUTABLE).toMatch(/Delay/);
     expect(browser.EVENT_KINDS).toContain("withdrawal_requested");
+    expect(
+      browser.failureKind({
+        ActionError: { kind: { FunctionCallError: { ExecutionError: "x" } } },
+      }),
+    ).toBe("ActionError.FunctionCallError.ExecutionError");
+    expect(
+      browser.decodeSegwitAddress(
+        "tb1qrp33g0q5c5txsp9arysrx4k6zdkfs4nce4xj0gdcccefvpysxf3q0sl5k7",
+        "signet",
+      ).ok,
+    ).toBe(true);
   });
 });

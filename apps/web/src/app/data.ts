@@ -1,4 +1,5 @@
 import { createContext, useContext } from "react";
+import type { TryControl } from "./useChallengeFeed";
 
 export type BtcNetwork = "bitcoin" | "testnet" | "signet" | "regtest";
 export type NearNetwork = "mainnet" | "testnet" | "mock";
@@ -142,7 +143,7 @@ export interface ChallengeData {
   /** Null until `/attempts` answers; the landing illustration keeps its own rows. */
   log: readonly AttemptRow[] | null;
   /** The earliest pending Withdrawal Request of the round, if any. */
-  pending: { n: number; executableAt: string } | null;
+  pending: { n: number; opId: string; executableAt: string } | null;
 }
 
 /**
@@ -156,6 +157,8 @@ export interface AppData {
   config: AppConfig;
   challenge: ChallengeData | null;
   challengeStatus: ChallengeStatus;
+  /** "Try with these keys" for the live round; null without one (and on the dev sample). */
+  attempt: TryControl | null;
 }
 
 export const AppDataContext = createContext<AppData | null>(null);

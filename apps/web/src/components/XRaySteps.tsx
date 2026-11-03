@@ -4,7 +4,8 @@ import { cn } from "@/lib/utils";
 
 /**
  * `pending` is dimmed (its data has not arrived), `done` is lit, `refused` and `ok` are lit
- * in the alarm and ok signals, `unreached` is dimmed and reads "not reached".
+ * in the alarm and ok signals, `unreached` is dimmed and reads "not reached" (then its detail,
+ * when it has one: why it was not reached).
  */
 export type XRayState = "pending" | "done" | "refused" | "ok" | "unreached";
 
@@ -17,12 +18,15 @@ export interface XRayStep {
 
 // The X-Ray of one attempt: four numbered steps in order (Request → Contract rule → MPC
 // co-signature → Bitcoin) joined by a connector line. Steps light up as their data arrives.
-// Presentational: stories 6.4 and 7.2 feed it.
+// Presentational: stories 6.4 and 7.2 feed it (7.2b: `app/try.ts`).
 export function XRaySteps({
   steps,
+  wrap = false,
   className,
 }: {
   steps: readonly XRayStep[];
+  /** Details wrap instead of being cut to one line (the Try panel has room; the laptop not). */
+  wrap?: boolean;
   className?: string;
 }) {
   return (
@@ -68,8 +72,17 @@ export function XRaySteps({
                 >
                   {step.title}
                 </b>
-                <span className="block truncate font-mono text-[12px] text-muted">
-                  {step.state === "unreached" ? copy.xray.notReached : step.detail}
+                <span
+                  className={cn(
+                    "block font-mono text-[12px] text-muted",
+                    wrap ? "break-words" : "truncate",
+                  )}
+                >
+                  {step.state !== "unreached"
+                    ? step.detail
+                    : step.detail === ""
+                      ? copy.xray.notReached
+                      : `${copy.xray.notReached} · ${step.detail}`}
                 </span>
               </div>
             </li>

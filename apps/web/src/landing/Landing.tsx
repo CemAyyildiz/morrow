@@ -10,7 +10,7 @@ import { useAttemptDemo } from "./demo";
 import { Features } from "./Features";
 import { Final } from "./Final";
 import { HeroDive } from "./HeroDive";
-import { useReducedMotion } from "./motion";
+import { useReducedMotion } from "@/lib/motion";
 import { Record } from "./Record";
 import { Story } from "./Story";
 import { PHONE_BELOW, robTarget } from "./useDive";
@@ -26,13 +26,20 @@ const SCROLL_SETTLE_MS = 2000;
 // Full-bleed, outside the app shell. Runs under the strict CSP: no inline styles in markup,
 // motion goes through refs and the CSSOM.
 export function Landing() {
-  const { config, challenge } = useAppData();
+  const { config, challenge, attempt } = useAppData();
   const reduced = useReducedMotion();
   const { navigate } = useRouter();
-  const demo = useAttemptDemo(challenge);
-  // A live round is never simulated on: its actions lead to the real Challenge screen.
+  const demo = useAttemptDemo(challenge, attempt);
   const openChallenge = useCallback(() => navigate(HOME_PATH), [navigate]);
-  const onTry = demo.illustration ? demo.run : openChallenge;
+  // A live round is never simulated on: "Try" sends the real full-balance request in place, to
+  // a random address made in this browser (UJ-8). When it cannot be sent, the Challenge screen
+  // says why.
+  const tryLive = useCallback(() => {
+    if (attempt?.busy) return;
+    if (attempt?.request.enabled) attempt.run("request", { random: true });
+    else openChallenge();
+  }, [attempt, openChallenge]);
+  const onTry = demo.illustration ? demo.run : tryLive;
   // A live round's keys download here too; the illustration has none and opens the product.
   const keys = challenge?.keys ?? null;
   const onDownload = useCallback(

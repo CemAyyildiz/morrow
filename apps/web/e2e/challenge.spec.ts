@@ -1,5 +1,12 @@
 import { readFile } from "node:fs/promises";
-import { expect, test, type Page, type Request, type TestInfo } from "@playwright/test";
+import {
+  expect,
+  test,
+  type APIRequestContext,
+  type Page,
+  type Request,
+  type TestInfo,
+} from "@playwright/test";
 import {
   CLAWBACK_TXID,
   EARLY_TX_HASH,
@@ -7,6 +14,9 @@ import {
   REQUEST_TX_HASH,
   ROUND,
   ROUND_NUMBER,
+  VAULT_SATS,
+  functionCallKey,
+  type FunctionCallKey,
 } from "./challenge-fixture.ts";
 import {
   BACKEND_URL,
@@ -412,5 +422,340 @@ test.describe("without a challenge feed", () => {
         await expect(page.getByTestId("record")).not.toContainText(/\d/);
       }
     }
+  });
+});
+
+// Story 7.2b: "Try with these keys" signs real transactions in the browser. The stub RPC checks
+// each signature and records what was sent. Every test serves the round with a key of its own,
+// so parallel tests (and both projects) never share a nonce, an allowance or a record.
+
+interface SentTx {
+  public_key: string;
+  hash: string;
+  valid: boolean;
+  nonce: number;
+  method: string;
+  args: Record<string, unknown>;
+  op_id: string | null;
+}
+
+/** Serves `/round` with this test's own key; `set` swaps it for a fresh one (a new key). */
+async function ownKey(page: Page, label: string, info: TestInfo) {
+  let key = functionCallKey(`${label}-${info.project.name}-${info.retry}`);
+  await page.route(`${CHALLENGE_URL}/round`, (route) =>
+    route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      headers: { "access-control-allow-origin": "*" },
+      body: JSON.stringify({ ...ROUND, near_function_call_key: key.secret }),
+    }),
+  );
+  return {
+    get: () => key,
+    set: (next: FunctionCallKey) => {
+      key = next;
+    },
+  };
+}
+
+async function sentWith(request: APIRequestContext, key: FunctionCallKey): Promise<SentTx[]> {
+  const response = await request.get(
+    `${RPC_URL}/__sent?public_key=${encodeURIComponent(key.publicKey)}`,
+  );
+  return (await response.json()) as SentTx[];
+}
+
+/** Every text the page logged, and both storages, for the secret-never-kept check. */
+async function traces(page: Page, logged: string[]) {
+  const stored = await page.evaluate(() =>
+    JSON.stringify([{ ...localStorage }, { ...sessionStorage }]),
+  );
+  return `${stored}\n${logged.join("\n")}`;
+}
+
+test.describe("Try with these keys", () => {
+  test.use({ baseURL: LIVE_WEB_URL });
+
+  test("the full-balance request: one signed send_tx, steps lit, then the Clawback from the feed", async ({
+    page,
+    request,
+  }, info) => {
+    const keys = await ownKey(page, "full", info);
+    const logged: string[] = [];
+    page.on("console", (message) => logged.push(message.text()));
+    const { fired, violations } = await open(page, "/challenge");
+
+    const panel = page.getByTestId("try-panel");
+    await expect(panel.getByTestId("destination-random")).toHaveText("random");
+    await expect(panel.getByTestId("try-destination")).toHaveValue(/^tb1q[02-9ac-hj-np-z]{38}$/);
+    await expect(panel.getByTestId("xray-toggle")).toHaveAttribute("aria-pressed", "true");
+    await expect(panel.getByTestId("try-request")).toHaveAttribute("aria-disabled", "false");
+    const destination = await panel.getByTestId("try-destination").inputValue();
+
+    await page.getByRole("button", { name: "Try with these keys" }).click();
+    const steps = panel.getByTestId("xray-step");
+    await expect(steps.nth(1)).toContainText(
+      /Accepted · executable at (\d{1,2} [A-Z][a-z]{2} )?\d\d:\d\d/,
+    );
+    await expect(steps.nth(0)).toHaveAttribute("data-state", "done");
+    await expect(steps.nth(1)).toHaveAttribute("data-state", "done");
+    await expect(steps.nth(2)).toContainText(
+      "not reached · the contract asks the MPC network only after the Delay",
+    );
+    await expect(steps.nth(3)).toContainText(/Waiting for the guardian · \d+ s/);
+
+    // Exactly one transaction reached the RPC, with a valid signature from the published key.
+    const sent = await sentWith(request, keys.get());
+    expect(sent).toHaveLength(1);
+    const tx = sent[0] as SentTx;
+    expect(tx).toMatchObject({ valid: true, method: "request_withdrawal" });
+    expect(tx.args).toMatchObject({
+      vault_id: ROUND.vault_id,
+      // The input total minus the fee bound 2 × (60 + 250 × 1) sats.
+      amount_sats: String(VAULT_SATS - 620),
+      destination,
+      fee_rate_sat_vb: 2,
+      utxos: [{ txid: ROUND.funding_txid, vout: 0, value_sats: String(VAULT_SATS) }],
+    });
+    expect(tx.args.envelope).toMatch(/^[0-9a-f]{160}$/);
+    await expect(
+      panel.getByRole("link", { name: "NEAR transaction of this attempt" }),
+    ).toHaveAttribute("href", `https://testnet.nearblocks.io/txns/${tx.hash}`);
+
+    // The watcher's Clawback reaches the feed: step 4 turns to it, with its Bitcoin link.
+    const txid = "d2".repeat(32);
+    await request.post(`${CHALLENGE_URL}/__attempt`, {
+      data: { op_id: tx.op_id, clawback_txid: txid, clawback_broadcast: true },
+    });
+    await expect(steps.nth(3)).toContainText("Clawed back in 12 s", { timeout: 15_000 });
+    await expect(steps.nth(3)).toHaveAttribute("data-state", "ok");
+    await expect(
+      panel.getByRole("link", { name: "Bitcoin Clawback transaction of this attempt" }),
+    ).toHaveAttribute("href", `https://mempool.space/signet/tx/${txid}`);
+    await expect(page.getByTestId("live-region")).toContainText(/Clawed back in 12 s|Attempt \d+/);
+
+    // The session key is never stored or logged.
+    const secret = keys.get().secret;
+    const kept = await traces(page, logged);
+    expect(kept).not.toContain(secret);
+    expect(kept).not.toContain(secret.slice("ed25519:".length, 30));
+    expect(await sentWith(request, keys.get())).toHaveLength(1);
+    expect(await fired()).toEqual([]);
+    expect(violations).toEqual([]);
+  });
+
+  test("Execute early on the pending request is refused with ERR_NOT_EXECUTABLE", async ({
+    page,
+    request,
+  }, info) => {
+    const keys = await ownKey(page, "early", info);
+    const { fired } = await open(page, "/challenge");
+    const panel = page.getByTestId("try-panel");
+    const execute = panel.getByTestId("try-execute");
+    await expect(execute).toHaveAttribute("aria-disabled", "false");
+    await expect(panel.getByTestId("try-execute-reason")).toHaveText("Executes request op 12");
+    await execute.click();
+    const steps = panel.getByTestId("xray-step");
+    await expect(steps.nth(1)).toContainText("Refused · ERR_NOT_EXECUTABLE");
+    await expect(steps.nth(1)).toHaveAttribute("data-state", "refused");
+    await expect(steps.nth(2)).toHaveAttribute("data-state", "unreached");
+    await expect(steps.nth(3)).toHaveAttribute("data-state", "unreached");
+    const sent = await sentWith(request, keys.get());
+    expect(sent).toHaveLength(1);
+    expect(sent[0]).toMatchObject({ valid: true, method: "begin_execute", args: { op_id: "12" } });
+    expect(await fired()).toEqual([]);
+  });
+
+  test("Execute early is disabled with a reason while no request is pending", async ({
+    page,
+  }, info) => {
+    await ownKey(page, "none-pending", info);
+    await page.route(`${CHALLENGE_URL}/attempts`, (route) =>
+      route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        headers: { "access-control-allow-origin": "*" },
+        body: JSON.stringify({
+          entries: [],
+          summary: {
+            round: ROUND_NUMBER,
+            attempts_round: 0,
+            attempts_total: 0,
+            sats_taken_total: 0,
+            last_attempt_at: null,
+          },
+        }),
+      }),
+    );
+    await open(page, "/challenge");
+    const panel = page.getByTestId("try-panel");
+    await expect(panel.getByTestId("try-execute")).toHaveAttribute("aria-disabled", "true");
+    await expect(panel.getByTestId("try-execute-reason")).toHaveText(
+      "No withdrawal request is pending. Request the full balance first.",
+    );
+    // The X-Ray is on by default and can be turned off and on from the keyboard.
+    const toggle = panel.getByTestId("xray-toggle");
+    await expect(panel.getByTestId("xray")).toBeVisible();
+    await toggle.focus();
+    await page.keyboard.press("Enter");
+    await expect(toggle).toHaveAttribute("aria-pressed", "false");
+    await expect(panel.getByTestId("xray")).toHaveCount(0);
+    await page.keyboard.press("Enter");
+    await expect(panel.getByTestId("xray")).toBeVisible();
+    // Every control of the panel is at least 44 px tall.
+    for (const control of await panel.locator("button, input").all()) {
+      expect((await control.boundingBox())?.height ?? 0).toBeGreaterThanOrEqual(44);
+    }
+  });
+
+  test("a bad destination shows an inline error and signs nothing", async ({
+    page,
+    request,
+  }, info) => {
+    const keys = await ownKey(page, "bad-destination", info);
+    const rpcCalls: string[] = [];
+    page.on("request", (r) => {
+      if (r.url().startsWith(RPC_URL)) rpcCalls.push(r.postData() ?? "");
+    });
+    await open(page, "/challenge");
+    const panel = page.getByTestId("try-panel");
+    await expect(panel.getByTestId("try-request")).toHaveAttribute("aria-disabled", "false");
+    const input = panel.getByTestId("try-destination");
+    for (const [address, error] of [
+      ["tb1qnotanaddress", "This is not a valid SegWit address. Nothing was signed."],
+      [
+        "bc1qw508d6qejxtdg4y5r3zarvary0c5xw7kv8f3t4",
+        "This address belongs to another Bitcoin network. Nothing was signed.",
+      ],
+    ]) {
+      await input.fill(address as string);
+      await expect(panel.getByTestId("destination-random")).toHaveCount(0);
+      await panel.getByTestId("try-request").click();
+      await expect(panel.getByTestId("try-destination-error")).toHaveText(error as string);
+      await expect(input).toHaveAttribute("aria-invalid", "true");
+    }
+    expect(rpcCalls.filter((body) => /view_access_key"|send_tx/.test(body))).toEqual([]);
+    expect(await sentWith(request, keys.get())).toEqual([]);
+  });
+
+  test("a spent key: a fresh key is being published, and the button returns with it", async ({
+    page,
+    request,
+  }, info) => {
+    const keys = await ownKey(page, "spent", info);
+    await request.post(`${RPC_URL}/__allowance`, {
+      data: { public_key: keys.get().publicKey, spent: true },
+    });
+    await open(page, "/challenge");
+    const panel = page.getByTestId("try-panel");
+    const button = panel.getByTestId("try-request");
+    await expect(button).toHaveAttribute("aria-disabled", "false");
+    await button.click();
+    await expect(panel.getByTestId("try-request-reason")).toContainText(
+      "A fresh key is being published",
+    );
+    await expect(panel.getByTestId("try-notice")).toHaveCount(0);
+    await expect(button).toHaveAttribute("aria-disabled", "true");
+
+    // The operator publishes a fresh key: `/round` is asked with every Attempt Log poll.
+    keys.set(functionCallKey(`spent-fresh-${info.project.name}-${info.retry}`));
+    await expect(button).toHaveAttribute("aria-disabled", "false", { timeout: 15_000 });
+    await expect(panel.getByTestId("try-request-reason")).toHaveCount(0);
+  });
+
+  test("a nonce race is retried once with a fresh nonce", async ({ page, request }, info) => {
+    const keys = await ownKey(page, "nonce", info);
+    await request.post(`${RPC_URL}/__nonce`, {
+      data: { public_key: keys.get().publicKey, race: 1 },
+    });
+    await open(page, "/challenge");
+    const panel = page.getByTestId("try-panel");
+    await expect(panel.getByTestId("try-request")).toHaveAttribute("aria-disabled", "false");
+    await panel.getByTestId("try-request").click();
+    await expect(panel.getByTestId("xray-step").nth(1)).toContainText("Accepted");
+    const sent = await sentWith(request, keys.get());
+    expect(sent).toHaveLength(2);
+    // `final` still answered the old nonce: the retry signs above the ak_nonce the error named.
+    expect((sent[1] as SentTx).nonce - (sent[0] as SentTx).nonce).toBe(5);
+  });
+
+  test("the landing's Try sends the real full-balance request in place", async ({
+    page,
+    request,
+  }, info) => {
+    const keys = await ownKey(page, "landing", info);
+    const { fired, violations } = await open(page, "/");
+    await page.getByTestId("landing-stage").evaluate((stage: HTMLElement) => {
+      const top = stage.getBoundingClientRect().top + window.scrollY;
+      window.scrollTo(0, top + stage.offsetHeight - window.innerHeight);
+    });
+    const product = page.getByTestId(isPhone(info) ? "landing-mobview" : "landing-crisp");
+    await expect(product).toHaveCSS("opacity", "1");
+    // The coins (balance) and get_vault (Delay, watcher key) have answered: press Try.
+    await expect(product.getByTestId("stat-value").first()).toHaveText("0.01000000");
+    await expect(product.getByTestId("stat-value").nth(1)).toHaveText("24 h");
+    await product.getByRole("button", { name: "Try with these keys" }).click();
+    await expect(product.getByTestId("xray-step").nth(1)).toContainText(
+      /Accepted · executable at/,
+      { timeout: 15_000 },
+    );
+    await expect(page).toHaveURL(/\/$/);
+    await expect(page.getByTestId("live-region")).toContainText("Contract rule: Accepted");
+    const sent = await sentWith(request, keys.get());
+    expect(sent).toHaveLength(1);
+    expect(sent[0]).toMatchObject({ valid: true, method: "request_withdrawal" });
+    expect(String((sent[0] as SentTx).args.destination)).toMatch(/^tb1q[02-9ac-hj-np-z]{38}$/);
+    expect(await fired()).toEqual([]);
+    expect(violations).toEqual([]);
+  });
+
+  test("the landing's Try opens /challenge when the request cannot be sent", async ({
+    page,
+    request,
+  }, info) => {
+    const keys = await ownKey(page, "landing-fallback", info);
+    // get_vault without a watcher key: no envelope can be sealed, so nothing can be sent.
+    await page.route(RPC_URL, async (route) => {
+      const call = route.request().postDataJSON() as {
+        id?: unknown;
+        params?: Record<string, unknown>;
+      };
+      if (call.params?.method_name !== "get_vault") return route.fallback();
+      const vault = {
+        vault_id: ROUND.vault_id,
+        owner_account: OWNER_ACCOUNT,
+        state: "active",
+        policy: { delay_ns: "86400000000000", escape_timelock_blocks: 1000, btc_network: "signet" },
+      };
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        headers: { "access-control-allow-origin": "*" },
+        body: JSON.stringify({
+          jsonrpc: "2.0",
+          id: call.id,
+          result: {
+            block_hash: "stub",
+            block_height: 1,
+            logs: [],
+            result: [...new TextEncoder().encode(JSON.stringify(vault))],
+          },
+        }),
+      });
+    });
+    await open(page, "/");
+    await page.getByTestId("landing-stage").evaluate((stage: HTMLElement) => {
+      const top = stage.getBoundingClientRect().top + window.scrollY;
+      window.scrollTo(0, top + stage.offsetHeight - window.innerHeight);
+    });
+    const product = page.getByTestId(isPhone(info) ? "landing-mobview" : "landing-crisp");
+    await expect(product).toHaveCSS("opacity", "1");
+    await expect(product.getByTestId("stat-value").nth(1)).toHaveText("24 h");
+    await product.getByRole("button", { name: "Try with these keys" }).click();
+    await expect(page).toHaveURL(/\/challenge$/);
+    await expect(page.getByTestId("try-request-reason")).toHaveText(
+      "The vault's watcher key cannot be read, so no envelope can be sealed.",
+    );
+    expect(await sentWith(request, keys.get())).toEqual([]);
   });
 });

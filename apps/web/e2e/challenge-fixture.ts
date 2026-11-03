@@ -1,5 +1,63 @@
 // What the stub challenge feed serves (e2e only): one published round and its Attempt Log,
 // shared by stub-services.ts and challenge.spec.ts so the spec can check the exact values.
+// The round's function-call key and the Vault's watcher key are real (deterministic) keys, so
+// the browser signs and seals for real and the stub RPC verifies the signatures.
+import { createHash, createPrivateKey, createPublicKey } from "node:crypto";
+
+const BASE58 = "123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz";
+
+/** Bitcoin-alphabet base58, as NEAR writes keys and hashes. */
+export function base58(bytes: Uint8Array): string {
+  let n = 0n;
+  for (const byte of bytes) n = n * 256n + BigInt(byte);
+  let out = "";
+  while (n > 0n) {
+    out = BASE58[Number(n % 58n)] + out;
+    n /= 58n;
+  }
+  for (const byte of bytes) {
+    if (byte !== 0) break;
+    out = `1${out}`;
+  }
+  return out;
+}
+
+/** The raw public key of a curve25519-family private key given by its 32-byte seed. */
+function rawPublicKey(seed: Buffer, pkcs8Prefix: string): Buffer {
+  const privateKey = createPrivateKey({
+    key: Buffer.concat([Buffer.from(pkcs8Prefix, "hex"), seed]),
+    format: "der",
+    type: "pkcs8",
+  });
+  const jwk = createPublicKey(privateKey).export({ format: "jwk" });
+  return Buffer.from(String(jwk.x), "base64url");
+}
+
+export interface FunctionCallKey {
+  /** `ed25519:<base58 seed ‖ public key>`, as `/round` publishes it. */
+  secret: string;
+  /** `ed25519:<base58 public key>`. */
+  publicKey: string;
+}
+
+/** A deterministic ed25519 function-call key for `label`. */
+export function functionCallKey(label: string): FunctionCallKey {
+  const seed = createHash("sha256").update(`morrow-e2e-key:${label}`).digest();
+  const pub = rawPublicKey(seed, "302e020100300506032b657004220420");
+  return {
+    secret: `ed25519:${base58(Buffer.concat([seed, pub]))}`,
+    publicKey: `ed25519:${base58(pub)}`,
+  };
+}
+
+/** The Vault's watcher X25519 public key (hex), as `get_vault` serves it. */
+export const WATCHER_X25519_PK = rawPublicKey(
+  createHash("sha256").update("morrow-e2e-watcher").digest(),
+  "302e020100300506032b656e04220420",
+).toString("hex");
+
+/** The published round's function-call key. */
+export const ROUND_KEY = functionCallKey("round");
 
 export const ROUND_NUMBER = 3;
 export const VAULT_ID = "42";
@@ -24,7 +82,7 @@ export const ROUND = {
   owner_account: OWNER_ACCOUNT,
   owner_key: `02${"5a".repeat(32)}`,
   owner_key_secret: "6b".repeat(32),
-  near_function_call_key: "ed25519:3stubPublishedFunctionCallKeyNotARealSecret",
+  near_function_call_key: ROUND_KEY.secret,
   vault_address: VAULT_ADDRESS,
   escape_timelock_blocks: 1000,
   funding_txid: "f0".repeat(32),

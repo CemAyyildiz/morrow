@@ -3,20 +3,24 @@ import { downloadKeys } from "@/app/challenge";
 import { useAppData, type ChallengeData } from "@/app/data";
 import { AttemptLog } from "@/components/AttemptLog";
 import { HeroCard } from "@/components/HeroCard";
+import { TryPanel } from "@/components/TryPanel";
 import { DotGrid, StatCard } from "@/components/StatCard";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardDescription, CardTitle } from "@/components/ui/card";
 import { copy } from "@/copy";
+import { useReducedMotion } from "@/lib/motion";
 import { cn } from "@/lib/utils";
 import { useAnnounce } from "@/shell/announce";
 import { PageHeader } from "@/shell/PageHeader";
 
 // The Challenge product screen, fed by the challenge feed (story 7.2a): the round, its
-// published keys, the Vault and every attempt. "Try with these keys" has no handler in the
-// product yet (story 7.2b).
+// published keys, the Vault and every attempt. "Try with these keys" (story 7.2b) sends the
+// full-balance request at once and brings the Try panel, with its X-Ray, into view.
 export function ChallengeView() {
-  const { challenge, challengeStatus } = useAppData();
+  const { challenge, challengeStatus, attempt } = useAppData();
+  const panel = useRef<HTMLDivElement>(null);
+  const reduced = useReducedMotion();
 
   if (!challenge) {
     // Until `/round` first answers, nothing is claimed: the header only.
@@ -41,12 +45,20 @@ export function ChallengeView() {
   }
 
   const keys = challenge.keys;
+  const onTry = attempt
+    ? () => {
+        if (attempt.request.enabled) attempt.run("request");
+        panel.current?.scrollIntoView({ block: "nearest", behavior: reduced ? "auto" : "smooth" });
+      }
+    : undefined;
   return (
     <ChallengeScreen
       data={challenge}
+      onTry={onTry}
       onDownload={keys ? () => downloadKeys(keys) : undefined}
       facts={<RoundFacts data={challenge} />}
     >
+      {attempt && <TryPanel attempt={attempt} panelRef={panel} />}
       <AttemptLog rows={challenge.log} />
       <AnnounceNewRows data={challenge} />
     </ChallengeScreen>

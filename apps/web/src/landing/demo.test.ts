@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { ChallengeData } from "@/app/data";
+import type { TryControl } from "@/app/useChallengeFeed";
 import { demoReducer, demoView, IDLE, LOG_ROWS, STEP_DELAYS, type DemoState } from "./demo";
 import { illustrationChallenge } from "./illustration";
 
@@ -113,5 +114,37 @@ describe("what the laptop shows", () => {
     expect(after.rows).toEqual([]);
     expect(after.steps.every((step) => step.state === "pending")).toBe(true);
     expect(after.announcement).toBe("");
+  });
+
+  it("with a live round: the X-Ray and the announcement follow the real attempt", () => {
+    const steps = [
+      { title: "Request", detail: "request_withdrawal · 9pAbCd…wxyz", state: "done" as const },
+      {
+        title: "Contract rule",
+        detail: "Accepted · executable at 4 Nov 09:30",
+        state: "done" as const,
+      },
+      { title: "MPC co-signature", detail: "x", state: "unreached" as const },
+      { title: "Bitcoin", detail: "Waiting for the guardian · 3 s", state: "pending" as const },
+    ];
+    const attempt = {
+      steps,
+      busy: false,
+      announcement: "Contract rule: Accepted · executable at 4 Nov 09:30",
+    } as unknown as TryControl;
+    const live: ChallengeData = { ...illustrationChallenge, round: 2, log: [] };
+    const view = demoView(live, run(IDLE, 4), attempt);
+    expect(view.illustration).toBe(false);
+    expect(view.steps).toBe(steps);
+    expect(view.running).toBe(false);
+    expect(view.announcement).toBe("Contract rule: Accepted · executable at 4 Nov 09:30");
+    expect(demoView(live, IDLE, { ...attempt, busy: true } as TryControl).running).toBe(true);
+    // The illustration never takes the live attempt's steps.
+    expect(demoView(null, IDLE, attempt).steps.map((step) => step.state)).toEqual([
+      "done",
+      "refused",
+      "ok",
+      "ok",
+    ]);
   });
 });
