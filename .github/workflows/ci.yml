@@ -64,6 +64,10 @@ jobs:
         env:
           MORROW_REGTEST_RPC: http://morrow:morrow@127.0.0.1:18443
         run: pnpm --filter @morrow/escape test
+      - name: Challenge tool against regtest (Owner-Key-only spends refused)
+        env:
+          MORROW_REGTEST_RPC: http://morrow:morrow@127.0.0.1:18443
+        run: pnpm --filter @morrow/challenge test
       - run: make demo
       - if: always()
         run: make regtest-down

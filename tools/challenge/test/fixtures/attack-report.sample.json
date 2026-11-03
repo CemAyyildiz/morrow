@@ -1,6 +1,7 @@
 {
   "header": {
-    "tool_commit": null,
+    "tool_commit": "1224e6d75171f355f8bbd9ac19b48201468c47d9",
+    "tool_dirty": true,
     "seed": 7,
     "network": "mock",
     "near_network": "testnet",
@@ -24,10 +25,12 @@
       "funding_txid": "abababababababababababababababababababababababababababababababab",
       "balance_before_sats": 100000,
       "balance_after_sats": 100000,
-      "request_tx_hash": "0000000000000000000000000000000000000000000000000000000000000004",
-      "request_op_id": "1",
-      "clawback_op_id": "2",
-      "clawback_txid": null
+      "request_tx_hash": "0000000000000000000000000000000000000000000000000000000000000006",
+      "request_op_id": "2",
+      "clawback_seen": true,
+      "clawback_op_id": "3",
+      "clawback_txid": null,
+      "clawback_broadcast": false
     },
     {
       "round": 2,
@@ -37,10 +40,12 @@
       "funding_txid": "abababababababababababababababababababababababababababababababab",
       "balance_before_sats": 100000,
       "balance_after_sats": 100000,
-      "request_tx_hash": "0000000000000000000000000000000000000000000000000000000000000024",
-      "request_op_id": "3",
-      "clawback_op_id": "4",
-      "clawback_txid": null
+      "request_tx_hash": "0000000000000000000000000000000000000000000000000000000000000026",
+      "request_op_id": "5",
+      "clawback_seen": true,
+      "clawback_op_id": "6",
+      "clawback_txid": null,
+      "clawback_broadcast": false
     },
     {
       "round": 3,
@@ -50,10 +55,12 @@
       "funding_txid": "abababababababababababababababababababababababababababababababab",
       "balance_before_sats": 100000,
       "balance_after_sats": 100000,
-      "request_tx_hash": "0000000000000000000000000000000000000000000000000000000000000043",
-      "request_op_id": "5",
-      "clawback_op_id": "6",
-      "clawback_txid": null
+      "request_tx_hash": "0000000000000000000000000000000000000000000000000000000000000045",
+      "request_op_id": "8",
+      "clawback_seen": true,
+      "clawback_op_id": "9",
+      "clawback_txid": null,
+      "clawback_broadcast": false
     }
   ],
   "attempts": [
@@ -62,2118 +69,3010 @@
       "round": 1,
       "category": "clawback",
       "method": "begin_clawback",
-      "args_sha256": "284a98d3570fc17a29856ec714cf5837fe4821f9b0f490ad93769dca2ce88784",
+      "args": {
+        "vault_id": "1",
+        "utxos": [
+          {
+            "txid": "abababababababababababababababababababababababababababababababab",
+            "vout": 0,
+            "value_sats": "100000"
+          }
+        ],
+        "fee_rate_sat_vb": 2
+      },
+      "args_sha256": "3dc2e175ab5c3e44ed009ae17b702243609c3c950127a96000c494daced83aca",
       "expected": ["ERR_UNAUTHORIZED"],
       "actual": "ERR_UNAUTHORIZED",
       "actual_class": "refused",
       "expected_match": true,
+      "unexpected": false,
+      "window_result": null,
       "tx_hash": "0000000000000000000000000000000000000000000000000000000000000001",
-      "explorer": "https://testnet.nearblocks.io/txns/0000000000000000000000000000000000000000000000000000000000000001",
+      "explorer": null,
       "op_id": null,
       "vault_id": null,
       "log_entry": 1,
-      "off_log": null
+      "off_log": null,
+      "note": null
     },
     {
       "id": 2,
       "round": 1,
       "category": "withdrawal_request",
       "method": "request_withdrawal",
-      "args_sha256": "a148d10f8bc0caf7090c250115ec0d7ea6741ee9ec73d3e17743c6886e127fd1",
+      "args": {
+        "vault_id": "1",
+        "amount_sats": "1000",
+        "destination": "tb1qkx04y0l5skar7qwx7pp2k6lcrckkz47h688rmq",
+        "fee_rate_sat_vb": 2,
+        "utxos": [
+          {
+            "txid": "abababababababababababababababababababababababababababababababab",
+            "vout": 0,
+            "value_sats": "100000"
+          }
+        ],
+        "envelope": "ababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababab"
+      },
+      "args_sha256": "909f0549135343fd428cd0a0f75d45f85ae6b74ceb4424b7595f05186635638c",
       "expected": ["ERR_BAD_ENVELOPE"],
       "actual": "ERR_BAD_ENVELOPE",
       "actual_class": "refused",
       "expected_match": true,
+      "unexpected": false,
+      "window_result": null,
       "tx_hash": "0000000000000000000000000000000000000000000000000000000000000002",
-      "explorer": "https://testnet.nearblocks.io/txns/0000000000000000000000000000000000000000000000000000000000000002",
+      "explorer": null,
       "op_id": null,
       "vault_id": null,
       "log_entry": 2,
-      "off_log": null
+      "off_log": null,
+      "note": null
     },
     {
       "id": 3,
       "round": 1,
       "category": "spend_allowance",
       "method": "spend_allowance",
-      "args_sha256": "a7f0e51c5e912b09fd05cdb350f0df93f5a46ec15ae31419e22dc0da18121b64",
+      "args": {
+        "vault_id": "1",
+        "amount_sats": "1000",
+        "destination": "tb1q29faqsw8uf6fql9hlfy0ny69ln0mfstjr5lmpu",
+        "fee_rate_sat_vb": 2,
+        "utxos": [
+          {
+            "txid": "abababababababababababababababababababababababababababababababab",
+            "vout": 0,
+            "value_sats": "100000"
+          }
+        ],
+        "envelope": "0a4f44f19cb1a833a58e29cb92c95c4bebeffb4c29f240fa5b6c70b6e95db438652cd58c3b987f79ffc7298bfce20a65e6d2d3e26f343d06df2289e035f9680507c106e37485b1b0f20e271e213d2fcc"
+      },
+      "args_sha256": "9d03af6db2f48c973acd033e3bb5dd32ca1b6ad502cdf99ed7ed19d6c3ce5941",
       "expected": ["ERR_ALLOWANCE_LIMIT"],
       "actual": "ERR_ALLOWANCE_LIMIT",
       "actual_class": "refused",
       "expected_match": true,
+      "unexpected": false,
+      "window_result": null,
       "tx_hash": "0000000000000000000000000000000000000000000000000000000000000003",
-      "explorer": "https://testnet.nearblocks.io/txns/0000000000000000000000000000000000000000000000000000000000000003",
+      "explorer": null,
       "op_id": null,
       "vault_id": null,
       "log_entry": 3,
-      "off_log": null
+      "off_log": null,
+      "note": null
     },
     {
       "id": 4,
       "round": 1,
-      "category": "bitcoin_escape",
-      "method": null,
-      "args_sha256": null,
-      "expected": ["rejected"],
-      "actual": "off_log:not_broadcast",
-      "actual_class": "off_log",
+      "category": "refresh",
+      "method": "refresh",
+      "args": {
+        "vault_id": "1",
+        "fee_rate_sat_vb": 1000000,
+        "utxos": [
+          {
+            "txid": "efefefefefefefefefefefefefefefefefefefefefefefefefefefefefefefef",
+            "vout": 7,
+            "value_sats": "100000"
+          }
+        ],
+        "envelope": "e6de79bdb78806ca52c53647390a0657b9f391fa29aff61db2ec5cf09f65ad1deff03a294f293bc09bdd6a072a540b6048fc669cffa348c34b166d1d4c3bab2aa5f7db14f788e22d37baa006979c94fe"
+      },
+      "args_sha256": "c7608a8eab8c0a2cc17b0f155574eac50bc8ae8dd6406c7cdc26fe78949d39b2",
+      "expected": ["ERR_FEE_TOO_HIGH"],
+      "actual": "ERR_FEE_TOO_HIGH",
+      "actual_class": "refused",
       "expected_match": true,
-      "tx_hash": null,
+      "unexpected": false,
+      "window_result": null,
+      "tx_hash": "0000000000000000000000000000000000000000000000000000000000000004",
       "explorer": null,
       "op_id": null,
       "vault_id": null,
-      "log_entry": null,
-      "off_log": {
-        "kind": "bitcoin",
-        "raw_hex": "",
-        "txid": "",
-        "rejection": "mock Vault kit"
-      }
+      "log_entry": 4,
+      "off_log": null,
+      "note": null
     },
     {
       "id": 5,
       "round": 1,
-      "category": "bitcoin_no_cosigner",
+      "category": "policy_change",
+      "method": "propose_policy_change",
+      "args": {
+        "vault_id": "1",
+        "changes": {
+          "escape_timelock_blocks": 1
+        },
+        "envelope": "e11f4b43f5a4c4eeb9dbe1cb113811e688861539d1941cfeb3a748cd3e7b2c41ca86bd1917ce0d961641d9dfe60c59c5a10277ae93885d7b220e250aa7e6172699c500a3312d2c96827e844f30629274"
+      },
+      "args_sha256": "c338369a26b4c8388b22b9bdc5a490738b425440e08bd789fe270fc30f09cd53",
+      "expected": ["ERR_SCRIPT_BOUND"],
+      "actual": "ERR_SCRIPT_BOUND",
+      "actual_class": "refused",
+      "expected_match": true,
+      "unexpected": false,
+      "window_result": null,
+      "tx_hash": "0000000000000000000000000000000000000000000000000000000000000005",
+      "explorer": null,
+      "op_id": null,
+      "vault_id": null,
+      "log_entry": 5,
+      "off_log": null,
+      "note": null
+    },
+    {
+      "id": 6,
+      "round": 1,
+      "category": "bitcoin_escape",
       "method": null,
+      "args": null,
       "args_sha256": null,
       "expected": ["rejected"],
-      "actual": "off_log:not_broadcast",
-      "actual_class": "off_log",
-      "expected_match": true,
+      "actual": "skipped",
+      "actual_class": "skipped",
+      "expected_match": false,
+      "unexpected": false,
+      "window_result": null,
       "tx_hash": null,
       "explorer": null,
       "op_id": null,
       "vault_id": null,
       "log_entry": null,
-      "off_log": {
-        "kind": "bitcoin",
-        "raw_hex": "",
-        "txid": "",
-        "rejection": "mock Vault kit"
-      }
-    },
-    {
-      "id": 6,
-      "round": 1,
-      "category": "withdrawal_request",
-      "method": "request_withdrawal",
-      "args_sha256": "29e2598d15e0c798e7ea6353fe52049f047b61ba0e683d5b3a8efcb01afc2437",
-      "expected": ["accepted", "ERR_OUTPOINT_RESERVED", "ERR_CLAWED_BACK", "ERR_STORAGE_BUDGET"],
-      "actual": "accepted",
-      "actual_class": "accepted",
-      "expected_match": true,
-      "tx_hash": "0000000000000000000000000000000000000000000000000000000000000004",
-      "explorer": "https://testnet.nearblocks.io/txns/0000000000000000000000000000000000000000000000000000000000000004",
-      "op_id": "1",
-      "vault_id": "1",
-      "log_entry": 4,
-      "off_log": null
+      "off_log": null,
+      "note": "mock Vault kit: no script to spend"
     },
     {
       "id": 7,
       "round": 1,
-      "category": "early_execute",
-      "method": "begin_execute",
-      "args_sha256": "0ca28d5c9929beee41c333b1f738e47410c592ffd6e978d075b60c01ada1633c",
-      "expected": ["ERR_NOT_EXECUTABLE", "ERR_CLAWED_BACK"],
-      "actual": "ERR_NOT_EXECUTABLE",
-      "actual_class": "refused",
-      "expected_match": true,
-      "tx_hash": "0000000000000000000000000000000000000000000000000000000000000005",
-      "explorer": "https://testnet.nearblocks.io/txns/0000000000000000000000000000000000000000000000000000000000000005",
+      "category": "bitcoin_no_cosigner",
+      "method": null,
+      "args": null,
+      "args_sha256": null,
+      "expected": ["rejected"],
+      "actual": "skipped",
+      "actual_class": "skipped",
+      "expected_match": false,
+      "unexpected": false,
+      "window_result": null,
+      "tx_hash": null,
+      "explorer": null,
       "op_id": null,
       "vault_id": null,
-      "log_entry": 5,
-      "off_log": null
+      "log_entry": null,
+      "off_log": null,
+      "note": "mock Vault kit: no script to spend"
     },
     {
       "id": 8,
       "round": 1,
-      "category": "co_sign",
-      "method": "sign_input",
-      "args_sha256": "496033e31dc8e265233a45f54192f30cf0b9c5543389eb8255169f2132a1d593",
-      "expected": ["ERR_BAD_OP_STATE", "ERR_CLAWED_BACK"],
-      "actual": "ERR_BAD_OP_STATE",
-      "actual_class": "refused",
+      "category": "withdrawal_request",
+      "method": "request_withdrawal",
+      "args": {
+        "vault_id": "1",
+        "amount_sats": "99380",
+        "destination": "tb1qjmnpywxcwan7g4qn0s226es3zgu0rfy7qmt2k7",
+        "fee_rate_sat_vb": 2,
+        "utxos": [
+          {
+            "txid": "abababababababababababababababababababababababababababababababab",
+            "vout": 0,
+            "value_sats": "100000"
+          }
+        ],
+        "envelope": "5b601cc13f620e9bf9aec16d55b0012389e3da5c3077ce52429e5643c996092343f4f05af92aba8e329093f73d9b188c4589b7fd2730415b398655fe9c0c7b76bf03f255ebee51740556c1ab6c8590c8"
+      },
+      "args_sha256": "4746ae8b6b65a19e1552fa45a220bc2135cdd8f461dfa27da2a82328643c55f5",
+      "expected": ["accepted", "ERR_OUTPOINT_RESERVED", "ERR_CLAWED_BACK", "ERR_STORAGE_BUDGET"],
+      "actual": "accepted",
+      "actual_class": "accepted",
       "expected_match": true,
+      "unexpected": false,
+      "window_result": null,
       "tx_hash": "0000000000000000000000000000000000000000000000000000000000000006",
-      "explorer": "https://testnet.nearblocks.io/txns/0000000000000000000000000000000000000000000000000000000000000006",
-      "op_id": null,
-      "vault_id": null,
+      "explorer": null,
+      "op_id": "2",
+      "vault_id": "1",
       "log_entry": 6,
-      "off_log": null
+      "off_log": null,
+      "note": null
     },
     {
       "id": 9,
       "round": 1,
-      "category": "withdrawal_request",
-      "method": "request_withdrawal",
-      "args_sha256": "002be8556e15ce0edc91a5007004a4ff15d0fdf2f0ffc8cc88e246ec755a8632",
-      "expected": ["ERR_OUTPOINT_RESERVED", "ERR_CLAWED_BACK"],
-      "actual": "ERR_OUTPOINT_RESERVED",
+      "category": "early_execute",
+      "method": "begin_execute",
+      "args": {
+        "op_id": "2",
+        "envelope": "7e75a668ae635f5e2dd334930133b2a5e2ccdebfa8fc91f0dc55b6b0dc2f3c0fb07e9bd2c2b046f2e4b3f3c3bbf06e10ca1e2de5bb082fd646b0ef8cf3d7858acbbf93e7c6dda5d35d02e4dba480453e"
+      },
+      "args_sha256": "dcc44212644a11cb79ff4b83d6efa32223d4098e22c91d9135635e79b3879b06",
+      "expected": ["ERR_NOT_EXECUTABLE", "ERR_CLAWED_BACK"],
+      "actual": "ERR_NOT_EXECUTABLE",
       "actual_class": "refused",
       "expected_match": true,
+      "unexpected": false,
+      "window_result": "own_code",
       "tx_hash": "0000000000000000000000000000000000000000000000000000000000000007",
-      "explorer": "https://testnet.nearblocks.io/txns/0000000000000000000000000000000000000000000000000000000000000007",
+      "explorer": null,
       "op_id": null,
       "vault_id": null,
       "log_entry": 7,
-      "off_log": null
+      "off_log": null,
+      "note": null
     },
     {
       "id": 10,
       "round": 1,
-      "category": "withdrawal_request",
-      "method": "request_withdrawal",
-      "args_sha256": "8b57b9c409a64d74f6e12be1be2a44eebba2bbbd4ca5ae22abf78652bd9ce3dc",
-      "expected": ["ERR_CLAWED_BACK", "ERR_VAULT_NOT_ACTIVE"],
-      "actual": "ERR_CLAWED_BACK",
+      "category": "co_sign",
+      "method": "sign_input",
+      "args": {
+        "op_id": "2",
+        "input_index": 0
+      },
+      "args_sha256": "d09f6a6c35218db927c5d6392dc41fbcff65b343989392497cf368af171cdd93",
+      "expected": ["ERR_BAD_OP_STATE", "ERR_CLAWED_BACK"],
+      "actual": "ERR_BAD_OP_STATE",
       "actual_class": "refused",
       "expected_match": true,
+      "unexpected": false,
+      "window_result": "own_code",
       "tx_hash": "0000000000000000000000000000000000000000000000000000000000000008",
-      "explorer": "https://testnet.nearblocks.io/txns/0000000000000000000000000000000000000000000000000000000000000008",
+      "explorer": null,
       "op_id": null,
       "vault_id": null,
       "log_entry": 8,
-      "off_log": null
+      "off_log": null,
+      "note": null
     },
     {
       "id": 11,
       "round": 1,
       "category": "withdrawal_request",
       "method": "request_withdrawal",
-      "args_sha256": "abc7b8f5c363e996006329a07897ad5323d7aa5eb0d81384b2cfa396711a5f20",
-      "expected": ["ERR_CLAWED_BACK", "ERR_VAULT_NOT_ACTIVE"],
-      "actual": "ERR_CLAWED_BACK",
+      "args": {
+        "vault_id": "1",
+        "amount_sats": "99380",
+        "destination": "tb1qz5g0lm0w7v8t444q8767g59pnkvx44852n9gxy",
+        "fee_rate_sat_vb": 2,
+        "utxos": [
+          {
+            "txid": "abababababababababababababababababababababababababababababababab",
+            "vout": 0,
+            "value_sats": "100000"
+          }
+        ],
+        "envelope": "d1762fcec127c1125bf60aa184ac468a70a227bb0a115c354f80fd2af6cab27ddb9450963fbcba2f4685a52b2601de863f16a44897e5e8d6087e3ff5ccb879ad0735e0a3f62362e82d0675164e1cf04a"
+      },
+      "args_sha256": "038333a4ed369024d7074e12b143f974944704a1233877b041ba0110182f3545",
+      "expected": ["ERR_OUTPOINT_RESERVED", "ERR_CLAWED_BACK"],
+      "actual": "ERR_OUTPOINT_RESERVED",
       "actual_class": "refused",
       "expected_match": true,
+      "unexpected": false,
+      "window_result": "own_code",
       "tx_hash": "0000000000000000000000000000000000000000000000000000000000000009",
-      "explorer": "https://testnet.nearblocks.io/txns/0000000000000000000000000000000000000000000000000000000000000009",
+      "explorer": null,
       "op_id": null,
       "vault_id": null,
       "log_entry": 9,
-      "off_log": null
+      "off_log": null,
+      "note": null
     },
     {
       "id": 12,
       "round": 1,
+      "category": "withdrawal_request",
+      "method": "request_withdrawal",
+      "args": {
+        "vault_id": "1",
+        "amount_sats": "99380",
+        "destination": "tb1q0zu83r49f3p4djaqsdueaeahcd8x9lkxrvt57a",
+        "fee_rate_sat_vb": 2,
+        "utxos": [
+          {
+            "txid": "abababababababababababababababababababababababababababababababab",
+            "vout": 0,
+            "value_sats": "100000"
+          }
+        ],
+        "envelope": "01c6b8ecac6cfd73bb06dcabedc2df706d771af0e7d4d136cbb95364e0b5476ca241a2922c7ea16a4a67e34ce0bed84505cb0d361fb952b15ce7cd568dc50e7420dd50fd0b20ceadd50d568079af45a6"
+      },
+      "args_sha256": "41820725ad7e75295dffa3cd2e274cd5b057940f831ed3704fa0d64b932638c6",
+      "expected": ["ERR_CLAWED_BACK", "ERR_VAULT_NOT_ACTIVE"],
+      "actual": "ERR_CLAWED_BACK",
+      "actual_class": "refused",
+      "expected_match": true,
+      "unexpected": false,
+      "window_result": null,
+      "tx_hash": "000000000000000000000000000000000000000000000000000000000000000a",
+      "explorer": null,
+      "op_id": null,
+      "vault_id": null,
+      "log_entry": 10,
+      "off_log": null,
+      "note": null
+    },
+    {
+      "id": 13,
+      "round": 1,
+      "category": "withdrawal_request",
+      "method": "request_withdrawal",
+      "args": {
+        "vault_id": "1",
+        "amount_sats": "99380",
+        "destination": "tb1qjlxxc49k3x4j5xcvtp8ch6kq0pxn9yj5f75nln",
+        "fee_rate_sat_vb": 2,
+        "utxos": [
+          {
+            "txid": "abababababababababababababababababababababababababababababababab",
+            "vout": 0,
+            "value_sats": "100000"
+          }
+        ],
+        "envelope": "5a7263c97f614d58462c00e1894a2a8b04f30a96f8b0be3a68ada1b15d8e1c6a81ac57b5a2fb746366cb92736c65bdfab47434042b112dfcac0c8ab5193c1ad7d6902ab4e901563f4c50ef2a1b6ab1ac"
+      },
+      "args_sha256": "2db89bd186bad6a41932f8c4314b4ff37e45a3291199c608ef15796b003c3a91",
+      "expected": ["ERR_CLAWED_BACK", "ERR_VAULT_NOT_ACTIVE"],
+      "actual": "ERR_CLAWED_BACK",
+      "actual_class": "refused",
+      "expected_match": true,
+      "unexpected": false,
+      "window_result": null,
+      "tx_hash": "000000000000000000000000000000000000000000000000000000000000000b",
+      "explorer": null,
+      "op_id": null,
+      "vault_id": null,
+      "log_entry": 11,
+      "off_log": null,
+      "note": null
+    },
+    {
+      "id": 14,
+      "round": 1,
       "category": "storage",
       "method": "top_up_storage",
+      "args": {
+        "vault_id": "1"
+      },
       "args_sha256": "39cf4ceb0db8d10ee2a3d440591a5bac8a4fbb752e08d4f1594a13df36f4b11d",
       "expected": ["harmless"],
       "actual": "allowed_harmless",
       "actual_class": "allowed_harmless",
       "expected_match": true,
-      "tx_hash": "000000000000000000000000000000000000000000000000000000000000000a",
-      "explorer": "https://testnet.nearblocks.io/txns/000000000000000000000000000000000000000000000000000000000000000a",
+      "unexpected": false,
+      "window_result": null,
+      "tx_hash": "000000000000000000000000000000000000000000000000000000000000000c",
+      "explorer": null,
       "op_id": null,
       "vault_id": null,
       "log_entry": null,
-      "off_log": null
-    },
-    {
-      "id": 13,
-      "round": 1,
-      "category": "spend_allowance",
-      "method": "spend_allowance",
-      "args_sha256": "000e1003f74f10e9e50ac5b3aabb38a5adafa7d22cb51aa8893d4a5ec09f81a2",
-      "expected": ["ERR_CLAWED_BACK", "ERR_VAULT_NOT_ACTIVE"],
-      "actual": "ERR_CLAWED_BACK",
-      "actual_class": "refused",
-      "expected_match": true,
-      "tx_hash": "000000000000000000000000000000000000000000000000000000000000000b",
-      "explorer": "https://testnet.nearblocks.io/txns/000000000000000000000000000000000000000000000000000000000000000b",
-      "op_id": null,
-      "vault_id": null,
-      "log_entry": 10,
-      "off_log": null
-    },
-    {
-      "id": 14,
-      "round": 1,
-      "category": "refresh",
-      "method": "refresh",
-      "args_sha256": "4fc559be27c1047c0bf1e9d0716e0cded96f2c26a4fcbdbb3b3ac8faae6452ff",
-      "expected": ["ERR_CLAWED_BACK", "ERR_VAULT_NOT_ACTIVE"],
-      "actual": "ERR_CLAWED_BACK",
-      "actual_class": "refused",
-      "expected_match": true,
-      "tx_hash": "000000000000000000000000000000000000000000000000000000000000000c",
-      "explorer": "https://testnet.nearblocks.io/txns/000000000000000000000000000000000000000000000000000000000000000c",
-      "op_id": null,
-      "vault_id": null,
-      "log_entry": 11,
-      "off_log": null
+      "off_log": null,
+      "note": null
     },
     {
       "id": 15,
       "round": 1,
-      "category": "co_sign",
-      "method": "sign_input",
-      "args_sha256": "496033e31dc8e265233a45f54192f30cf0b9c5543389eb8255169f2132a1d593",
+      "category": "spend_allowance",
+      "method": "spend_allowance",
+      "args": {
+        "vault_id": "1",
+        "amount_sats": "1000",
+        "destination": "tb1qlr4qzz5t3mje00sm3a7ruvduyy6c0tlz6wdu67",
+        "fee_rate_sat_vb": 2,
+        "utxos": [
+          {
+            "txid": "abababababababababababababababababababababababababababababababab",
+            "vout": 0,
+            "value_sats": "100000"
+          }
+        ],
+        "envelope": "1b3bdbbe09b8a347810495de9f3f1e2b6770693f5ff8601b2add836696160a55ec9242330fb3876d6f90b32f247034c43ab828666376589efaede9303064813d6c0bb7c5f1fd979994d2320ab6b37c97"
+      },
+      "args_sha256": "41b876b24dc6c5bf5d638a840e2abe9720c82728b5d52e663837515b941285a6",
       "expected": ["ERR_CLAWED_BACK", "ERR_VAULT_NOT_ACTIVE"],
       "actual": "ERR_CLAWED_BACK",
       "actual_class": "refused",
       "expected_match": true,
+      "unexpected": false,
+      "window_result": null,
       "tx_hash": "000000000000000000000000000000000000000000000000000000000000000d",
-      "explorer": "https://testnet.nearblocks.io/txns/000000000000000000000000000000000000000000000000000000000000000d",
+      "explorer": null,
       "op_id": null,
       "vault_id": null,
       "log_entry": 12,
-      "off_log": null
+      "off_log": null,
+      "note": null
     },
     {
       "id": 16,
       "round": 1,
-      "category": "co_sign",
-      "method": "sign_input",
-      "args_sha256": "496033e31dc8e265233a45f54192f30cf0b9c5543389eb8255169f2132a1d593",
+      "category": "refresh",
+      "method": "refresh",
+      "args": {
+        "vault_id": "1",
+        "fee_rate_sat_vb": 2,
+        "utxos": [
+          {
+            "txid": "abababababababababababababababababababababababababababababababab",
+            "vout": 0,
+            "value_sats": "100000"
+          }
+        ],
+        "envelope": "486846bde07f91eae1406366cf8cd3d5da155d8079e0e057d2a406c8e939450abbd6d65491d756653abdf201b392a6c1caac485e7123b5a597501f3cb4fa4f0a73ed9ff10f1d9c27de340ad64135627d"
+      },
+      "args_sha256": "8342f00aa89a6a43b7c8311de47c9f26700c22966e6b64acf4cdca43df868feb",
       "expected": ["ERR_CLAWED_BACK", "ERR_VAULT_NOT_ACTIVE"],
       "actual": "ERR_CLAWED_BACK",
       "actual_class": "refused",
       "expected_match": true,
+      "unexpected": false,
+      "window_result": null,
       "tx_hash": "000000000000000000000000000000000000000000000000000000000000000e",
-      "explorer": "https://testnet.nearblocks.io/txns/000000000000000000000000000000000000000000000000000000000000000e",
+      "explorer": null,
       "op_id": null,
       "vault_id": null,
       "log_entry": 13,
-      "off_log": null
+      "off_log": null,
+      "note": null
     },
     {
       "id": 17,
       "round": 1,
-      "category": "early_execute",
-      "method": "begin_execute",
-      "args_sha256": "0ca28d5c9929beee41c333b1f738e47410c592ffd6e978d075b60c01ada1633c",
+      "category": "co_sign",
+      "method": "sign_input",
+      "args": {
+        "op_id": "2",
+        "input_index": 0
+      },
+      "args_sha256": "d09f6a6c35218db927c5d6392dc41fbcff65b343989392497cf368af171cdd93",
       "expected": ["ERR_CLAWED_BACK", "ERR_VAULT_NOT_ACTIVE"],
       "actual": "ERR_CLAWED_BACK",
       "actual_class": "refused",
       "expected_match": true,
+      "unexpected": false,
+      "window_result": null,
       "tx_hash": "000000000000000000000000000000000000000000000000000000000000000f",
-      "explorer": "https://testnet.nearblocks.io/txns/000000000000000000000000000000000000000000000000000000000000000f",
+      "explorer": null,
       "op_id": null,
       "vault_id": null,
       "log_entry": 14,
-      "off_log": null
+      "off_log": null,
+      "note": null
     },
     {
       "id": 18,
       "round": 1,
-      "category": "refresh",
-      "method": "refresh",
-      "args_sha256": "4fc559be27c1047c0bf1e9d0716e0cded96f2c26a4fcbdbb3b3ac8faae6452ff",
+      "category": "co_sign",
+      "method": "sign_input",
+      "args": {
+        "op_id": "2",
+        "input_index": 0
+      },
+      "args_sha256": "d09f6a6c35218db927c5d6392dc41fbcff65b343989392497cf368af171cdd93",
       "expected": ["ERR_CLAWED_BACK", "ERR_VAULT_NOT_ACTIVE"],
       "actual": "ERR_CLAWED_BACK",
       "actual_class": "refused",
       "expected_match": true,
+      "unexpected": false,
+      "window_result": null,
       "tx_hash": "0000000000000000000000000000000000000000000000000000000000000010",
-      "explorer": "https://testnet.nearblocks.io/txns/0000000000000000000000000000000000000000000000000000000000000010",
+      "explorer": null,
       "op_id": null,
       "vault_id": null,
       "log_entry": 15,
-      "off_log": null
+      "off_log": null,
+      "note": null
     },
     {
       "id": 19,
       "round": 1,
-      "category": "spend_allowance",
-      "method": "spend_allowance",
-      "args_sha256": "0e558238b30b6071576943f624a08bc80cc99b9483a6b2b0b72f3e2847b01303",
+      "category": "early_execute",
+      "method": "begin_execute",
+      "args": {
+        "op_id": "2",
+        "envelope": "f581597f50ab78b7561a199fbcfa8bbaf162a6b36f65d48b0b4b595a9d5c177583fdeb9dcceae2924378fba846e565ae4e96f1a69a340df4aa6f8f1eeaa4f5503d079ad3e4d230822ff019914ddd229f"
+      },
+      "args_sha256": "375f2060e5e6986e4723f8e195b93dd2f048481b253f216217d5dc9108ae9445",
       "expected": ["ERR_CLAWED_BACK", "ERR_VAULT_NOT_ACTIVE"],
       "actual": "ERR_CLAWED_BACK",
       "actual_class": "refused",
       "expected_match": true,
+      "unexpected": false,
+      "window_result": null,
       "tx_hash": "0000000000000000000000000000000000000000000000000000000000000011",
-      "explorer": "https://testnet.nearblocks.io/txns/0000000000000000000000000000000000000000000000000000000000000011",
+      "explorer": null,
       "op_id": null,
       "vault_id": null,
       "log_entry": 16,
-      "off_log": null
+      "off_log": null,
+      "note": null
     },
     {
       "id": 20,
       "round": 1,
-      "category": "early_execute",
-      "method": "begin_execute",
-      "args_sha256": "0ca28d5c9929beee41c333b1f738e47410c592ffd6e978d075b60c01ada1633c",
+      "category": "refresh",
+      "method": "refresh",
+      "args": {
+        "vault_id": "1",
+        "fee_rate_sat_vb": 2,
+        "utxos": [
+          {
+            "txid": "abababababababababababababababababababababababababababababababab",
+            "vout": 0,
+            "value_sats": "100000"
+          }
+        ],
+        "envelope": "09128c23d25fd5fc50bd8dfb5ade939c1740ae356294f575eef9508afbec7b3497b6bdc910ee7ac72ddf6f92b8c4fdc621b798a6bae5641fa16e1c72e88a6602fa09cd8a50f69160f68d3689f93e0b09"
+      },
+      "args_sha256": "8a8037860951683920eaefdbeb47032f7eff5bd35c7f45f7aa150e9bcdf1bcec",
       "expected": ["ERR_CLAWED_BACK", "ERR_VAULT_NOT_ACTIVE"],
       "actual": "ERR_CLAWED_BACK",
       "actual_class": "refused",
       "expected_match": true,
+      "unexpected": false,
+      "window_result": null,
       "tx_hash": "0000000000000000000000000000000000000000000000000000000000000012",
-      "explorer": "https://testnet.nearblocks.io/txns/0000000000000000000000000000000000000000000000000000000000000012",
+      "explorer": null,
       "op_id": null,
       "vault_id": null,
       "log_entry": 17,
-      "off_log": null
+      "off_log": null,
+      "note": null
     },
     {
       "id": 21,
       "round": 1,
-      "category": "withdrawal_request",
-      "method": "request_withdrawal",
-      "args_sha256": "75d0965c63d6d820d94e7720e8d14a43b9f7034c17dc2551b835a6dfacecc169",
+      "category": "spend_allowance",
+      "method": "spend_allowance",
+      "args": {
+        "vault_id": "1",
+        "amount_sats": "1000",
+        "destination": "tb1q9y9d85rquhy0j67eydr06qvchjmn3jgct7us3m",
+        "fee_rate_sat_vb": 2,
+        "utxos": [
+          {
+            "txid": "abababababababababababababababababababababababababababababababab",
+            "vout": 0,
+            "value_sats": "100000"
+          }
+        ],
+        "envelope": "85c0da352f71c749a8a63b53231f90b0ce2e48da433c52af69c636a3660b324077ab3c5d381ae79fe38c3dc3fdedc0c16c64198825310427a077408425e96b3c73f8d2b39788d23f7da4b4070ce20103"
+      },
+      "args_sha256": "f59f1672eff7af777f73603af3a3319f677ebff37724043580275865380726ba",
       "expected": ["ERR_CLAWED_BACK", "ERR_VAULT_NOT_ACTIVE"],
       "actual": "ERR_CLAWED_BACK",
       "actual_class": "refused",
       "expected_match": true,
+      "unexpected": false,
+      "window_result": null,
       "tx_hash": "0000000000000000000000000000000000000000000000000000000000000013",
-      "explorer": "https://testnet.nearblocks.io/txns/0000000000000000000000000000000000000000000000000000000000000013",
+      "explorer": null,
       "op_id": null,
       "vault_id": null,
       "log_entry": 18,
-      "off_log": null
+      "off_log": null,
+      "note": null
     },
     {
       "id": 22,
       "round": 1,
-      "category": "spend_allowance",
-      "method": "spend_allowance",
-      "args_sha256": "f559ff77652ced0e8a3212d099a08d18c01c11e84e7c1124426002f8d2a0147f",
+      "category": "early_execute",
+      "method": "begin_execute",
+      "args": {
+        "op_id": "2",
+        "envelope": "6c02948fac6bae28dea1b9e7f10b864170d578b3530c4223fa2477eadf43cb771f6505b49e34b38f689789bcc89b653167f736caf62d046d3ac706d8599d71f8977b78a8f2338772872cdc9d24812ba4"
+      },
+      "args_sha256": "a10294a7144715c9934e6d84b278bd6a7a3439e1a07465749a24b7828c134f6a",
       "expected": ["ERR_CLAWED_BACK", "ERR_VAULT_NOT_ACTIVE"],
       "actual": "ERR_CLAWED_BACK",
       "actual_class": "refused",
       "expected_match": true,
+      "unexpected": false,
+      "window_result": null,
       "tx_hash": "0000000000000000000000000000000000000000000000000000000000000014",
-      "explorer": "https://testnet.nearblocks.io/txns/0000000000000000000000000000000000000000000000000000000000000014",
+      "explorer": null,
       "op_id": null,
       "vault_id": null,
       "log_entry": 19,
-      "off_log": null
+      "off_log": null,
+      "note": null
     },
     {
       "id": 23,
       "round": 1,
-      "category": "refresh",
-      "method": "refresh",
-      "args_sha256": "4fc559be27c1047c0bf1e9d0716e0cded96f2c26a4fcbdbb3b3ac8faae6452ff",
+      "category": "withdrawal_request",
+      "method": "request_withdrawal",
+      "args": {
+        "vault_id": "1",
+        "amount_sats": "99380",
+        "destination": "tb1qsdxxeju2up83qp6lpzfs32ut58epuhyzfu67ea",
+        "fee_rate_sat_vb": 2,
+        "utxos": [
+          {
+            "txid": "abababababababababababababababababababababababababababababababab",
+            "vout": 0,
+            "value_sats": "100000"
+          }
+        ],
+        "envelope": "7338cb6243aa0740a414b552a6181fec050e939873001096f215d7729fa890018c76ce58aed6121866e73d4afe67aafa7e6650db049bde3f95bcf00f4b49d690a7515e3138741c99fe98aa80b337380a"
+      },
+      "args_sha256": "00c3bd32289db76f2b84875be595f7d7bfc6c568bab84c6f3c3de53de8589b6d",
       "expected": ["ERR_CLAWED_BACK", "ERR_VAULT_NOT_ACTIVE"],
       "actual": "ERR_CLAWED_BACK",
       "actual_class": "refused",
       "expected_match": true,
+      "unexpected": false,
+      "window_result": null,
       "tx_hash": "0000000000000000000000000000000000000000000000000000000000000015",
-      "explorer": "https://testnet.nearblocks.io/txns/0000000000000000000000000000000000000000000000000000000000000015",
+      "explorer": null,
       "op_id": null,
       "vault_id": null,
       "log_entry": 20,
-      "off_log": null
+      "off_log": null,
+      "note": null
     },
     {
       "id": 24,
       "round": 1,
-      "category": "early_execute",
-      "method": "begin_execute",
-      "args_sha256": "0ca28d5c9929beee41c333b1f738e47410c592ffd6e978d075b60c01ada1633c",
+      "category": "spend_allowance",
+      "method": "spend_allowance",
+      "args": {
+        "vault_id": "1",
+        "amount_sats": "1000",
+        "destination": "tb1qe5qs7z6l8sz72w8v8kyxx8wtf7xe2gne8culea",
+        "fee_rate_sat_vb": 2,
+        "utxos": [
+          {
+            "txid": "abababababababababababababababababababababababababababababababab",
+            "vout": 0,
+            "value_sats": "100000"
+          }
+        ],
+        "envelope": "8ff47d900605d0bc3480c0de4a99cb3df6539e950a65c2ace56b6eadd30d0115a2208e305dfc2b36799846851ae14e7bfbe1aff71bc3433aa81b74b692acb3371b411962e5601b8a1dd056417f89e9a1"
+      },
+      "args_sha256": "c8dd93d3609bfaeeaff177d851d2cc89b71f99a66d810d531741355c6038c3a2",
       "expected": ["ERR_CLAWED_BACK", "ERR_VAULT_NOT_ACTIVE"],
       "actual": "ERR_CLAWED_BACK",
       "actual_class": "refused",
       "expected_match": true,
+      "unexpected": false,
+      "window_result": null,
       "tx_hash": "0000000000000000000000000000000000000000000000000000000000000016",
-      "explorer": "https://testnet.nearblocks.io/txns/0000000000000000000000000000000000000000000000000000000000000016",
+      "explorer": null,
       "op_id": null,
       "vault_id": null,
       "log_entry": 21,
-      "off_log": null
+      "off_log": null,
+      "note": null
     },
     {
       "id": 25,
       "round": 1,
-      "category": "co_sign",
-      "method": "sign_input",
-      "args_sha256": "496033e31dc8e265233a45f54192f30cf0b9c5543389eb8255169f2132a1d593",
+      "category": "refresh",
+      "method": "refresh",
+      "args": {
+        "vault_id": "1",
+        "fee_rate_sat_vb": 2,
+        "utxos": [
+          {
+            "txid": "abababababababababababababababababababababababababababababababab",
+            "vout": 0,
+            "value_sats": "100000"
+          }
+        ],
+        "envelope": "485d8d83a10703e4445b5250cdeb7ae12e22562cdd305f89db4626942a6aff35a03204df90e806bdcb766b5e0e75124c9f7b3be3f63864de8c8279a8ee708c117ed433a1b747e438d20759c7690ef7f3"
+      },
+      "args_sha256": "b3d4bae2587986a4cbfe028c5e0d7a774c3fef5c6c3cf26b0f7dec48fb351604",
       "expected": ["ERR_CLAWED_BACK", "ERR_VAULT_NOT_ACTIVE"],
       "actual": "ERR_CLAWED_BACK",
       "actual_class": "refused",
       "expected_match": true,
+      "unexpected": false,
+      "window_result": null,
       "tx_hash": "0000000000000000000000000000000000000000000000000000000000000017",
-      "explorer": "https://testnet.nearblocks.io/txns/0000000000000000000000000000000000000000000000000000000000000017",
+      "explorer": null,
       "op_id": null,
       "vault_id": null,
       "log_entry": 22,
-      "off_log": null
+      "off_log": null,
+      "note": null
     },
     {
       "id": 26,
       "round": 1,
       "category": "early_execute",
       "method": "begin_execute",
-      "args_sha256": "0ca28d5c9929beee41c333b1f738e47410c592ffd6e978d075b60c01ada1633c",
+      "args": {
+        "op_id": "2",
+        "envelope": "74ed43a6ff28ba89d7a703629394d62b829d9fd9c38dcd069537fd9a686e245436b56c95666964805600e85c32f2685ab460983f3d71780407f6664518f9a8c355246a03b72f876713e50e8d642c0e2b"
+      },
+      "args_sha256": "0157c8953def763878e4ee86775eec81e66044943e5d7bafa110f9f547870e18",
       "expected": ["ERR_CLAWED_BACK", "ERR_VAULT_NOT_ACTIVE"],
       "actual": "ERR_CLAWED_BACK",
       "actual_class": "refused",
       "expected_match": true,
+      "unexpected": false,
+      "window_result": null,
       "tx_hash": "0000000000000000000000000000000000000000000000000000000000000018",
-      "explorer": "https://testnet.nearblocks.io/txns/0000000000000000000000000000000000000000000000000000000000000018",
+      "explorer": null,
       "op_id": null,
       "vault_id": null,
       "log_entry": 23,
-      "off_log": null
+      "off_log": null,
+      "note": null
     },
     {
       "id": 27,
       "round": 1,
-      "category": "refresh",
-      "method": "refresh",
-      "args_sha256": "4fc559be27c1047c0bf1e9d0716e0cded96f2c26a4fcbdbb3b3ac8faae6452ff",
+      "category": "co_sign",
+      "method": "sign_input",
+      "args": {
+        "op_id": "2",
+        "input_index": 0
+      },
+      "args_sha256": "d09f6a6c35218db927c5d6392dc41fbcff65b343989392497cf368af171cdd93",
       "expected": ["ERR_CLAWED_BACK", "ERR_VAULT_NOT_ACTIVE"],
       "actual": "ERR_CLAWED_BACK",
       "actual_class": "refused",
       "expected_match": true,
+      "unexpected": false,
+      "window_result": null,
       "tx_hash": "0000000000000000000000000000000000000000000000000000000000000019",
-      "explorer": "https://testnet.nearblocks.io/txns/0000000000000000000000000000000000000000000000000000000000000019",
+      "explorer": null,
       "op_id": null,
       "vault_id": null,
       "log_entry": 24,
-      "off_log": null
+      "off_log": null,
+      "note": null
     },
     {
       "id": 28,
       "round": 1,
       "category": "early_execute",
       "method": "begin_execute",
-      "args_sha256": "0ca28d5c9929beee41c333b1f738e47410c592ffd6e978d075b60c01ada1633c",
+      "args": {
+        "op_id": "2",
+        "envelope": "293b84b58b221ed3999ccbfcf4117842b9f2a1b7511775e54dbe514fd809ec4f2ebc69cd9830357076089c9e798a94f768f5943cee7fc6096b168550f02675d29fa38107c1e0a7c99ae6c5622804198b"
+      },
+      "args_sha256": "cf3af3f93dee2b24435562fb99146477449d1c17790b3c974487fddf3c07f681",
       "expected": ["ERR_CLAWED_BACK", "ERR_VAULT_NOT_ACTIVE"],
       "actual": "ERR_CLAWED_BACK",
       "actual_class": "refused",
       "expected_match": true,
+      "unexpected": false,
+      "window_result": null,
       "tx_hash": "000000000000000000000000000000000000000000000000000000000000001a",
-      "explorer": "https://testnet.nearblocks.io/txns/000000000000000000000000000000000000000000000000000000000000001a",
+      "explorer": null,
       "op_id": null,
       "vault_id": null,
       "log_entry": 25,
-      "off_log": null
+      "off_log": null,
+      "note": null
     },
     {
       "id": 29,
       "round": 1,
-      "category": "storage",
-      "method": "top_up_storage",
-      "args_sha256": "39cf4ceb0db8d10ee2a3d440591a5bac8a4fbb752e08d4f1594a13df36f4b11d",
-      "expected": ["harmless"],
-      "actual": "allowed_harmless",
-      "actual_class": "allowed_harmless",
+      "category": "refresh",
+      "method": "refresh",
+      "args": {
+        "vault_id": "1",
+        "fee_rate_sat_vb": 2,
+        "utxos": [
+          {
+            "txid": "abababababababababababababababababababababababababababababababab",
+            "vout": 0,
+            "value_sats": "100000"
+          }
+        ],
+        "envelope": "0c38296d95c91408725b29adfe5a91ec4f6644246b51a0a3b816cd578f10107680631beb8ca5984fb5bd6adf6a7d7efb1138ed6b3ce49a029a911c5ec684c53066139a1f7272c8e1634fae1338e8cee7"
+      },
+      "args_sha256": "28e896ccb1c7039c7c808179eccf9882618bac9786127ed80e9a8f1522c2cde0",
+      "expected": ["ERR_CLAWED_BACK", "ERR_VAULT_NOT_ACTIVE"],
+      "actual": "ERR_CLAWED_BACK",
+      "actual_class": "refused",
       "expected_match": true,
+      "unexpected": false,
+      "window_result": null,
       "tx_hash": "000000000000000000000000000000000000000000000000000000000000001b",
-      "explorer": "https://testnet.nearblocks.io/txns/000000000000000000000000000000000000000000000000000000000000001b",
+      "explorer": null,
       "op_id": null,
       "vault_id": null,
-      "log_entry": null,
-      "off_log": null
+      "log_entry": 26,
+      "off_log": null,
+      "note": null
     },
     {
       "id": 30,
       "round": 1,
       "category": "early_execute",
       "method": "begin_execute",
-      "args_sha256": "0ca28d5c9929beee41c333b1f738e47410c592ffd6e978d075b60c01ada1633c",
+      "args": {
+        "op_id": "2",
+        "envelope": "4786da40a48a73f51d81f216e5bb9702387b1cb187e72cc499e41990f9462b213c8e138e06b22c9b9ec1b32b908332720bc874ccafaee4898091d344311990b4beb6adcfc370b9b2d5be472a00d33d2f"
+      },
+      "args_sha256": "33f56c3da13b1702bdfc01a039427f9ed95addf446cff28b7c0a88224f1201dd",
       "expected": ["ERR_CLAWED_BACK", "ERR_VAULT_NOT_ACTIVE"],
       "actual": "ERR_CLAWED_BACK",
       "actual_class": "refused",
       "expected_match": true,
+      "unexpected": false,
+      "window_result": null,
       "tx_hash": "000000000000000000000000000000000000000000000000000000000000001c",
-      "explorer": "https://testnet.nearblocks.io/txns/000000000000000000000000000000000000000000000000000000000000001c",
+      "explorer": null,
       "op_id": null,
       "vault_id": null,
-      "log_entry": 26,
-      "off_log": null
+      "log_entry": 27,
+      "off_log": null,
+      "note": null
     },
     {
       "id": 31,
       "round": 1,
-      "category": "policy_change",
-      "method": "propose_policy_change",
-      "args_sha256": "0ee67a2f9e4966d19bb17bdd62da0d3fd7b222f6ba2d45a6edad131a1fe9c299",
-      "expected": ["ERR_CLAWED_BACK", "ERR_VAULT_NOT_ACTIVE"],
-      "actual": "ERR_CLAWED_BACK",
-      "actual_class": "refused",
+      "category": "storage",
+      "method": "top_up_storage",
+      "args": {
+        "vault_id": "1"
+      },
+      "args_sha256": "39cf4ceb0db8d10ee2a3d440591a5bac8a4fbb752e08d4f1594a13df36f4b11d",
+      "expected": ["harmless"],
+      "actual": "allowed_harmless",
+      "actual_class": "allowed_harmless",
       "expected_match": true,
+      "unexpected": false,
+      "window_result": null,
       "tx_hash": "000000000000000000000000000000000000000000000000000000000000001d",
-      "explorer": "https://testnet.nearblocks.io/txns/000000000000000000000000000000000000000000000000000000000000001d",
+      "explorer": null,
       "op_id": null,
       "vault_id": null,
-      "log_entry": 27,
-      "off_log": null
+      "log_entry": null,
+      "off_log": null,
+      "note": null
     },
     {
       "id": 32,
       "round": 1,
       "category": "early_execute",
       "method": "begin_execute",
-      "args_sha256": "0ca28d5c9929beee41c333b1f738e47410c592ffd6e978d075b60c01ada1633c",
+      "args": {
+        "op_id": "2",
+        "envelope": "efbf8b02429635044a52ded61cde28607f89aba6bed6a9f3b37324d0c9f8587c5cfa976bb996855657c6fea84337ec76dab8f102ac7371acfd44069f43347fa50af7ee32dd30d7929e9774687f553d55"
+      },
+      "args_sha256": "cb2bb70f0217ced1778693418e7beb4a2f0b2e26ceaa050e8ed09b8159a85aaf",
       "expected": ["ERR_CLAWED_BACK", "ERR_VAULT_NOT_ACTIVE"],
       "actual": "ERR_CLAWED_BACK",
       "actual_class": "refused",
       "expected_match": true,
+      "unexpected": false,
+      "window_result": null,
       "tx_hash": "000000000000000000000000000000000000000000000000000000000000001e",
-      "explorer": "https://testnet.nearblocks.io/txns/000000000000000000000000000000000000000000000000000000000000001e",
+      "explorer": null,
       "op_id": null,
       "vault_id": null,
       "log_entry": 28,
-      "off_log": null
+      "off_log": null,
+      "note": null
     },
     {
       "id": 33,
       "round": 1,
-      "category": "withdrawal_request",
-      "method": "request_withdrawal",
-      "args_sha256": "edece368e5a87520008b44ff545d317d7288bd10940fe58a824460f8a6c91650",
+      "category": "policy_change",
+      "method": "propose_policy_change",
+      "args": {
+        "vault_id": "1",
+        "changes": {
+          "fee_cap_sats": "20000"
+        },
+        "envelope": "a1437f3b9010186cc1f74ed34ef17469669001d26434e206458809eab38c0043d9354b3d218374def1c21dbda8722a95a61983d6e88a12478d3a4dac84aca05e09867edb9ca09023663f16d0b8e6d8eb"
+      },
+      "args_sha256": "67939ddc2d68884de42e0b62c43631315d5bb793fb7175d65c816ea5a86a7de6",
       "expected": ["ERR_CLAWED_BACK", "ERR_VAULT_NOT_ACTIVE"],
       "actual": "ERR_CLAWED_BACK",
       "actual_class": "refused",
       "expected_match": true,
+      "unexpected": false,
+      "window_result": null,
       "tx_hash": "000000000000000000000000000000000000000000000000000000000000001f",
-      "explorer": "https://testnet.nearblocks.io/txns/000000000000000000000000000000000000000000000000000000000000001f",
+      "explorer": null,
       "op_id": null,
       "vault_id": null,
       "log_entry": 29,
-      "off_log": null
+      "off_log": null,
+      "note": null
     },
     {
       "id": 34,
       "round": 1,
-      "category": "withdrawal_request",
-      "method": "request_withdrawal",
-      "args_sha256": "f848aaeadd3c0cba4cd8d917dbb0ffe9e2224f755e0e84cb261919f303ea3bcb",
+      "category": "early_execute",
+      "method": "begin_execute",
+      "args": {
+        "op_id": "2",
+        "envelope": "1099d61be55c2d2b408452267115f345b335f804ccd8c3d7b124bdc5cd53813bfb0a613ddf26619fb2c6d072493b22a281af302a5e596c0038609aa017f94f2753cded2755e7198ff441ef423fc116fb"
+      },
+      "args_sha256": "8ab2aa05007d315a417895d1f328edf40eef701c2c2ecf6113f5b350d2b4791d",
       "expected": ["ERR_CLAWED_BACK", "ERR_VAULT_NOT_ACTIVE"],
       "actual": "ERR_CLAWED_BACK",
       "actual_class": "refused",
       "expected_match": true,
+      "unexpected": false,
+      "window_result": null,
       "tx_hash": "0000000000000000000000000000000000000000000000000000000000000020",
-      "explorer": "https://testnet.nearblocks.io/txns/0000000000000000000000000000000000000000000000000000000000000020",
+      "explorer": null,
       "op_id": null,
       "vault_id": null,
       "log_entry": 30,
-      "off_log": null
+      "off_log": null,
+      "note": null
     },
     {
       "id": 35,
       "round": 2,
       "category": "clawback",
       "method": "begin_clawback",
-      "args_sha256": "d26013c5f7313c11378a774332ff65568b6d092229a37d7c43a0e36fd17e5d1d",
+      "args": {
+        "vault_id": "2",
+        "utxos": [
+          {
+            "txid": "abababababababababababababababababababababababababababababababab",
+            "vout": 0,
+            "value_sats": "100000"
+          }
+        ],
+        "fee_rate_sat_vb": 2
+      },
+      "args_sha256": "de0ea7c1df18e42767a91e41333ff0e948d717d938ef208edec1e198dfabc23e",
       "expected": ["ERR_UNAUTHORIZED"],
       "actual": "ERR_UNAUTHORIZED",
       "actual_class": "refused",
       "expected_match": true,
+      "unexpected": false,
+      "window_result": null,
       "tx_hash": "0000000000000000000000000000000000000000000000000000000000000021",
-      "explorer": "https://testnet.nearblocks.io/txns/0000000000000000000000000000000000000000000000000000000000000021",
+      "explorer": null,
       "op_id": null,
       "vault_id": null,
       "log_entry": 31,
-      "off_log": null
+      "off_log": null,
+      "note": null
     },
     {
       "id": 36,
       "round": 2,
       "category": "withdrawal_request",
       "method": "request_withdrawal",
-      "args_sha256": "4e8284a53e31e81bc9c140d9d9b13da784550dcde467c188e2df68d05c4c8ded",
+      "args": {
+        "vault_id": "2",
+        "amount_sats": "1000",
+        "destination": "tb1qa4u4l4sf5ggca8wtej2r3yf2cg7mjxl5qglxyu",
+        "fee_rate_sat_vb": 2,
+        "utxos": [
+          {
+            "txid": "abababababababababababababababababababababababababababababababab",
+            "vout": 0,
+            "value_sats": "100000"
+          }
+        ],
+        "envelope": "ababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababab"
+      },
+      "args_sha256": "ed6e4f33cb054386e2703e4306d8daf3f9400860b2fb33f945bf24f08e730bd0",
       "expected": ["ERR_BAD_ENVELOPE"],
       "actual": "ERR_BAD_ENVELOPE",
       "actual_class": "refused",
       "expected_match": true,
+      "unexpected": false,
+      "window_result": null,
       "tx_hash": "0000000000000000000000000000000000000000000000000000000000000022",
-      "explorer": "https://testnet.nearblocks.io/txns/0000000000000000000000000000000000000000000000000000000000000022",
+      "explorer": null,
       "op_id": null,
       "vault_id": null,
       "log_entry": 32,
-      "off_log": null
+      "off_log": null,
+      "note": null
     },
     {
       "id": 37,
       "round": 2,
       "category": "spend_allowance",
       "method": "spend_allowance",
-      "args_sha256": "3424fe2c8641aaed3f3ab432b722b75601bc3208cd3e58ddfecebc3e7b7a3ebe",
+      "args": {
+        "vault_id": "2",
+        "amount_sats": "1000",
+        "destination": "tb1q83qrstn96z4n9vvm5aqxy6qjgzdwf2pcf7s4at",
+        "fee_rate_sat_vb": 2,
+        "utxos": [
+          {
+            "txid": "abababababababababababababababababababababababababababababababab",
+            "vout": 0,
+            "value_sats": "100000"
+          }
+        ],
+        "envelope": "031170736090e2893325a779aeb2a11ed4ae506e02b28333abb3d1350a949d30dc480fc8411ad1cf8dbb959d5a99269a70ea61dc263ba68de84682c420a7beeb860e32bc14ad0a78f380d1619bd34f76"
+      },
+      "args_sha256": "52a7af40b3b054fd9c05914b93b9ca9045afbaa37a5bfaf4b991d9d9fe71cbe0",
       "expected": ["ERR_ALLOWANCE_LIMIT"],
       "actual": "ERR_ALLOWANCE_LIMIT",
       "actual_class": "refused",
       "expected_match": true,
+      "unexpected": false,
+      "window_result": null,
       "tx_hash": "0000000000000000000000000000000000000000000000000000000000000023",
-      "explorer": "https://testnet.nearblocks.io/txns/0000000000000000000000000000000000000000000000000000000000000023",
+      "explorer": null,
       "op_id": null,
       "vault_id": null,
       "log_entry": 33,
-      "off_log": null
+      "off_log": null,
+      "note": null
     },
     {
       "id": 38,
       "round": 2,
-      "category": "bitcoin_escape",
-      "method": null,
-      "args_sha256": null,
-      "expected": ["rejected"],
-      "actual": "off_log:not_broadcast",
-      "actual_class": "off_log",
+      "category": "refresh",
+      "method": "refresh",
+      "args": {
+        "vault_id": "2",
+        "fee_rate_sat_vb": 1000000,
+        "utxos": [
+          {
+            "txid": "efefefefefefefefefefefefefefefefefefefefefefefefefefefefefefefef",
+            "vout": 7,
+            "value_sats": "100000"
+          }
+        ],
+        "envelope": "64ec0515e2eed37ffa39bc50ca90ec87c6b2f01527392623d20da46ff7b84e516c43b434ec17631aca5bbe4e53d290a724c9994821437a9d6be9fa6af20d764ae4751cbb56bbfc025b94ead083e94e95"
+      },
+      "args_sha256": "71c3d041741ac92acee9075dfa478bcd27afc600342eb3a14550e7fc63cd6d3d",
+      "expected": ["ERR_FEE_TOO_HIGH"],
+      "actual": "ERR_FEE_TOO_HIGH",
+      "actual_class": "refused",
       "expected_match": true,
-      "tx_hash": null,
+      "unexpected": false,
+      "window_result": null,
+      "tx_hash": "0000000000000000000000000000000000000000000000000000000000000024",
       "explorer": null,
       "op_id": null,
       "vault_id": null,
-      "log_entry": null,
-      "off_log": {
-        "kind": "bitcoin",
-        "raw_hex": "",
-        "txid": "",
-        "rejection": "mock Vault kit"
-      }
+      "log_entry": 34,
+      "off_log": null,
+      "note": null
     },
     {
       "id": 39,
       "round": 2,
-      "category": "bitcoin_no_cosigner",
+      "category": "policy_change",
+      "method": "propose_policy_change",
+      "args": {
+        "vault_id": "2",
+        "changes": {
+          "escape_timelock_blocks": 1
+        },
+        "envelope": "377029be6977846a4a9a719c5fb4ba38dd42ae58495b58fffbbfaee22d4c8106562577eccf8ce6712ab0025e8c2c4cece6a00bb5d84a478f3bb5c019c9c5f3e8734680a1872f8683d91b0d4af915bf01"
+      },
+      "args_sha256": "93818b2a036e35d79bbbd5ce23e949f96edcec72e26b56299f526baad2b86399",
+      "expected": ["ERR_SCRIPT_BOUND"],
+      "actual": "ERR_SCRIPT_BOUND",
+      "actual_class": "refused",
+      "expected_match": true,
+      "unexpected": false,
+      "window_result": null,
+      "tx_hash": "0000000000000000000000000000000000000000000000000000000000000025",
+      "explorer": null,
+      "op_id": null,
+      "vault_id": null,
+      "log_entry": 35,
+      "off_log": null,
+      "note": null
+    },
+    {
+      "id": 40,
+      "round": 2,
+      "category": "bitcoin_escape",
       "method": null,
+      "args": null,
       "args_sha256": null,
       "expected": ["rejected"],
-      "actual": "off_log:not_broadcast",
-      "actual_class": "off_log",
-      "expected_match": true,
+      "actual": "skipped",
+      "actual_class": "skipped",
+      "expected_match": false,
+      "unexpected": false,
+      "window_result": null,
       "tx_hash": null,
       "explorer": null,
       "op_id": null,
       "vault_id": null,
       "log_entry": null,
-      "off_log": {
-        "kind": "bitcoin",
-        "raw_hex": "",
-        "txid": "",
-        "rejection": "mock Vault kit"
-      }
-    },
-    {
-      "id": 40,
-      "round": 2,
-      "category": "withdrawal_request",
-      "method": "request_withdrawal",
-      "args_sha256": "e1a4518f84bcf9e3b96725ab36654d49d6bfa0d848d7cc3e6c4f0c32ec301a30",
-      "expected": ["accepted", "ERR_OUTPOINT_RESERVED", "ERR_CLAWED_BACK", "ERR_STORAGE_BUDGET"],
-      "actual": "accepted",
-      "actual_class": "accepted",
-      "expected_match": true,
-      "tx_hash": "0000000000000000000000000000000000000000000000000000000000000024",
-      "explorer": "https://testnet.nearblocks.io/txns/0000000000000000000000000000000000000000000000000000000000000024",
-      "op_id": "3",
-      "vault_id": "2",
-      "log_entry": 34,
-      "off_log": null
+      "off_log": null,
+      "note": "mock Vault kit: no script to spend"
     },
     {
       "id": 41,
       "round": 2,
-      "category": "early_execute",
-      "method": "begin_execute",
-      "args_sha256": "3a2bd0c4efda117ee21c0bad99b0c0feed3912e987324c2d1a8aaff3d5dcc397",
-      "expected": ["ERR_NOT_EXECUTABLE", "ERR_CLAWED_BACK"],
-      "actual": "ERR_NOT_EXECUTABLE",
-      "actual_class": "refused",
-      "expected_match": true,
-      "tx_hash": "0000000000000000000000000000000000000000000000000000000000000025",
-      "explorer": "https://testnet.nearblocks.io/txns/0000000000000000000000000000000000000000000000000000000000000025",
+      "category": "bitcoin_no_cosigner",
+      "method": null,
+      "args": null,
+      "args_sha256": null,
+      "expected": ["rejected"],
+      "actual": "skipped",
+      "actual_class": "skipped",
+      "expected_match": false,
+      "unexpected": false,
+      "window_result": null,
+      "tx_hash": null,
+      "explorer": null,
       "op_id": null,
       "vault_id": null,
-      "log_entry": 35,
-      "off_log": null
+      "log_entry": null,
+      "off_log": null,
+      "note": "mock Vault kit: no script to spend"
     },
     {
       "id": 42,
       "round": 2,
-      "category": "co_sign",
-      "method": "sign_input",
-      "args_sha256": "877b2f4a108eea37a5d06c68731f77028b353867734a087dc1dc7fe7a4bd6564",
-      "expected": ["ERR_BAD_OP_STATE", "ERR_CLAWED_BACK"],
-      "actual": "ERR_BAD_OP_STATE",
-      "actual_class": "refused",
+      "category": "withdrawal_request",
+      "method": "request_withdrawal",
+      "args": {
+        "vault_id": "2",
+        "amount_sats": "99380",
+        "destination": "tb1q0nd5pmdswvkewu09vap7c87ymlutwzn9eepgmw",
+        "fee_rate_sat_vb": 2,
+        "utxos": [
+          {
+            "txid": "abababababababababababababababababababababababababababababababab",
+            "vout": 0,
+            "value_sats": "100000"
+          }
+        ],
+        "envelope": "9207551ef24b783c27e0fac96a2cc1998b38abab22de524b8d7d8a1a020553647e1d840e20d52e34d56fe561ae70b90eedf032a0fce07be5c8d302fc43bb3b1a23b12806a9bda1f35751b7c7d89372f7"
+      },
+      "args_sha256": "16ae4639d2bf03cbfa22a85c8a29841ac1c6c8cffb1bb2cdf1dca862a554fc6d",
+      "expected": ["accepted", "ERR_OUTPOINT_RESERVED", "ERR_CLAWED_BACK", "ERR_STORAGE_BUDGET"],
+      "actual": "accepted",
+      "actual_class": "accepted",
       "expected_match": true,
+      "unexpected": false,
+      "window_result": null,
       "tx_hash": "0000000000000000000000000000000000000000000000000000000000000026",
-      "explorer": "https://testnet.nearblocks.io/txns/0000000000000000000000000000000000000000000000000000000000000026",
-      "op_id": null,
-      "vault_id": null,
+      "explorer": null,
+      "op_id": "5",
+      "vault_id": "2",
       "log_entry": 36,
-      "off_log": null
+      "off_log": null,
+      "note": null
     },
     {
       "id": 43,
       "round": 2,
-      "category": "withdrawal_request",
-      "method": "request_withdrawal",
-      "args_sha256": "b80acdfc778382e9d62eae2cc287c10047ab22d98e8dc08fd87ed23bf487a353",
-      "expected": ["ERR_OUTPOINT_RESERVED", "ERR_CLAWED_BACK"],
-      "actual": "ERR_OUTPOINT_RESERVED",
+      "category": "early_execute",
+      "method": "begin_execute",
+      "args": {
+        "op_id": "5",
+        "envelope": "7313fbb0bbdcd7dbfc404744e1c440ffd6cb7005732020802933729d772eae6d63fc475fb81abc123192538a5fc03915baedca8e5c9f3ad27a5b467743fd60ff0212caf70019b0f50745f5bbf20d02c6"
+      },
+      "args_sha256": "5492c1093b907b3f0d6dd2ba86fd5e214bd6e7b65e6ac0b404540f730a3d48b0",
+      "expected": ["ERR_NOT_EXECUTABLE", "ERR_CLAWED_BACK"],
+      "actual": "ERR_NOT_EXECUTABLE",
       "actual_class": "refused",
       "expected_match": true,
+      "unexpected": false,
+      "window_result": "own_code",
       "tx_hash": "0000000000000000000000000000000000000000000000000000000000000027",
-      "explorer": "https://testnet.nearblocks.io/txns/0000000000000000000000000000000000000000000000000000000000000027",
+      "explorer": null,
       "op_id": null,
       "vault_id": null,
       "log_entry": 37,
-      "off_log": null
+      "off_log": null,
+      "note": null
     },
     {
       "id": 44,
       "round": 2,
-      "category": "refresh",
-      "method": "refresh",
-      "args_sha256": "7102daef0041d359b8e857ab8da0b7445c0111ed7544b199292cb4a97764c522",
-      "expected": ["ERR_CLAWED_BACK", "ERR_VAULT_NOT_ACTIVE"],
-      "actual": "ERR_CLAWED_BACK",
+      "category": "co_sign",
+      "method": "sign_input",
+      "args": {
+        "op_id": "5",
+        "input_index": 0
+      },
+      "args_sha256": "8161c7820a6eab311e26655d67beca795e97c62c191f569a0251e3e8ed2d0882",
+      "expected": ["ERR_BAD_OP_STATE", "ERR_CLAWED_BACK"],
+      "actual": "ERR_BAD_OP_STATE",
       "actual_class": "refused",
       "expected_match": true,
+      "unexpected": false,
+      "window_result": "own_code",
       "tx_hash": "0000000000000000000000000000000000000000000000000000000000000028",
-      "explorer": "https://testnet.nearblocks.io/txns/0000000000000000000000000000000000000000000000000000000000000028",
+      "explorer": null,
       "op_id": null,
       "vault_id": null,
       "log_entry": 38,
-      "off_log": null
+      "off_log": null,
+      "note": null
     },
     {
       "id": 45,
       "round": 2,
-      "category": "policy_change",
-      "method": "propose_policy_change",
-      "args_sha256": "c774af3fcb1c5528d73f69b090c8660575db6e32500e8630fb9ac18ac20c6e98",
-      "expected": ["ERR_CLAWED_BACK", "ERR_VAULT_NOT_ACTIVE"],
-      "actual": "ERR_CLAWED_BACK",
+      "category": "withdrawal_request",
+      "method": "request_withdrawal",
+      "args": {
+        "vault_id": "2",
+        "amount_sats": "99380",
+        "destination": "tb1qv30p7h8qv0ttrskl4uswgurmufxslnxtzgf4y4",
+        "fee_rate_sat_vb": 2,
+        "utxos": [
+          {
+            "txid": "abababababababababababababababababababababababababababababababab",
+            "vout": 0,
+            "value_sats": "100000"
+          }
+        ],
+        "envelope": "99b4e2a423d4c60eb5ccc8d9c00666375baf3afa714812343ce4d5ff59f0eb2177effbd11a86c6cd944a7c3916c1602ddec5c0be59a151ecfa517c9a38e3dbe4aa9497b8f229295fd08ca86bdf974f34"
+      },
+      "args_sha256": "1a987f44dc5b1c662beb336689b710cd6d836aed648c5dd29a0f7bc557cb8d0a",
+      "expected": ["ERR_OUTPOINT_RESERVED", "ERR_CLAWED_BACK"],
+      "actual": "ERR_OUTPOINT_RESERVED",
       "actual_class": "refused",
       "expected_match": true,
+      "unexpected": false,
+      "window_result": "own_code",
       "tx_hash": "0000000000000000000000000000000000000000000000000000000000000029",
-      "explorer": "https://testnet.nearblocks.io/txns/0000000000000000000000000000000000000000000000000000000000000029",
+      "explorer": null,
       "op_id": null,
       "vault_id": null,
       "log_entry": 39,
-      "off_log": null
+      "off_log": null,
+      "note": null
     },
     {
       "id": 46,
       "round": 2,
-      "category": "policy_change",
-      "method": "propose_policy_change",
-      "args_sha256": "c774af3fcb1c5528d73f69b090c8660575db6e32500e8630fb9ac18ac20c6e98",
+      "category": "refresh",
+      "method": "refresh",
+      "args": {
+        "vault_id": "2",
+        "fee_rate_sat_vb": 2,
+        "utxos": [
+          {
+            "txid": "abababababababababababababababababababababababababababababababab",
+            "vout": 0,
+            "value_sats": "100000"
+          }
+        ],
+        "envelope": "fdc8dfc2d77ebe36dd5be74c04764b9dc31bae2b7cafd58cc29a42153ba73a3e77d1422351f9bff7493d10c323a03f2587f57b9dd9d20bf07a96a55fdb19a877f7a057e381d147ef01bcb6f63b33e565"
+      },
+      "args_sha256": "d0645890656f860c2622437b5021aaf066c956a0783be0d63fabe8901bc8ab32",
       "expected": ["ERR_CLAWED_BACK", "ERR_VAULT_NOT_ACTIVE"],
       "actual": "ERR_CLAWED_BACK",
       "actual_class": "refused",
       "expected_match": true,
+      "unexpected": false,
+      "window_result": null,
       "tx_hash": "000000000000000000000000000000000000000000000000000000000000002a",
-      "explorer": "https://testnet.nearblocks.io/txns/000000000000000000000000000000000000000000000000000000000000002a",
+      "explorer": null,
       "op_id": null,
       "vault_id": null,
       "log_entry": 40,
-      "off_log": null
+      "off_log": null,
+      "note": null
     },
     {
       "id": 47,
       "round": 2,
-      "category": "withdrawal_request",
-      "method": "request_withdrawal",
-      "args_sha256": "9e5ac3f21db857f07e32ca1c11e9f3398b497e57ba5dec56c39ee66ebadc37fd",
+      "category": "policy_change",
+      "method": "propose_policy_change",
+      "args": {
+        "vault_id": "2",
+        "changes": {
+          "fee_cap_sats": "20000"
+        },
+        "envelope": "ea9ea099a75defbf8209158e289aa8150105743eea9d43420604c6245d78f702dbe88821d2858ac8575955b2794b9556570fb609562e362d11977df101072fb365f81070e39446eaf26a681f1046ca0e"
+      },
+      "args_sha256": "5886073865cc0663a7303ca4fee6fd795f99844a4e40a3c37d88fefbfe0c8221",
       "expected": ["ERR_CLAWED_BACK", "ERR_VAULT_NOT_ACTIVE"],
       "actual": "ERR_CLAWED_BACK",
       "actual_class": "refused",
       "expected_match": true,
+      "unexpected": false,
+      "window_result": null,
       "tx_hash": "000000000000000000000000000000000000000000000000000000000000002b",
-      "explorer": "https://testnet.nearblocks.io/txns/000000000000000000000000000000000000000000000000000000000000002b",
+      "explorer": null,
       "op_id": null,
       "vault_id": null,
       "log_entry": 41,
-      "off_log": null
+      "off_log": null,
+      "note": null
     },
     {
       "id": 48,
       "round": 2,
-      "category": "early_execute",
-      "method": "begin_execute",
-      "args_sha256": "3a2bd0c4efda117ee21c0bad99b0c0feed3912e987324c2d1a8aaff3d5dcc397",
+      "category": "policy_change",
+      "method": "propose_policy_change",
+      "args": {
+        "vault_id": "2",
+        "changes": {
+          "fee_cap_sats": "20000"
+        },
+        "envelope": "ff35843aa7faf146b21c1d069ea2ee8ccd99919affeeb818d0f1ec62cb6cd46615aac81e547428cc79491660aff71c5ab0f82b65d30051587d4acfda51ac740cdff8bcd4179e2167077bfae9738c94be"
+      },
+      "args_sha256": "a3efe249d0508b4ccabb9da99270257cb324748672e30cee94e5c8c99d365fb4",
       "expected": ["ERR_CLAWED_BACK", "ERR_VAULT_NOT_ACTIVE"],
       "actual": "ERR_CLAWED_BACK",
       "actual_class": "refused",
       "expected_match": true,
+      "unexpected": false,
+      "window_result": null,
       "tx_hash": "000000000000000000000000000000000000000000000000000000000000002c",
-      "explorer": "https://testnet.nearblocks.io/txns/000000000000000000000000000000000000000000000000000000000000002c",
+      "explorer": null,
       "op_id": null,
       "vault_id": null,
       "log_entry": 42,
-      "off_log": null
+      "off_log": null,
+      "note": null
     },
     {
       "id": 49,
       "round": 2,
-      "category": "co_sign",
-      "method": "sign_input",
-      "args_sha256": "877b2f4a108eea37a5d06c68731f77028b353867734a087dc1dc7fe7a4bd6564",
+      "category": "withdrawal_request",
+      "method": "request_withdrawal",
+      "args": {
+        "vault_id": "2",
+        "amount_sats": "99380",
+        "destination": "tb1qxwz8etk0s95ppcazllgz7uaejwlg6jusstwamp",
+        "fee_rate_sat_vb": 2,
+        "utxos": [
+          {
+            "txid": "abababababababababababababababababababababababababababababababab",
+            "vout": 0,
+            "value_sats": "100000"
+          }
+        ],
+        "envelope": "2e5b623d36bcde4f33b02cd99b6b9a893ee068f6b774c5dd8e3d9b2237f058294cb87a28a839d5af0641e395bdd1921ee9c75232b37dfaa87d96afdb04646fcc1f579dc44a8cf062363709bd0b0064a3"
+      },
+      "args_sha256": "0c65279c14f7572fc4096348078120babed3d6495a7a735bfcc54a0dd9baa844",
       "expected": ["ERR_CLAWED_BACK", "ERR_VAULT_NOT_ACTIVE"],
       "actual": "ERR_CLAWED_BACK",
       "actual_class": "refused",
       "expected_match": true,
+      "unexpected": false,
+      "window_result": null,
       "tx_hash": "000000000000000000000000000000000000000000000000000000000000002d",
-      "explorer": "https://testnet.nearblocks.io/txns/000000000000000000000000000000000000000000000000000000000000002d",
+      "explorer": null,
       "op_id": null,
       "vault_id": null,
       "log_entry": 43,
-      "off_log": null
+      "off_log": null,
+      "note": null
     },
     {
       "id": 50,
       "round": 2,
-      "category": "co_sign",
-      "method": "sign_input",
-      "args_sha256": "877b2f4a108eea37a5d06c68731f77028b353867734a087dc1dc7fe7a4bd6564",
+      "category": "early_execute",
+      "method": "begin_execute",
+      "args": {
+        "op_id": "5",
+        "envelope": "a02f8956d392ce633f66c44fd285b0c2bc761e652207ffd1cee2ab8b5517d02ecf39eda8cefe70e929a5feedea88cd8078114524252099c324218dcb95f847cec3537b4c77f75b5bd6f40294ccc77de6"
+      },
+      "args_sha256": "f9f79d549a50eb9a288d29722c7827309d08feead398e5cc8a3932a333240481",
       "expected": ["ERR_CLAWED_BACK", "ERR_VAULT_NOT_ACTIVE"],
       "actual": "ERR_CLAWED_BACK",
       "actual_class": "refused",
       "expected_match": true,
+      "unexpected": false,
+      "window_result": null,
       "tx_hash": "000000000000000000000000000000000000000000000000000000000000002e",
-      "explorer": "https://testnet.nearblocks.io/txns/000000000000000000000000000000000000000000000000000000000000002e",
+      "explorer": null,
       "op_id": null,
       "vault_id": null,
       "log_entry": 44,
-      "off_log": null
+      "off_log": null,
+      "note": null
     },
     {
       "id": 51,
       "round": 2,
-      "category": "withdrawal_request",
-      "method": "request_withdrawal",
-      "args_sha256": "17a4cd6230b4e8dba14f9c3254a09bd250b5b637119dd50daed30224bed730ce",
+      "category": "co_sign",
+      "method": "sign_input",
+      "args": {
+        "op_id": "5",
+        "input_index": 0
+      },
+      "args_sha256": "8161c7820a6eab311e26655d67beca795e97c62c191f569a0251e3e8ed2d0882",
       "expected": ["ERR_CLAWED_BACK", "ERR_VAULT_NOT_ACTIVE"],
       "actual": "ERR_CLAWED_BACK",
       "actual_class": "refused",
       "expected_match": true,
+      "unexpected": false,
+      "window_result": null,
       "tx_hash": "000000000000000000000000000000000000000000000000000000000000002f",
-      "explorer": "https://testnet.nearblocks.io/txns/000000000000000000000000000000000000000000000000000000000000002f",
+      "explorer": null,
       "op_id": null,
       "vault_id": null,
       "log_entry": 45,
-      "off_log": null
+      "off_log": null,
+      "note": null
     },
     {
       "id": 52,
       "round": 2,
-      "category": "withdrawal_request",
-      "method": "request_withdrawal",
-      "args_sha256": "d107bb3d900f01c7f7abd646a5bf60468953305b2f4e95431dc8d3d3ed8a7835",
+      "category": "co_sign",
+      "method": "sign_input",
+      "args": {
+        "op_id": "5",
+        "input_index": 0
+      },
+      "args_sha256": "8161c7820a6eab311e26655d67beca795e97c62c191f569a0251e3e8ed2d0882",
       "expected": ["ERR_CLAWED_BACK", "ERR_VAULT_NOT_ACTIVE"],
       "actual": "ERR_CLAWED_BACK",
       "actual_class": "refused",
       "expected_match": true,
+      "unexpected": false,
+      "window_result": null,
       "tx_hash": "0000000000000000000000000000000000000000000000000000000000000030",
-      "explorer": "https://testnet.nearblocks.io/txns/0000000000000000000000000000000000000000000000000000000000000030",
+      "explorer": null,
       "op_id": null,
       "vault_id": null,
       "log_entry": 46,
-      "off_log": null
+      "off_log": null,
+      "note": null
     },
     {
       "id": 53,
       "round": 2,
-      "category": "spend_allowance",
-      "method": "spend_allowance",
-      "args_sha256": "add6ae0dc0297c3b6ee5ede9094fc3db059be9d333597910ad72beda4e897c08",
+      "category": "withdrawal_request",
+      "method": "request_withdrawal",
+      "args": {
+        "vault_id": "2",
+        "amount_sats": "99380",
+        "destination": "tb1qlkggy40x9w3s6y7fsnmwwvt3v0av2hq68mzpdu",
+        "fee_rate_sat_vb": 2,
+        "utxos": [
+          {
+            "txid": "abababababababababababababababababababababababababababababababab",
+            "vout": 0,
+            "value_sats": "100000"
+          }
+        ],
+        "envelope": "8221db1f21ce7e5e199738ac530b59b327e90310b00f5657d4aba37bec36f859c329667328878448033efd3efceb10aade8e9a17ca6cf9b0197d61461c63231fbdcc04a5b5fc34cea6cbcdd4b0310b7b"
+      },
+      "args_sha256": "d4ece4402fea63510af309bf5d6d22192208e92f9b229cb299c0e0a2aac0caa5",
       "expected": ["ERR_CLAWED_BACK", "ERR_VAULT_NOT_ACTIVE"],
       "actual": "ERR_CLAWED_BACK",
       "actual_class": "refused",
       "expected_match": true,
+      "unexpected": false,
+      "window_result": null,
       "tx_hash": "0000000000000000000000000000000000000000000000000000000000000031",
-      "explorer": "https://testnet.nearblocks.io/txns/0000000000000000000000000000000000000000000000000000000000000031",
+      "explorer": null,
       "op_id": null,
       "vault_id": null,
       "log_entry": 47,
-      "off_log": null
+      "off_log": null,
+      "note": null
     },
     {
       "id": 54,
       "round": 2,
-      "category": "co_sign",
-      "method": "sign_input",
-      "args_sha256": "877b2f4a108eea37a5d06c68731f77028b353867734a087dc1dc7fe7a4bd6564",
+      "category": "withdrawal_request",
+      "method": "request_withdrawal",
+      "args": {
+        "vault_id": "2",
+        "amount_sats": "99380",
+        "destination": "tb1qq4pcvpyjnqeh7we5vwmm5nlh84ew2jusvddhc8",
+        "fee_rate_sat_vb": 2,
+        "utxos": [
+          {
+            "txid": "abababababababababababababababababababababababababababababababab",
+            "vout": 0,
+            "value_sats": "100000"
+          }
+        ],
+        "envelope": "bf5e48313cecf1c3bb0983ede08a7e61311b34c15cd3a5db693a545aeec5df43c299651808fe2ab9a896ef5a5ef9999aca1fba76f7ce273231278e03f0a6e0152ce533541897f20858e5ee7e32f0ff1b"
+      },
+      "args_sha256": "304712296d973da42fe8b70417dae60c0e041f9de79577479fcefe5301d7fdbb",
       "expected": ["ERR_CLAWED_BACK", "ERR_VAULT_NOT_ACTIVE"],
       "actual": "ERR_CLAWED_BACK",
       "actual_class": "refused",
       "expected_match": true,
+      "unexpected": false,
+      "window_result": null,
       "tx_hash": "0000000000000000000000000000000000000000000000000000000000000032",
-      "explorer": "https://testnet.nearblocks.io/txns/0000000000000000000000000000000000000000000000000000000000000032",
+      "explorer": null,
       "op_id": null,
       "vault_id": null,
       "log_entry": 48,
-      "off_log": null
+      "off_log": null,
+      "note": null
     },
     {
       "id": 55,
       "round": 2,
-      "category": "co_sign",
-      "method": "sign_input",
-      "args_sha256": "877b2f4a108eea37a5d06c68731f77028b353867734a087dc1dc7fe7a4bd6564",
+      "category": "spend_allowance",
+      "method": "spend_allowance",
+      "args": {
+        "vault_id": "2",
+        "amount_sats": "1000",
+        "destination": "tb1qa5yejrwe59h0apun5h0veekx49md9p2k5t2n30",
+        "fee_rate_sat_vb": 2,
+        "utxos": [
+          {
+            "txid": "abababababababababababababababababababababababababababababababab",
+            "vout": 0,
+            "value_sats": "100000"
+          }
+        ],
+        "envelope": "8341301ee60e5e559a066a9bf81af60343ab6bf72b43a5565c34662693613712654fe516d8b59172672593ffbea89ab42f4b47ba29567982889d54f769d5cc0870e27f91d071f6bd67ea8bb80586d9b8"
+      },
+      "args_sha256": "31979aa634304e610640e77e729b9157ea56f8a1b930d15dccd5ed42b597160b",
       "expected": ["ERR_CLAWED_BACK", "ERR_VAULT_NOT_ACTIVE"],
       "actual": "ERR_CLAWED_BACK",
       "actual_class": "refused",
       "expected_match": true,
+      "unexpected": false,
+      "window_result": null,
       "tx_hash": "0000000000000000000000000000000000000000000000000000000000000033",
-      "explorer": "https://testnet.nearblocks.io/txns/0000000000000000000000000000000000000000000000000000000000000033",
+      "explorer": null,
       "op_id": null,
       "vault_id": null,
       "log_entry": 49,
-      "off_log": null
+      "off_log": null,
+      "note": null
     },
     {
       "id": 56,
       "round": 2,
       "category": "co_sign",
       "method": "sign_input",
-      "args_sha256": "877b2f4a108eea37a5d06c68731f77028b353867734a087dc1dc7fe7a4bd6564",
+      "args": {
+        "op_id": "5",
+        "input_index": 0
+      },
+      "args_sha256": "8161c7820a6eab311e26655d67beca795e97c62c191f569a0251e3e8ed2d0882",
       "expected": ["ERR_CLAWED_BACK", "ERR_VAULT_NOT_ACTIVE"],
       "actual": "ERR_CLAWED_BACK",
       "actual_class": "refused",
       "expected_match": true,
+      "unexpected": false,
+      "window_result": null,
       "tx_hash": "0000000000000000000000000000000000000000000000000000000000000034",
-      "explorer": "https://testnet.nearblocks.io/txns/0000000000000000000000000000000000000000000000000000000000000034",
+      "explorer": null,
       "op_id": null,
       "vault_id": null,
       "log_entry": 50,
-      "off_log": null
+      "off_log": null,
+      "note": null
     },
     {
       "id": 57,
       "round": 2,
-      "category": "policy_change",
-      "method": "propose_policy_change",
-      "args_sha256": "c774af3fcb1c5528d73f69b090c8660575db6e32500e8630fb9ac18ac20c6e98",
+      "category": "co_sign",
+      "method": "sign_input",
+      "args": {
+        "op_id": "5",
+        "input_index": 0
+      },
+      "args_sha256": "8161c7820a6eab311e26655d67beca795e97c62c191f569a0251e3e8ed2d0882",
       "expected": ["ERR_CLAWED_BACK", "ERR_VAULT_NOT_ACTIVE"],
       "actual": "ERR_CLAWED_BACK",
       "actual_class": "refused",
       "expected_match": true,
+      "unexpected": false,
+      "window_result": null,
       "tx_hash": "0000000000000000000000000000000000000000000000000000000000000035",
-      "explorer": "https://testnet.nearblocks.io/txns/0000000000000000000000000000000000000000000000000000000000000035",
+      "explorer": null,
       "op_id": null,
       "vault_id": null,
       "log_entry": 51,
-      "off_log": null
+      "off_log": null,
+      "note": null
     },
     {
       "id": 58,
       "round": 2,
-      "category": "spend_allowance",
-      "method": "spend_allowance",
-      "args_sha256": "f1f2d664cde1e66c3320584a4b9046316f9ba0d0040013fbe646487d456defb9",
+      "category": "co_sign",
+      "method": "sign_input",
+      "args": {
+        "op_id": "5",
+        "input_index": 0
+      },
+      "args_sha256": "8161c7820a6eab311e26655d67beca795e97c62c191f569a0251e3e8ed2d0882",
       "expected": ["ERR_CLAWED_BACK", "ERR_VAULT_NOT_ACTIVE"],
       "actual": "ERR_CLAWED_BACK",
       "actual_class": "refused",
       "expected_match": true,
+      "unexpected": false,
+      "window_result": null,
       "tx_hash": "0000000000000000000000000000000000000000000000000000000000000036",
-      "explorer": "https://testnet.nearblocks.io/txns/0000000000000000000000000000000000000000000000000000000000000036",
+      "explorer": null,
       "op_id": null,
       "vault_id": null,
       "log_entry": 52,
-      "off_log": null
+      "off_log": null,
+      "note": null
     },
     {
       "id": 59,
       "round": 2,
-      "category": "spend_allowance",
-      "method": "spend_allowance",
-      "args_sha256": "460ddf1054ae54cc2ba59eb625f1e9927a73f95d7492879634349c00c44dfb02",
+      "category": "policy_change",
+      "method": "propose_policy_change",
+      "args": {
+        "vault_id": "2",
+        "changes": {
+          "fee_cap_sats": "20000"
+        },
+        "envelope": "3f4104fb57da17778bcb27b0eec011cca3d71e0b104b6c64f41d53a271565f2a42fb450eb151fdc215e69626a5f05edbd4810ec40517547f57f319324313ee21634e96d5cb3be5630488755aa6f991c1"
+      },
+      "args_sha256": "7a1acbe56b776b28588349149ccc5479935fdd9da5cbccf3c34002a1bccf2eb8",
       "expected": ["ERR_CLAWED_BACK", "ERR_VAULT_NOT_ACTIVE"],
       "actual": "ERR_CLAWED_BACK",
       "actual_class": "refused",
       "expected_match": true,
+      "unexpected": false,
+      "window_result": null,
       "tx_hash": "0000000000000000000000000000000000000000000000000000000000000037",
-      "explorer": "https://testnet.nearblocks.io/txns/0000000000000000000000000000000000000000000000000000000000000037",
+      "explorer": null,
       "op_id": null,
       "vault_id": null,
       "log_entry": 53,
-      "off_log": null
+      "off_log": null,
+      "note": null
     },
     {
       "id": 60,
       "round": 2,
-      "category": "co_sign",
-      "method": "sign_input",
-      "args_sha256": "877b2f4a108eea37a5d06c68731f77028b353867734a087dc1dc7fe7a4bd6564",
+      "category": "spend_allowance",
+      "method": "spend_allowance",
+      "args": {
+        "vault_id": "2",
+        "amount_sats": "1000",
+        "destination": "tb1q7wdwg2cx6msl4yzen7c09s4uc4red2gukgwmuy",
+        "fee_rate_sat_vb": 2,
+        "utxos": [
+          {
+            "txid": "abababababababababababababababababababababababababababababababab",
+            "vout": 0,
+            "value_sats": "100000"
+          }
+        ],
+        "envelope": "60190a13771466f8ff70fad6d7e0592ee743b5803207b57e9cb8f9cf9aa21c51cab2d94fc33314efc65322ada70d4f3881ac1db7687bac4cd8fff7b429122e9b3260eb351877386ae5c23367e4faebf5"
+      },
+      "args_sha256": "3753d4c552ab7df5118d8dff9861dafd2d41a8562d11516292b7966a79971737",
       "expected": ["ERR_CLAWED_BACK", "ERR_VAULT_NOT_ACTIVE"],
       "actual": "ERR_CLAWED_BACK",
       "actual_class": "refused",
       "expected_match": true,
+      "unexpected": false,
+      "window_result": null,
       "tx_hash": "0000000000000000000000000000000000000000000000000000000000000038",
-      "explorer": "https://testnet.nearblocks.io/txns/0000000000000000000000000000000000000000000000000000000000000038",
+      "explorer": null,
       "op_id": null,
       "vault_id": null,
       "log_entry": 54,
-      "off_log": null
+      "off_log": null,
+      "note": null
     },
     {
       "id": 61,
       "round": 2,
-      "category": "co_sign",
-      "method": "sign_input",
-      "args_sha256": "877b2f4a108eea37a5d06c68731f77028b353867734a087dc1dc7fe7a4bd6564",
+      "category": "spend_allowance",
+      "method": "spend_allowance",
+      "args": {
+        "vault_id": "2",
+        "amount_sats": "1000",
+        "destination": "tb1qv3nmvkd5tfc52y4zl9g0gulwkps4q58qfh00ce",
+        "fee_rate_sat_vb": 2,
+        "utxos": [
+          {
+            "txid": "abababababababababababababababababababababababababababababababab",
+            "vout": 0,
+            "value_sats": "100000"
+          }
+        ],
+        "envelope": "daee7524695b00fd5cdb6ac90efe9e62481c9528cb6961430a025a559319fa0c44b0eb2a6b504072e213c06b94f03eaada45b7e5232d09b95d54d967f72817b5212a65adcc1df152f89f50913e072945"
+      },
+      "args_sha256": "afab9c88f988bb08bc4fa09c2f3fdf08ca96a7b85c95c7defb073274118b61ac",
       "expected": ["ERR_CLAWED_BACK", "ERR_VAULT_NOT_ACTIVE"],
       "actual": "ERR_CLAWED_BACK",
       "actual_class": "refused",
       "expected_match": true,
+      "unexpected": false,
+      "window_result": null,
       "tx_hash": "0000000000000000000000000000000000000000000000000000000000000039",
-      "explorer": "https://testnet.nearblocks.io/txns/0000000000000000000000000000000000000000000000000000000000000039",
+      "explorer": null,
       "op_id": null,
       "vault_id": null,
       "log_entry": 55,
-      "off_log": null
+      "off_log": null,
+      "note": null
     },
     {
       "id": 62,
       "round": 2,
-      "category": "withdrawal_request",
-      "method": "request_withdrawal",
-      "args_sha256": "0d7715d6dbb8cd32e55f27b1a2040b98721a684c57e4ce0ef759c660224a3895",
+      "category": "co_sign",
+      "method": "sign_input",
+      "args": {
+        "op_id": "5",
+        "input_index": 0
+      },
+      "args_sha256": "8161c7820a6eab311e26655d67beca795e97c62c191f569a0251e3e8ed2d0882",
       "expected": ["ERR_CLAWED_BACK", "ERR_VAULT_NOT_ACTIVE"],
       "actual": "ERR_CLAWED_BACK",
       "actual_class": "refused",
       "expected_match": true,
+      "unexpected": false,
+      "window_result": null,
       "tx_hash": "000000000000000000000000000000000000000000000000000000000000003a",
-      "explorer": "https://testnet.nearblocks.io/txns/000000000000000000000000000000000000000000000000000000000000003a",
+      "explorer": null,
       "op_id": null,
       "vault_id": null,
       "log_entry": 56,
-      "off_log": null
+      "off_log": null,
+      "note": null
     },
     {
       "id": 63,
       "round": 2,
-      "category": "withdrawal_request",
-      "method": "request_withdrawal",
-      "args_sha256": "52e2184ad6b1add22633071804a60b8b8eaec2063de0b6c7f9d49ea83046bec4",
+      "category": "co_sign",
+      "method": "sign_input",
+      "args": {
+        "op_id": "5",
+        "input_index": 0
+      },
+      "args_sha256": "8161c7820a6eab311e26655d67beca795e97c62c191f569a0251e3e8ed2d0882",
       "expected": ["ERR_CLAWED_BACK", "ERR_VAULT_NOT_ACTIVE"],
       "actual": "ERR_CLAWED_BACK",
       "actual_class": "refused",
       "expected_match": true,
+      "unexpected": false,
+      "window_result": null,
       "tx_hash": "000000000000000000000000000000000000000000000000000000000000003b",
-      "explorer": "https://testnet.nearblocks.io/txns/000000000000000000000000000000000000000000000000000000000000003b",
+      "explorer": null,
       "op_id": null,
       "vault_id": null,
       "log_entry": 57,
-      "off_log": null
+      "off_log": null,
+      "note": null
     },
     {
       "id": 64,
       "round": 2,
-      "category": "policy_change",
-      "method": "propose_policy_change",
-      "args_sha256": "c774af3fcb1c5528d73f69b090c8660575db6e32500e8630fb9ac18ac20c6e98",
+      "category": "withdrawal_request",
+      "method": "request_withdrawal",
+      "args": {
+        "vault_id": "2",
+        "amount_sats": "99380",
+        "destination": "tb1qtru646uwvcnvd6eck6sa60vuuqeaw50eg9lca6",
+        "fee_rate_sat_vb": 2,
+        "utxos": [
+          {
+            "txid": "abababababababababababababababababababababababababababababababab",
+            "vout": 0,
+            "value_sats": "100000"
+          }
+        ],
+        "envelope": "a6e034d968c5e053c3c784bc64c15dcba3a40c175dfc0b825bea12b630e09a258cfac23395e7b60eae300b1b1713ad77dbc7c40c127d4fa1db5a33ca29a5a1656bb1910151ce1e331de2effb577393f2"
+      },
+      "args_sha256": "307fae9968e97ee547be01c3ef0c07cc89a91bfd0700c73e671e8b3dc6a2b4af",
       "expected": ["ERR_CLAWED_BACK", "ERR_VAULT_NOT_ACTIVE"],
       "actual": "ERR_CLAWED_BACK",
       "actual_class": "refused",
       "expected_match": true,
+      "unexpected": false,
+      "window_result": null,
       "tx_hash": "000000000000000000000000000000000000000000000000000000000000003c",
-      "explorer": "https://testnet.nearblocks.io/txns/000000000000000000000000000000000000000000000000000000000000003c",
+      "explorer": null,
       "op_id": null,
       "vault_id": null,
       "log_entry": 58,
-      "off_log": null
+      "off_log": null,
+      "note": null
     },
     {
       "id": 65,
       "round": 2,
-      "category": "co_sign",
-      "method": "sign_input",
-      "args_sha256": "877b2f4a108eea37a5d06c68731f77028b353867734a087dc1dc7fe7a4bd6564",
+      "category": "withdrawal_request",
+      "method": "request_withdrawal",
+      "args": {
+        "vault_id": "2",
+        "amount_sats": "99380",
+        "destination": "tb1q6qk8rnpz6n22w7wsprztnnfe0r3z7vukrfaul7",
+        "fee_rate_sat_vb": 2,
+        "utxos": [
+          {
+            "txid": "abababababababababababababababababababababababababababababababab",
+            "vout": 0,
+            "value_sats": "100000"
+          }
+        ],
+        "envelope": "6105d4deb75b42a4adc1cdc8aa6cd747f8bb274d55a0b7796bb06ffe559e2b5bc5d70a01df57c5409142b1640ee95cdd3e3f55117c50b18687a0e607af456a2b68194a6110816d2b17e5964bf795cbd4"
+      },
+      "args_sha256": "285768e4b41fbe2046ab85bb3bfe94f13dbe4651ccdf8be0a352d19f30e00530",
       "expected": ["ERR_CLAWED_BACK", "ERR_VAULT_NOT_ACTIVE"],
       "actual": "ERR_CLAWED_BACK",
       "actual_class": "refused",
       "expected_match": true,
+      "unexpected": false,
+      "window_result": null,
       "tx_hash": "000000000000000000000000000000000000000000000000000000000000003d",
-      "explorer": "https://testnet.nearblocks.io/txns/000000000000000000000000000000000000000000000000000000000000003d",
+      "explorer": null,
       "op_id": null,
       "vault_id": null,
       "log_entry": 59,
-      "off_log": null
+      "off_log": null,
+      "note": null
     },
     {
       "id": 66,
       "round": 2,
-      "category": "early_execute",
-      "method": "begin_execute",
-      "args_sha256": "3a2bd0c4efda117ee21c0bad99b0c0feed3912e987324c2d1a8aaff3d5dcc397",
+      "category": "policy_change",
+      "method": "propose_policy_change",
+      "args": {
+        "vault_id": "2",
+        "changes": {
+          "fee_cap_sats": "20000"
+        },
+        "envelope": "71f863e2903663658431f1488a6335a01e7640f6a98edc7e1d8de4839840e76c40614d719b4d36c5ae8119aaf49384e746d8bf37d31c50e322db4cfb950829c4847caee84ea8c68af11a57a948eb7aa4"
+      },
+      "args_sha256": "41fff14be9ff253874bfb5321ebc6361d13675a26079ea92e6c141c1afb299a8",
       "expected": ["ERR_CLAWED_BACK", "ERR_VAULT_NOT_ACTIVE"],
       "actual": "ERR_CLAWED_BACK",
       "actual_class": "refused",
       "expected_match": true,
+      "unexpected": false,
+      "window_result": null,
       "tx_hash": "000000000000000000000000000000000000000000000000000000000000003e",
-      "explorer": "https://testnet.nearblocks.io/txns/000000000000000000000000000000000000000000000000000000000000003e",
+      "explorer": null,
       "op_id": null,
       "vault_id": null,
       "log_entry": 60,
-      "off_log": null
+      "off_log": null,
+      "note": null
     },
     {
       "id": 67,
       "round": 2,
-      "category": "spend_allowance",
-      "method": "spend_allowance",
-      "args_sha256": "710002d9f0e7a35ec33cba6e78342eb9a3d03004ba41cef2cbd3926921bc84e8",
+      "category": "co_sign",
+      "method": "sign_input",
+      "args": {
+        "op_id": "5",
+        "input_index": 0
+      },
+      "args_sha256": "8161c7820a6eab311e26655d67beca795e97c62c191f569a0251e3e8ed2d0882",
       "expected": ["ERR_CLAWED_BACK", "ERR_VAULT_NOT_ACTIVE"],
       "actual": "ERR_CLAWED_BACK",
       "actual_class": "refused",
       "expected_match": true,
+      "unexpected": false,
+      "window_result": null,
       "tx_hash": "000000000000000000000000000000000000000000000000000000000000003f",
-      "explorer": "https://testnet.nearblocks.io/txns/000000000000000000000000000000000000000000000000000000000000003f",
+      "explorer": null,
       "op_id": null,
       "vault_id": null,
       "log_entry": 61,
-      "off_log": null
+      "off_log": null,
+      "note": null
     },
     {
       "id": 68,
       "round": 3,
       "category": "clawback",
       "method": "begin_clawback",
-      "args_sha256": "44c475e711fa8a4f2ddac8ed5e7dd9f912a86ef42d8220420633bd8df6715b5b",
+      "args": {
+        "vault_id": "3",
+        "utxos": [
+          {
+            "txid": "abababababababababababababababababababababababababababababababab",
+            "vout": 0,
+            "value_sats": "100000"
+          }
+        ],
+        "fee_rate_sat_vb": 2
+      },
+      "args_sha256": "8352fad30d6c1a7ae0ebe3425b7c210e48b8872cbe0a0473458b918c293acaac",
       "expected": ["ERR_UNAUTHORIZED"],
       "actual": "ERR_UNAUTHORIZED",
       "actual_class": "refused",
       "expected_match": true,
+      "unexpected": false,
+      "window_result": null,
       "tx_hash": "0000000000000000000000000000000000000000000000000000000000000040",
-      "explorer": "https://testnet.nearblocks.io/txns/0000000000000000000000000000000000000000000000000000000000000040",
+      "explorer": null,
       "op_id": null,
       "vault_id": null,
       "log_entry": 62,
-      "off_log": null
+      "off_log": null,
+      "note": null
     },
     {
       "id": 69,
       "round": 3,
       "category": "withdrawal_request",
       "method": "request_withdrawal",
-      "args_sha256": "b13c3bbd2c34d1f8daf76cc959336c48ead3f78acb63ac9ca6e3c8532daa858c",
+      "args": {
+        "vault_id": "3",
+        "amount_sats": "1000",
+        "destination": "tb1qe64hsypl7jft8uuma7s79y4aza6trgp6q23n75",
+        "fee_rate_sat_vb": 2,
+        "utxos": [
+          {
+            "txid": "abababababababababababababababababababababababababababababababab",
+            "vout": 0,
+            "value_sats": "100000"
+          }
+        ],
+        "envelope": "ababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababab"
+      },
+      "args_sha256": "e07cb4f2c3f9a137ce7f3f37376019fe0b2bebf0985cfaeb3e624a131aa0ec50",
       "expected": ["ERR_BAD_ENVELOPE"],
       "actual": "ERR_BAD_ENVELOPE",
       "actual_class": "refused",
       "expected_match": true,
+      "unexpected": false,
+      "window_result": null,
       "tx_hash": "0000000000000000000000000000000000000000000000000000000000000041",
-      "explorer": "https://testnet.nearblocks.io/txns/0000000000000000000000000000000000000000000000000000000000000041",
+      "explorer": null,
       "op_id": null,
       "vault_id": null,
       "log_entry": 63,
-      "off_log": null
+      "off_log": null,
+      "note": null
     },
     {
       "id": 70,
       "round": 3,
       "category": "spend_allowance",
       "method": "spend_allowance",
-      "args_sha256": "13345d386d85cee556b22531db84a12a8a0a46eab82bdaa68ea96902400a8647",
+      "args": {
+        "vault_id": "3",
+        "amount_sats": "1000",
+        "destination": "tb1qy3nzuhs2fs668n2h00xktgur6mrpnnn3lqkaxs",
+        "fee_rate_sat_vb": 2,
+        "utxos": [
+          {
+            "txid": "abababababababababababababababababababababababababababababababab",
+            "vout": 0,
+            "value_sats": "100000"
+          }
+        ],
+        "envelope": "e61a5f3e010fe0ddc71459426330da76d66b94afbd028babd5a60721c89cc676e0744ffd83d223f000c693379cd371b2946b0d138544c4d9c375c18be590c03370ddb0d8ed4aa83c789526990ac8a468"
+      },
+      "args_sha256": "60dffccd4f5b950f53414dd99d45426234dfa94ffea3506ad3e42bb42fab72ca",
       "expected": ["ERR_ALLOWANCE_LIMIT"],
       "actual": "ERR_ALLOWANCE_LIMIT",
       "actual_class": "refused",
       "expected_match": true,
+      "unexpected": false,
+      "window_result": null,
       "tx_hash": "0000000000000000000000000000000000000000000000000000000000000042",
-      "explorer": "https://testnet.nearblocks.io/txns/0000000000000000000000000000000000000000000000000000000000000042",
+      "explorer": null,
       "op_id": null,
       "vault_id": null,
       "log_entry": 64,
-      "off_log": null
+      "off_log": null,
+      "note": null
     },
     {
       "id": 71,
       "round": 3,
-      "category": "bitcoin_escape",
-      "method": null,
-      "args_sha256": null,
-      "expected": ["rejected"],
-      "actual": "off_log:not_broadcast",
-      "actual_class": "off_log",
+      "category": "refresh",
+      "method": "refresh",
+      "args": {
+        "vault_id": "3",
+        "fee_rate_sat_vb": 1000000,
+        "utxos": [
+          {
+            "txid": "efefefefefefefefefefefefefefefefefefefefefefefefefefefefefefefef",
+            "vout": 7,
+            "value_sats": "100000"
+          }
+        ],
+        "envelope": "1246621c2924be173f9141a905fd89230c800602fb9324dbd595b5f179494b19aca2652c5d3979ec2d66bce20394329ee35fefd73749949fb0d55d0843137ccb0ee33c50c7ba6cbdc2a32cea08692e33"
+      },
+      "args_sha256": "94976bf0602d1f4a9b9d626d75797ba7b40470b40a16bd1443c744559ef384f0",
+      "expected": ["ERR_FEE_TOO_HIGH"],
+      "actual": "ERR_FEE_TOO_HIGH",
+      "actual_class": "refused",
       "expected_match": true,
-      "tx_hash": null,
+      "unexpected": false,
+      "window_result": null,
+      "tx_hash": "0000000000000000000000000000000000000000000000000000000000000043",
       "explorer": null,
       "op_id": null,
       "vault_id": null,
-      "log_entry": null,
-      "off_log": {
-        "kind": "bitcoin",
-        "raw_hex": "",
-        "txid": "",
-        "rejection": "mock Vault kit"
-      }
+      "log_entry": 65,
+      "off_log": null,
+      "note": null
     },
     {
       "id": 72,
       "round": 3,
-      "category": "bitcoin_no_cosigner",
+      "category": "policy_change",
+      "method": "propose_policy_change",
+      "args": {
+        "vault_id": "3",
+        "changes": {
+          "escape_timelock_blocks": 1
+        },
+        "envelope": "f2c547cbca0f2832886c08468bbc3bae326103c61228562941897e7ae24e43158ba3fffb41aa913102a86137c51bbc38bfca8828ba9db581b9ab21b030080a6dfa7bb3836fc40026c68d7406d603a396"
+      },
+      "args_sha256": "551e708760413d76408bea4c073fde133e12fb36dc3d3883cfc53cbb7b08c65e",
+      "expected": ["ERR_SCRIPT_BOUND"],
+      "actual": "ERR_SCRIPT_BOUND",
+      "actual_class": "refused",
+      "expected_match": true,
+      "unexpected": false,
+      "window_result": null,
+      "tx_hash": "0000000000000000000000000000000000000000000000000000000000000044",
+      "explorer": null,
+      "op_id": null,
+      "vault_id": null,
+      "log_entry": 66,
+      "off_log": null,
+      "note": null
+    },
+    {
+      "id": 73,
+      "round": 3,
+      "category": "bitcoin_escape",
       "method": null,
+      "args": null,
       "args_sha256": null,
       "expected": ["rejected"],
-      "actual": "off_log:not_broadcast",
-      "actual_class": "off_log",
-      "expected_match": true,
+      "actual": "skipped",
+      "actual_class": "skipped",
+      "expected_match": false,
+      "unexpected": false,
+      "window_result": null,
       "tx_hash": null,
       "explorer": null,
       "op_id": null,
       "vault_id": null,
       "log_entry": null,
-      "off_log": {
-        "kind": "bitcoin",
-        "raw_hex": "",
-        "txid": "",
-        "rejection": "mock Vault kit"
-      }
-    },
-    {
-      "id": 73,
-      "round": 3,
-      "category": "withdrawal_request",
-      "method": "request_withdrawal",
-      "args_sha256": "4fe5c433c379258cbfb53ddc1faa0d06cb7c2d72ab04f061e18e479dab03bb62",
-      "expected": ["accepted", "ERR_OUTPOINT_RESERVED", "ERR_CLAWED_BACK", "ERR_STORAGE_BUDGET"],
-      "actual": "accepted",
-      "actual_class": "accepted",
-      "expected_match": true,
-      "tx_hash": "0000000000000000000000000000000000000000000000000000000000000043",
-      "explorer": "https://testnet.nearblocks.io/txns/0000000000000000000000000000000000000000000000000000000000000043",
-      "op_id": "5",
-      "vault_id": "3",
-      "log_entry": 65,
-      "off_log": null
+      "off_log": null,
+      "note": "mock Vault kit: no script to spend"
     },
     {
       "id": 74,
       "round": 3,
-      "category": "early_execute",
-      "method": "begin_execute",
-      "args_sha256": "9f7cdb3d9abdee7b5bc46350d07f7d554a348b015f96a17d3d95b20e8c6069f6",
-      "expected": ["ERR_NOT_EXECUTABLE", "ERR_CLAWED_BACK"],
-      "actual": "ERR_NOT_EXECUTABLE",
-      "actual_class": "refused",
-      "expected_match": true,
-      "tx_hash": "0000000000000000000000000000000000000000000000000000000000000044",
-      "explorer": "https://testnet.nearblocks.io/txns/0000000000000000000000000000000000000000000000000000000000000044",
+      "category": "bitcoin_no_cosigner",
+      "method": null,
+      "args": null,
+      "args_sha256": null,
+      "expected": ["rejected"],
+      "actual": "skipped",
+      "actual_class": "skipped",
+      "expected_match": false,
+      "unexpected": false,
+      "window_result": null,
+      "tx_hash": null,
+      "explorer": null,
       "op_id": null,
       "vault_id": null,
-      "log_entry": 66,
-      "off_log": null
+      "log_entry": null,
+      "off_log": null,
+      "note": "mock Vault kit: no script to spend"
     },
     {
       "id": 75,
       "round": 3,
-      "category": "co_sign",
-      "method": "sign_input",
-      "args_sha256": "fd15c927f7c31e31b86933e48b615df3d845b382483294c13f5c53abc9900e95",
-      "expected": ["ERR_BAD_OP_STATE", "ERR_CLAWED_BACK"],
-      "actual": "ERR_BAD_OP_STATE",
-      "actual_class": "refused",
+      "category": "withdrawal_request",
+      "method": "request_withdrawal",
+      "args": {
+        "vault_id": "3",
+        "amount_sats": "99380",
+        "destination": "tb1qwx7jaqhgt34dkh9zuagtdlj68d0zhl2zuwsnj7",
+        "fee_rate_sat_vb": 2,
+        "utxos": [
+          {
+            "txid": "abababababababababababababababababababababababababababababababab",
+            "vout": 0,
+            "value_sats": "100000"
+          }
+        ],
+        "envelope": "8c3e0dbbfd0a33ff65a3254ea95c0fd1c283c18f322e7bc867a138111e15bd699b1afc507bc2252d90e871f84d9f3f94300e7b374c3254ebf5b43ea34179e38fc948eaa4ec9f3476e33aac5dd08439f8"
+      },
+      "args_sha256": "010813b48367d313a48070acb5a71f687e4ceb2974709d1010f704c6b1471d6a",
+      "expected": ["accepted", "ERR_OUTPOINT_RESERVED", "ERR_CLAWED_BACK", "ERR_STORAGE_BUDGET"],
+      "actual": "accepted",
+      "actual_class": "accepted",
       "expected_match": true,
+      "unexpected": false,
+      "window_result": null,
       "tx_hash": "0000000000000000000000000000000000000000000000000000000000000045",
-      "explorer": "https://testnet.nearblocks.io/txns/0000000000000000000000000000000000000000000000000000000000000045",
-      "op_id": null,
-      "vault_id": null,
+      "explorer": null,
+      "op_id": "8",
+      "vault_id": "3",
       "log_entry": 67,
-      "off_log": null
+      "off_log": null,
+      "note": null
     },
     {
       "id": 76,
       "round": 3,
-      "category": "withdrawal_request",
-      "method": "request_withdrawal",
-      "args_sha256": "136f8b6850379ff62c7a9ba365b2fe7b641665bc1c02825a8a9091dc6b2f5dae",
-      "expected": ["ERR_OUTPOINT_RESERVED", "ERR_CLAWED_BACK"],
-      "actual": "ERR_OUTPOINT_RESERVED",
+      "category": "early_execute",
+      "method": "begin_execute",
+      "args": {
+        "op_id": "8",
+        "envelope": "840b9cf8960346dc738690a061e9c0263b1e1b82c4fe2e65ece917d10e85fc42e788cb195cdd8360554bd0e8306b1fb8df6c7627bd715eebf852eba091e8c76cb396e7e993da082214aad71d60d2a389"
+      },
+      "args_sha256": "f5b478e7545907b50915fe2b3b5042ada9883bcf39b36d9a86d2cc6adcfcd9d3",
+      "expected": ["ERR_NOT_EXECUTABLE", "ERR_CLAWED_BACK"],
+      "actual": "ERR_NOT_EXECUTABLE",
       "actual_class": "refused",
       "expected_match": true,
+      "unexpected": false,
+      "window_result": "own_code",
       "tx_hash": "0000000000000000000000000000000000000000000000000000000000000046",
-      "explorer": "https://testnet.nearblocks.io/txns/0000000000000000000000000000000000000000000000000000000000000046",
+      "explorer": null,
       "op_id": null,
       "vault_id": null,
       "log_entry": 68,
-      "off_log": null
+      "off_log": null,
+      "note": null
     },
     {
       "id": 77,
       "round": 3,
-      "category": "refresh",
-      "method": "refresh",
-      "args_sha256": "48d4dfa9c719f93ffed783699ba30503150f7ba0df230ec60eb3a38df530f1bb",
-      "expected": ["ERR_CLAWED_BACK", "ERR_VAULT_NOT_ACTIVE"],
-      "actual": "ERR_CLAWED_BACK",
+      "category": "co_sign",
+      "method": "sign_input",
+      "args": {
+        "op_id": "8",
+        "input_index": 0
+      },
+      "args_sha256": "597a3e2a6f4a86b569ef74a5b5c6fa818c09df94619d3e264f0bf7f019f9e506",
+      "expected": ["ERR_BAD_OP_STATE", "ERR_CLAWED_BACK"],
+      "actual": "ERR_BAD_OP_STATE",
       "actual_class": "refused",
       "expected_match": true,
+      "unexpected": false,
+      "window_result": "own_code",
       "tx_hash": "0000000000000000000000000000000000000000000000000000000000000047",
-      "explorer": "https://testnet.nearblocks.io/txns/0000000000000000000000000000000000000000000000000000000000000047",
+      "explorer": null,
       "op_id": null,
       "vault_id": null,
       "log_entry": 69,
-      "off_log": null
+      "off_log": null,
+      "note": null
     },
     {
       "id": 78,
       "round": 3,
-      "category": "spend_allowance",
-      "method": "spend_allowance",
-      "args_sha256": "82dc75d752bed4c993e6b15c0298389e16ee8c0112ccc13213a497e2c9284def",
-      "expected": ["ERR_CLAWED_BACK", "ERR_VAULT_NOT_ACTIVE"],
-      "actual": "ERR_CLAWED_BACK",
+      "category": "withdrawal_request",
+      "method": "request_withdrawal",
+      "args": {
+        "vault_id": "3",
+        "amount_sats": "99380",
+        "destination": "tb1qy62hrwraj3n08kld5z3034sr93fd4j8qmjcrdy",
+        "fee_rate_sat_vb": 2,
+        "utxos": [
+          {
+            "txid": "abababababababababababababababababababababababababababababababab",
+            "vout": 0,
+            "value_sats": "100000"
+          }
+        ],
+        "envelope": "88c5772658f856b6c4f25ac219f81c3a67d8d67c31e4857ea5d4433e4deddb16563b33b29625b2a9d16d098010d3f0f915fc7cca48df92c7055560a13444aa15a352b1080ad3a702443487d28198004f"
+      },
+      "args_sha256": "457d6a906e28bcc702ec0dc1fd7d859c49d1d12d47da0395f8b8762520a0ae37",
+      "expected": ["ERR_OUTPOINT_RESERVED", "ERR_CLAWED_BACK"],
+      "actual": "ERR_OUTPOINT_RESERVED",
       "actual_class": "refused",
       "expected_match": true,
+      "unexpected": false,
+      "window_result": "own_code",
       "tx_hash": "0000000000000000000000000000000000000000000000000000000000000048",
-      "explorer": "https://testnet.nearblocks.io/txns/0000000000000000000000000000000000000000000000000000000000000048",
+      "explorer": null,
       "op_id": null,
       "vault_id": null,
       "log_entry": 70,
-      "off_log": null
+      "off_log": null,
+      "note": null
     },
     {
       "id": 79,
       "round": 3,
-      "category": "policy_change",
-      "method": "propose_policy_change",
-      "args_sha256": "c832539e04cdea4a39fb2f4341c269135452b2a67e22f7a9bf4883fe500ba268",
+      "category": "refresh",
+      "method": "refresh",
+      "args": {
+        "vault_id": "3",
+        "fee_rate_sat_vb": 2,
+        "utxos": [
+          {
+            "txid": "abababababababababababababababababababababababababababababababab",
+            "vout": 0,
+            "value_sats": "100000"
+          }
+        ],
+        "envelope": "59b05e8b943d34a1dd30b12c7448c810e346a2682f91a0f83fa7acf59ec6ec2fef2b2fbb2050c07f1cea447642c211a7ae83e5f4603da7d2b2d591570a09d685c4ee306d49d13a67a80ff828e83ba1df"
+      },
+      "args_sha256": "d6de4c1ab62046d39f088c2461f7419d3e195ec25c1898905d0853c491ea0537",
       "expected": ["ERR_CLAWED_BACK", "ERR_VAULT_NOT_ACTIVE"],
       "actual": "ERR_CLAWED_BACK",
       "actual_class": "refused",
       "expected_match": true,
+      "unexpected": false,
+      "window_result": null,
       "tx_hash": "0000000000000000000000000000000000000000000000000000000000000049",
-      "explorer": "https://testnet.nearblocks.io/txns/0000000000000000000000000000000000000000000000000000000000000049",
+      "explorer": null,
       "op_id": null,
       "vault_id": null,
       "log_entry": 71,
-      "off_log": null
+      "off_log": null,
+      "note": null
     },
     {
       "id": 80,
       "round": 3,
-      "category": "storage",
-      "method": "top_up_storage",
-      "args_sha256": "a7465e4f88470368684dfb4dfa5498578006c3ead84eefdd4278e7f5b5014c62",
-      "expected": ["harmless"],
-      "actual": "allowed_harmless",
-      "actual_class": "allowed_harmless",
+      "category": "spend_allowance",
+      "method": "spend_allowance",
+      "args": {
+        "vault_id": "3",
+        "amount_sats": "1000",
+        "destination": "tb1qlg6mudj9awvzfulrzf4g8nuyjrxre444x4wred",
+        "fee_rate_sat_vb": 2,
+        "utxos": [
+          {
+            "txid": "abababababababababababababababababababababababababababababababab",
+            "vout": 0,
+            "value_sats": "100000"
+          }
+        ],
+        "envelope": "e02a200d8a3282523f6acd7c11327860f612c7d4f76b5cb36f3784d2fe820c20008e93d36ccc84994661f0151648f1e5068bbe3e591a08c3b4ef2ea015313cf10434b0fd116d49d55869cc75e5b44b6c"
+      },
+      "args_sha256": "922baf994f2dc68047f7b983a9bc9165408940560a355020e74f59fc09cb38b8",
+      "expected": ["ERR_CLAWED_BACK", "ERR_VAULT_NOT_ACTIVE"],
+      "actual": "ERR_CLAWED_BACK",
+      "actual_class": "refused",
       "expected_match": true,
+      "unexpected": false,
+      "window_result": null,
       "tx_hash": "000000000000000000000000000000000000000000000000000000000000004a",
-      "explorer": "https://testnet.nearblocks.io/txns/000000000000000000000000000000000000000000000000000000000000004a",
+      "explorer": null,
       "op_id": null,
       "vault_id": null,
-      "log_entry": null,
-      "off_log": null
+      "log_entry": 72,
+      "off_log": null,
+      "note": null
     },
     {
       "id": 81,
       "round": 3,
       "category": "policy_change",
       "method": "propose_policy_change",
-      "args_sha256": "c832539e04cdea4a39fb2f4341c269135452b2a67e22f7a9bf4883fe500ba268",
+      "args": {
+        "vault_id": "3",
+        "changes": {
+          "fee_cap_sats": "20000"
+        },
+        "envelope": "09b1737c243e87ec333a0f146a16b311a11e3737bcc73f35c15e365d2b258a76170fda067af18a83d7c2cc125716584988750dd32de5e83b8e39fbb1a4b58e15d279e4b9a87f151a06eaa7ecf6a704bf"
+      },
+      "args_sha256": "c2150c85bab427b967d9fbd0088f34450de4e4de9f3e5fb25c6046f805b8561a",
       "expected": ["ERR_CLAWED_BACK", "ERR_VAULT_NOT_ACTIVE"],
       "actual": "ERR_CLAWED_BACK",
       "actual_class": "refused",
       "expected_match": true,
+      "unexpected": false,
+      "window_result": null,
       "tx_hash": "000000000000000000000000000000000000000000000000000000000000004b",
-      "explorer": "https://testnet.nearblocks.io/txns/000000000000000000000000000000000000000000000000000000000000004b",
+      "explorer": null,
       "op_id": null,
       "vault_id": null,
-      "log_entry": 72,
-      "off_log": null
+      "log_entry": 73,
+      "off_log": null,
+      "note": null
     },
     {
       "id": 82,
       "round": 3,
-      "category": "refresh",
-      "method": "refresh",
-      "args_sha256": "48d4dfa9c719f93ffed783699ba30503150f7ba0df230ec60eb3a38df530f1bb",
-      "expected": ["ERR_CLAWED_BACK", "ERR_VAULT_NOT_ACTIVE"],
-      "actual": "ERR_CLAWED_BACK",
-      "actual_class": "refused",
+      "category": "storage",
+      "method": "top_up_storage",
+      "args": {
+        "vault_id": "3"
+      },
+      "args_sha256": "a7465e4f88470368684dfb4dfa5498578006c3ead84eefdd4278e7f5b5014c62",
+      "expected": ["harmless"],
+      "actual": "allowed_harmless",
+      "actual_class": "allowed_harmless",
       "expected_match": true,
+      "unexpected": false,
+      "window_result": null,
       "tx_hash": "000000000000000000000000000000000000000000000000000000000000004c",
-      "explorer": "https://testnet.nearblocks.io/txns/000000000000000000000000000000000000000000000000000000000000004c",
+      "explorer": null,
       "op_id": null,
       "vault_id": null,
-      "log_entry": 73,
-      "off_log": null
+      "log_entry": null,
+      "off_log": null,
+      "note": null
     },
     {
       "id": 83,
       "round": 3,
-      "category": "storage",
-      "method": "top_up_storage",
-      "args_sha256": "a7465e4f88470368684dfb4dfa5498578006c3ead84eefdd4278e7f5b5014c62",
-      "expected": ["harmless"],
-      "actual": "allowed_harmless",
-      "actual_class": "allowed_harmless",
+      "category": "policy_change",
+      "method": "propose_policy_change",
+      "args": {
+        "vault_id": "3",
+        "changes": {
+          "fee_cap_sats": "20000"
+        },
+        "envelope": "5af9330a6c7593ce7ae16c915afadb5ed31db9b52e93b0664875cf3bfa23877ecfbc512caee9b767e7c81102033decf4bd36c2c8876fc67d702127d928c7082481930d815e7fffd93f22797812140ee7"
+      },
+      "args_sha256": "dc2f8d8779868bd2b22a37b8cad46f9357cafac4d93d166425f301639e71edfc",
+      "expected": ["ERR_CLAWED_BACK", "ERR_VAULT_NOT_ACTIVE"],
+      "actual": "ERR_CLAWED_BACK",
+      "actual_class": "refused",
       "expected_match": true,
+      "unexpected": false,
+      "window_result": null,
       "tx_hash": "000000000000000000000000000000000000000000000000000000000000004d",
-      "explorer": "https://testnet.nearblocks.io/txns/000000000000000000000000000000000000000000000000000000000000004d",
+      "explorer": null,
       "op_id": null,
       "vault_id": null,
-      "log_entry": null,
-      "off_log": null
+      "log_entry": 74,
+      "off_log": null,
+      "note": null
     },
     {
       "id": 84,
       "round": 3,
+      "category": "refresh",
+      "method": "refresh",
+      "args": {
+        "vault_id": "3",
+        "fee_rate_sat_vb": 2,
+        "utxos": [
+          {
+            "txid": "abababababababababababababababababababababababababababababababab",
+            "vout": 0,
+            "value_sats": "100000"
+          }
+        ],
+        "envelope": "3cb3bb9035659a3378238ec566e17a0ee74755e940485587d03da18de0f66f15f8200712b53d9db3110c1cc9d612e4105c6a6f5f4af86202b0a5f93ef237f6cd77d9823fedeea49cbb533b83ddbd81dd"
+      },
+      "args_sha256": "c2141821c0b5ef9719a090e9cf50a28c210d33376e264e48401fa6032205dde2",
+      "expected": ["ERR_CLAWED_BACK", "ERR_VAULT_NOT_ACTIVE"],
+      "actual": "ERR_CLAWED_BACK",
+      "actual_class": "refused",
+      "expected_match": true,
+      "unexpected": false,
+      "window_result": null,
+      "tx_hash": "000000000000000000000000000000000000000000000000000000000000004e",
+      "explorer": null,
+      "op_id": null,
+      "vault_id": null,
+      "log_entry": 75,
+      "off_log": null,
+      "note": null
+    },
+    {
+      "id": 85,
+      "round": 3,
       "category": "storage",
       "method": "top_up_storage",
+      "args": {
+        "vault_id": "3"
+      },
       "args_sha256": "a7465e4f88470368684dfb4dfa5498578006c3ead84eefdd4278e7f5b5014c62",
       "expected": ["harmless"],
       "actual": "allowed_harmless",
       "actual_class": "allowed_harmless",
       "expected_match": true,
-      "tx_hash": "000000000000000000000000000000000000000000000000000000000000004e",
-      "explorer": "https://testnet.nearblocks.io/txns/000000000000000000000000000000000000000000000000000000000000004e",
+      "unexpected": false,
+      "window_result": null,
+      "tx_hash": "000000000000000000000000000000000000000000000000000000000000004f",
+      "explorer": null,
       "op_id": null,
       "vault_id": null,
       "log_entry": null,
-      "off_log": null
-    },
-    {
-      "id": 85,
-      "round": 3,
-      "category": "refresh",
-      "method": "refresh",
-      "args_sha256": "48d4dfa9c719f93ffed783699ba30503150f7ba0df230ec60eb3a38df530f1bb",
-      "expected": ["ERR_CLAWED_BACK", "ERR_VAULT_NOT_ACTIVE"],
-      "actual": "ERR_CLAWED_BACK",
-      "actual_class": "refused",
-      "expected_match": true,
-      "tx_hash": "000000000000000000000000000000000000000000000000000000000000004f",
-      "explorer": "https://testnet.nearblocks.io/txns/000000000000000000000000000000000000000000000000000000000000004f",
-      "op_id": null,
-      "vault_id": null,
-      "log_entry": 74,
-      "off_log": null
+      "off_log": null,
+      "note": null
     },
     {
       "id": 86,
       "round": 3,
-      "category": "policy_change",
-      "method": "propose_policy_change",
-      "args_sha256": "c832539e04cdea4a39fb2f4341c269135452b2a67e22f7a9bf4883fe500ba268",
-      "expected": ["ERR_CLAWED_BACK", "ERR_VAULT_NOT_ACTIVE"],
-      "actual": "ERR_CLAWED_BACK",
-      "actual_class": "refused",
+      "category": "storage",
+      "method": "top_up_storage",
+      "args": {
+        "vault_id": "3"
+      },
+      "args_sha256": "a7465e4f88470368684dfb4dfa5498578006c3ead84eefdd4278e7f5b5014c62",
+      "expected": ["harmless"],
+      "actual": "allowed_harmless",
+      "actual_class": "allowed_harmless",
       "expected_match": true,
+      "unexpected": false,
+      "window_result": null,
       "tx_hash": "0000000000000000000000000000000000000000000000000000000000000050",
-      "explorer": "https://testnet.nearblocks.io/txns/0000000000000000000000000000000000000000000000000000000000000050",
+      "explorer": null,
       "op_id": null,
       "vault_id": null,
-      "log_entry": 75,
-      "off_log": null
+      "log_entry": null,
+      "off_log": null,
+      "note": null
     },
     {
       "id": 87,
       "round": 3,
-      "category": "withdrawal_request",
-      "method": "request_withdrawal",
-      "args_sha256": "08ebc7116da42199e859ca9fdae7cb3abe8aaf0fee89039e4ed9306e5454a482",
+      "category": "refresh",
+      "method": "refresh",
+      "args": {
+        "vault_id": "3",
+        "fee_rate_sat_vb": 2,
+        "utxos": [
+          {
+            "txid": "abababababababababababababababababababababababababababababababab",
+            "vout": 0,
+            "value_sats": "100000"
+          }
+        ],
+        "envelope": "2504c63c36f68a303cde1b47e0f1662713e97a71038100899a9abb3a32d9a24f5f1713e74949bb05a3e78800f5270dc4054f64f4f4a656eecd603a2899ace86968ea6c6279527468786dc6ea192d60c9"
+      },
+      "args_sha256": "bafd8aee3ad43d8ea3aa72bb325f39972e3e539bd3d324b487185c1bc107e198",
       "expected": ["ERR_CLAWED_BACK", "ERR_VAULT_NOT_ACTIVE"],
       "actual": "ERR_CLAWED_BACK",
       "actual_class": "refused",
       "expected_match": true,
+      "unexpected": false,
+      "window_result": null,
       "tx_hash": "0000000000000000000000000000000000000000000000000000000000000051",
-      "explorer": "https://testnet.nearblocks.io/txns/0000000000000000000000000000000000000000000000000000000000000051",
+      "explorer": null,
       "op_id": null,
       "vault_id": null,
       "log_entry": 76,
-      "off_log": null
+      "off_log": null,
+      "note": null
     },
     {
       "id": 88,
       "round": 3,
-      "category": "refresh",
-      "method": "refresh",
-      "args_sha256": "48d4dfa9c719f93ffed783699ba30503150f7ba0df230ec60eb3a38df530f1bb",
+      "category": "policy_change",
+      "method": "propose_policy_change",
+      "args": {
+        "vault_id": "3",
+        "changes": {
+          "fee_cap_sats": "20000"
+        },
+        "envelope": "9fecd1779c26099c6d2e860253e43f20d2ee5755325dffc5efd0e12c5384f41cd45d3d86b433b02a2d3aff205e23de7bdbca65393caf3eb61dd5c57e39ff92657276c901017cb71e8f12692b8db48b9b"
+      },
+      "args_sha256": "9d9d5e324a1897cb9187fd8adf76228e45a5a8f6e33cd165b2dd871e54691427",
       "expected": ["ERR_CLAWED_BACK", "ERR_VAULT_NOT_ACTIVE"],
       "actual": "ERR_CLAWED_BACK",
       "actual_class": "refused",
       "expected_match": true,
+      "unexpected": false,
+      "window_result": null,
       "tx_hash": "0000000000000000000000000000000000000000000000000000000000000052",
-      "explorer": "https://testnet.nearblocks.io/txns/0000000000000000000000000000000000000000000000000000000000000052",
+      "explorer": null,
       "op_id": null,
       "vault_id": null,
       "log_entry": 77,
-      "off_log": null
+      "off_log": null,
+      "note": null
     },
     {
       "id": 89,
       "round": 3,
-      "category": "co_sign",
-      "method": "sign_input",
-      "args_sha256": "fd15c927f7c31e31b86933e48b615df3d845b382483294c13f5c53abc9900e95",
+      "category": "withdrawal_request",
+      "method": "request_withdrawal",
+      "args": {
+        "vault_id": "3",
+        "amount_sats": "99380",
+        "destination": "tb1q2vse06c408l85ze6wh3qm6304fhn7wgr80h8cu",
+        "fee_rate_sat_vb": 2,
+        "utxos": [
+          {
+            "txid": "abababababababababababababababababababababababababababababababab",
+            "vout": 0,
+            "value_sats": "100000"
+          }
+        ],
+        "envelope": "c91843ba49d4eac5c6b3c2e1a24e2ff895ced30a249af504570213b12ce95a5b9ec2f7ac313874ed5118e92009a605d1e59ca09824dd6a6b132ab2c3c9ef8ee893c62129104784ff084d90f58e89faed"
+      },
+      "args_sha256": "eb90f9e0a40f54cacfd45fd5541c953024324715a7f61760cc006603009e48aa",
       "expected": ["ERR_CLAWED_BACK", "ERR_VAULT_NOT_ACTIVE"],
       "actual": "ERR_CLAWED_BACK",
       "actual_class": "refused",
       "expected_match": true,
+      "unexpected": false,
+      "window_result": null,
       "tx_hash": "0000000000000000000000000000000000000000000000000000000000000053",
-      "explorer": "https://testnet.nearblocks.io/txns/0000000000000000000000000000000000000000000000000000000000000053",
+      "explorer": null,
       "op_id": null,
       "vault_id": null,
       "log_entry": 78,
-      "off_log": null
+      "off_log": null,
+      "note": null
     },
     {
       "id": 90,
       "round": 3,
-      "category": "spend_allowance",
-      "method": "spend_allowance",
-      "args_sha256": "69b2a5dd8cee5e1e4d8448ff249ba878100ab489d27ec90edfa983ff90b08712",
+      "category": "refresh",
+      "method": "refresh",
+      "args": {
+        "vault_id": "3",
+        "fee_rate_sat_vb": 2,
+        "utxos": [
+          {
+            "txid": "abababababababababababababababababababababababababababababababab",
+            "vout": 0,
+            "value_sats": "100000"
+          }
+        ],
+        "envelope": "fb32f81441d79208b9256cb90cf84a58136ededcefe5d896ffc1134e9a547306cb04648beb1edba67f3a0925e5a8df2dbfa9379fab09c07b69db6d7130c2b70fa65588c47fc7296e07267502c04cde69"
+      },
+      "args_sha256": "d9cc7d5b714b1073b966ddd92c7d5e7576c7b371cb65533dccf85fca921c7f45",
       "expected": ["ERR_CLAWED_BACK", "ERR_VAULT_NOT_ACTIVE"],
       "actual": "ERR_CLAWED_BACK",
       "actual_class": "refused",
       "expected_match": true,
+      "unexpected": false,
+      "window_result": null,
       "tx_hash": "0000000000000000000000000000000000000000000000000000000000000054",
-      "explorer": "https://testnet.nearblocks.io/txns/0000000000000000000000000000000000000000000000000000000000000054",
+      "explorer": null,
       "op_id": null,
       "vault_id": null,
       "log_entry": 79,
-      "off_log": null
+      "off_log": null,
+      "note": null
     },
     {
       "id": 91,
       "round": 3,
-      "category": "refresh",
-      "method": "refresh",
-      "args_sha256": "48d4dfa9c719f93ffed783699ba30503150f7ba0df230ec60eb3a38df530f1bb",
+      "category": "co_sign",
+      "method": "sign_input",
+      "args": {
+        "op_id": "8",
+        "input_index": 0
+      },
+      "args_sha256": "597a3e2a6f4a86b569ef74a5b5c6fa818c09df94619d3e264f0bf7f019f9e506",
       "expected": ["ERR_CLAWED_BACK", "ERR_VAULT_NOT_ACTIVE"],
       "actual": "ERR_CLAWED_BACK",
       "actual_class": "refused",
       "expected_match": true,
+      "unexpected": false,
+      "window_result": null,
       "tx_hash": "0000000000000000000000000000000000000000000000000000000000000055",
-      "explorer": "https://testnet.nearblocks.io/txns/0000000000000000000000000000000000000000000000000000000000000055",
+      "explorer": null,
       "op_id": null,
       "vault_id": null,
       "log_entry": 80,
-      "off_log": null
+      "off_log": null,
+      "note": null
     },
     {
       "id": 92,
       "round": 3,
       "category": "spend_allowance",
       "method": "spend_allowance",
-      "args_sha256": "ed7bda6b86486f41869a10c4fddb33e45b9ea2b66ca037c775bdf507b914aaea",
+      "args": {
+        "vault_id": "3",
+        "amount_sats": "1000",
+        "destination": "tb1qmp08pw0fhs9hdy6a99sk33slnxqp6pwq0q94zp",
+        "fee_rate_sat_vb": 2,
+        "utxos": [
+          {
+            "txid": "abababababababababababababababababababababababababababababababab",
+            "vout": 0,
+            "value_sats": "100000"
+          }
+        ],
+        "envelope": "74b3e53dcc04b4be6f847bf129b2443451e132b7ddaaf624bfccb58bd348397697c22006d15b83c40eba9321ea8db2eb87c6c7a3fc869182e99313553438bff3cad98b5dfc72cc44c37eb762c6168011"
+      },
+      "args_sha256": "73031548f8acc6a230f991c7a7e690abad65911204e2c41f9e29675b617ac43a",
       "expected": ["ERR_CLAWED_BACK", "ERR_VAULT_NOT_ACTIVE"],
       "actual": "ERR_CLAWED_BACK",
       "actual_class": "refused",
       "expected_match": true,
+      "unexpected": false,
+      "window_result": null,
       "tx_hash": "0000000000000000000000000000000000000000000000000000000000000056",
-      "explorer": "https://testnet.nearblocks.io/txns/0000000000000000000000000000000000000000000000000000000000000056",
+      "explorer": null,
       "op_id": null,
       "vault_id": null,
       "log_entry": 81,
-      "off_log": null
+      "off_log": null,
+      "note": null
     },
     {
       "id": 93,
       "round": 3,
+      "category": "refresh",
+      "method": "refresh",
+      "args": {
+        "vault_id": "3",
+        "fee_rate_sat_vb": 2,
+        "utxos": [
+          {
+            "txid": "abababababababababababababababababababababababababababababababab",
+            "vout": 0,
+            "value_sats": "100000"
+          }
+        ],
+        "envelope": "f02e0cb0cec71fe1a93a0de1f5b02caa97c8a7e58249aa91123d018995feb116298968fc1ff73da13e9da02bad758dcd3867ed81836696e7f88fa9f36a98c78a66878e93cb9ce2896a35fabe4d3c8366"
+      },
+      "args_sha256": "1a0b7bb1e939c9a1f628f41807e36cec6b0be951af70c83577bc49069576530c",
+      "expected": ["ERR_CLAWED_BACK", "ERR_VAULT_NOT_ACTIVE"],
+      "actual": "ERR_CLAWED_BACK",
+      "actual_class": "refused",
+      "expected_match": true,
+      "unexpected": false,
+      "window_result": null,
+      "tx_hash": "0000000000000000000000000000000000000000000000000000000000000057",
+      "explorer": null,
+      "op_id": null,
+      "vault_id": null,
+      "log_entry": 82,
+      "off_log": null,
+      "note": null
+    },
+    {
+      "id": 94,
+      "round": 3,
+      "category": "spend_allowance",
+      "method": "spend_allowance",
+      "args": {
+        "vault_id": "3",
+        "amount_sats": "1000",
+        "destination": "tb1qpt206w5wpd7as72ef4pym5vymkjqe6wwk4r6gu",
+        "fee_rate_sat_vb": 2,
+        "utxos": [
+          {
+            "txid": "abababababababababababababababababababababababababababababababab",
+            "vout": 0,
+            "value_sats": "100000"
+          }
+        ],
+        "envelope": "2232fe78ba645235a4eb766084eecd184555c0abd12d77a0bfeab3abb77ba23a105304a73152411bb274c8829079c3f2cd54d6dad82fec1597993db947d64527990af2921d0c30582a51eb04de70da25"
+      },
+      "args_sha256": "b807522cc3b5a71d5933576b6f20f74c1acd2865a89cc453a63758124f46c6e0",
+      "expected": ["ERR_CLAWED_BACK", "ERR_VAULT_NOT_ACTIVE"],
+      "actual": "ERR_CLAWED_BACK",
+      "actual_class": "refused",
+      "expected_match": true,
+      "unexpected": false,
+      "window_result": null,
+      "tx_hash": "0000000000000000000000000000000000000000000000000000000000000058",
+      "explorer": null,
+      "op_id": null,
+      "vault_id": null,
+      "log_entry": 83,
+      "off_log": null,
+      "note": null
+    },
+    {
+      "id": 95,
+      "round": 3,
       "category": "storage",
       "method": "top_up_storage",
+      "args": {
+        "vault_id": "3"
+      },
       "args_sha256": "a7465e4f88470368684dfb4dfa5498578006c3ead84eefdd4278e7f5b5014c62",
       "expected": ["harmless"],
       "actual": "allowed_harmless",
       "actual_class": "allowed_harmless",
       "expected_match": true,
-      "tx_hash": "0000000000000000000000000000000000000000000000000000000000000057",
-      "explorer": "https://testnet.nearblocks.io/txns/0000000000000000000000000000000000000000000000000000000000000057",
+      "unexpected": false,
+      "window_result": null,
+      "tx_hash": "0000000000000000000000000000000000000000000000000000000000000059",
+      "explorer": null,
       "op_id": null,
       "vault_id": null,
       "log_entry": null,
-      "off_log": null
-    },
-    {
-      "id": 94,
-      "round": 3,
-      "category": "refresh",
-      "method": "refresh",
-      "args_sha256": "48d4dfa9c719f93ffed783699ba30503150f7ba0df230ec60eb3a38df530f1bb",
-      "expected": ["ERR_CLAWED_BACK", "ERR_VAULT_NOT_ACTIVE"],
-      "actual": "ERR_CLAWED_BACK",
-      "actual_class": "refused",
-      "expected_match": true,
-      "tx_hash": "0000000000000000000000000000000000000000000000000000000000000058",
-      "explorer": "https://testnet.nearblocks.io/txns/0000000000000000000000000000000000000000000000000000000000000058",
-      "op_id": null,
-      "vault_id": null,
-      "log_entry": 82,
-      "off_log": null
-    },
-    {
-      "id": 95,
-      "round": 3,
-      "category": "policy_change",
-      "method": "propose_policy_change",
-      "args_sha256": "c832539e04cdea4a39fb2f4341c269135452b2a67e22f7a9bf4883fe500ba268",
-      "expected": ["ERR_CLAWED_BACK", "ERR_VAULT_NOT_ACTIVE"],
-      "actual": "ERR_CLAWED_BACK",
-      "actual_class": "refused",
-      "expected_match": true,
-      "tx_hash": "0000000000000000000000000000000000000000000000000000000000000059",
-      "explorer": "https://testnet.nearblocks.io/txns/0000000000000000000000000000000000000000000000000000000000000059",
-      "op_id": null,
-      "vault_id": null,
-      "log_entry": 83,
-      "off_log": null
+      "off_log": null,
+      "note": null
     },
     {
       "id": 96,
       "round": 3,
-      "category": "co_sign",
-      "method": "sign_input",
-      "args_sha256": "fd15c927f7c31e31b86933e48b615df3d845b382483294c13f5c53abc9900e95",
+      "category": "refresh",
+      "method": "refresh",
+      "args": {
+        "vault_id": "3",
+        "fee_rate_sat_vb": 2,
+        "utxos": [
+          {
+            "txid": "abababababababababababababababababababababababababababababababab",
+            "vout": 0,
+            "value_sats": "100000"
+          }
+        ],
+        "envelope": "dd6cb1a9f8bde1dd02a8e857854c69f34054c3e50ba4ab5544a0514a81aca7421db4112d86179c68e7aa0085bd30444acb260636df090e31b2138997ba3db70ec3cb8da07b5a07b99609e6d44874346f"
+      },
+      "args_sha256": "f40cc13d593691986cf98d87662b415781ac55cc1a429d2be1c82097948f09f9",
       "expected": ["ERR_CLAWED_BACK", "ERR_VAULT_NOT_ACTIVE"],
       "actual": "ERR_CLAWED_BACK",
       "actual_class": "refused",
       "expected_match": true,
+      "unexpected": false,
+      "window_result": null,
       "tx_hash": "000000000000000000000000000000000000000000000000000000000000005a",
-      "explorer": "https://testnet.nearblocks.io/txns/000000000000000000000000000000000000000000000000000000000000005a",
+      "explorer": null,
       "op_id": null,
       "vault_id": null,
       "log_entry": 84,
-      "off_log": null
+      "off_log": null,
+      "note": null
     },
     {
       "id": 97,
       "round": 3,
-      "category": "spend_allowance",
-      "method": "spend_allowance",
-      "args_sha256": "6878a66cb7e7102531b1ddf8a8a8b5c070efbed14ca447a4355c3986bfe89527",
+      "category": "policy_change",
+      "method": "propose_policy_change",
+      "args": {
+        "vault_id": "3",
+        "changes": {
+          "fee_cap_sats": "20000"
+        },
+        "envelope": "4a395a81126037a3e4b3809eb31831761df7c9af4cf53e96e3d95aa60369206dd186ef71546fbb6e9f68b0cf8976f72ee9ffddbb93d031e24efa4b3a1e847891bd3575cf47c8ed396ad43e4786c8df8f"
+      },
+      "args_sha256": "70a92370cc3c7a2c74be733c320de64bb2b87ad77ea3325d29f84facbce8c6af",
       "expected": ["ERR_CLAWED_BACK", "ERR_VAULT_NOT_ACTIVE"],
       "actual": "ERR_CLAWED_BACK",
       "actual_class": "refused",
       "expected_match": true,
+      "unexpected": false,
+      "window_result": null,
       "tx_hash": "000000000000000000000000000000000000000000000000000000000000005b",
-      "explorer": "https://testnet.nearblocks.io/txns/000000000000000000000000000000000000000000000000000000000000005b",
+      "explorer": null,
       "op_id": null,
       "vault_id": null,
       "log_entry": 85,
-      "off_log": null
+      "off_log": null,
+      "note": null
     },
     {
       "id": 98,
       "round": 3,
-      "category": "spend_allowance",
-      "method": "spend_allowance",
-      "args_sha256": "9866b9040869480ca7d8c82e7e74e9ccf5bb5b2611eafb12da7de4e7aeb85ff9",
+      "category": "co_sign",
+      "method": "sign_input",
+      "args": {
+        "op_id": "8",
+        "input_index": 0
+      },
+      "args_sha256": "597a3e2a6f4a86b569ef74a5b5c6fa818c09df94619d3e264f0bf7f019f9e506",
       "expected": ["ERR_CLAWED_BACK", "ERR_VAULT_NOT_ACTIVE"],
       "actual": "ERR_CLAWED_BACK",
       "actual_class": "refused",
       "expected_match": true,
+      "unexpected": false,
+      "window_result": null,
       "tx_hash": "000000000000000000000000000000000000000000000000000000000000005c",
-      "explorer": "https://testnet.nearblocks.io/txns/000000000000000000000000000000000000000000000000000000000000005c",
+      "explorer": null,
       "op_id": null,
       "vault_id": null,
       "log_entry": 86,
-      "off_log": null
+      "off_log": null,
+      "note": null
     },
     {
       "id": 99,
       "round": 3,
-      "category": "refresh",
-      "method": "refresh",
-      "args_sha256": "48d4dfa9c719f93ffed783699ba30503150f7ba0df230ec60eb3a38df530f1bb",
+      "category": "spend_allowance",
+      "method": "spend_allowance",
+      "args": {
+        "vault_id": "3",
+        "amount_sats": "1000",
+        "destination": "tb1qvcn03kfky6fuxcwf3altg8uln3gu49c6w6dhv2",
+        "fee_rate_sat_vb": 2,
+        "utxos": [
+          {
+            "txid": "abababababababababababababababababababababababababababababababab",
+            "vout": 0,
+            "value_sats": "100000"
+          }
+        ],
+        "envelope": "1d4516a55777a8f1fc23747d60b530f25d8e271d571e857ff60b13c27dfd234ecccd73a594449ae26493e9e37a350e7fd4b90a1f6972f62fb6dd1d6da4bb775e60d2ca9b5bff47e509b52dfec9e7d65d"
+      },
+      "args_sha256": "845a3c04ae3ecc75d4e0f8abd3ee32e30467a6af3252eccafaeeba9b27c0a9e5",
       "expected": ["ERR_CLAWED_BACK", "ERR_VAULT_NOT_ACTIVE"],
       "actual": "ERR_CLAWED_BACK",
       "actual_class": "refused",
       "expected_match": true,
+      "unexpected": false,
+      "window_result": null,
       "tx_hash": "000000000000000000000000000000000000000000000000000000000000005d",
-      "explorer": "https://testnet.nearblocks.io/txns/000000000000000000000000000000000000000000000000000000000000005d",
+      "explorer": null,
       "op_id": null,
       "vault_id": null,
       "log_entry": 87,
-      "off_log": null
+      "off_log": null,
+      "note": null
     },
     {
       "id": 100,
       "round": 3,
-      "category": "early_execute",
-      "method": "begin_execute",
-      "args_sha256": "9f7cdb3d9abdee7b5bc46350d07f7d554a348b015f96a17d3d95b20e8c6069f6",
+      "category": "spend_allowance",
+      "method": "spend_allowance",
+      "args": {
+        "vault_id": "3",
+        "amount_sats": "1000",
+        "destination": "tb1qmwlug08gwcnd6ttwtanfkghfhju5wu3vew3ux7",
+        "fee_rate_sat_vb": 2,
+        "utxos": [
+          {
+            "txid": "abababababababababababababababababababababababababababababababab",
+            "vout": 0,
+            "value_sats": "100000"
+          }
+        ],
+        "envelope": "1e5a2cdf028b86185fba365c76c881ea68d200d2a642429967700fb2f47d585527e6ac59153c8ef01919b290dd354a9d32271be497c066b8ee9e20b8260e17a018bb7c1c685afffce41dd0878f4c5c3f"
+      },
+      "args_sha256": "2e42f0489c1481aa3c70ac3b6ed9f7ddcf32738cba5edacfcdbd283d2d058422",
       "expected": ["ERR_CLAWED_BACK", "ERR_VAULT_NOT_ACTIVE"],
       "actual": "ERR_CLAWED_BACK",
       "actual_class": "refused",
       "expected_match": true,
+      "unexpected": false,
+      "window_result": null,
       "tx_hash": "000000000000000000000000000000000000000000000000000000000000005e",
-      "explorer": "https://testnet.nearblocks.io/txns/000000000000000000000000000000000000000000000000000000000000005e",
+      "explorer": null,
       "op_id": null,
       "vault_id": null,
       "log_entry": 88,
-      "off_log": null
+      "off_log": null,
+      "note": null
     }
   ],
   "summary": {
     "attacker_addresses": [
       {
-        "address": "tb1q77arg20c53n9kvmvlhcka3reu8xgsp8cxtry3z",
+        "address": "tb1qkx04y0l5skar7qwx7pp2k6lcrckkz47h688rmq",
         "final_balance_sats": 0
       },
       {
-        "address": "tb1qnqnv9nc0tl7c9l9x3qv4tzuulwamz0vv72r6zj",
+        "address": "tb1q29faqsw8uf6fql9hlfy0ny69ln0mfstjr5lmpu",
         "final_balance_sats": 0
       },
       {
-        "address": "tb1qtuhg5ze7n7uj9z8pzl3hfkss8er6shr467n8rr",
+        "address": "tb1qjmnpywxcwan7g4qn0s226es3zgu0rfy7qmt2k7",
         "final_balance_sats": 0
       },
       {
-        "address": "tb1qk8tcgr4g82vwzk4dvzvkj4zujs50dg6v9uwjc9",
+        "address": "tb1qz5g0lm0w7v8t444q8767g59pnkvx44852n9gxy",
         "final_balance_sats": 0
       },
       {
-        "address": "tb1q5ejwxj2wrjc9duyd4qn9txpkpcjaw7dfk297tv",
+        "address": "tb1q0zu83r49f3p4djaqsdueaeahcd8x9lkxrvt57a",
         "final_balance_sats": 0
       },
       {
-        "address": "tb1qxgrvpyvanlq3arcw34ax5m3sn46nn75rf6cru4",
+        "address": "tb1qjlxxc49k3x4j5xcvtp8ch6kq0pxn9yj5f75nln",
         "final_balance_sats": 0
       },
       {
-        "address": "tb1qd0atryl5kcdzv2yj3xqldx90cz664ma7tfwvwc",
+        "address": "tb1qlr4qzz5t3mje00sm3a7ruvduyy6c0tlz6wdu67",
         "final_balance_sats": 0
       },
       {
-        "address": "tb1qc62n4xsmxxg7avkmp4stnaxa944h4euum2fe4p",
+        "address": "tb1q9y9d85rquhy0j67eydr06qvchjmn3jgct7us3m",
         "final_balance_sats": 0
       },
       {
-        "address": "tb1qvev5dlpa4r3t8stus4d76xz6y8echj5xs7h87z",
+        "address": "tb1qsdxxeju2up83qp6lpzfs32ut58epuhyzfu67ea",
         "final_balance_sats": 0
       },
       {
-        "address": "tb1qs6gcvy67we7672axt2zjzcqhext43w3hs36txx",
+        "address": "tb1qe5qs7z6l8sz72w8v8kyxx8wtf7xe2gne8culea",
         "final_balance_sats": 0
       },
       {
-        "address": "tb1q3wdk6l3270fyp5e0y48m3jaxeu0frh0uwep0a5",
+        "address": "tb1qa4u4l4sf5ggca8wtej2r3yf2cg7mjxl5qglxyu",
         "final_balance_sats": 0
       },
       {
-        "address": "tb1qrtw58fej6fae9rdt6tr7kf058hxuqy4ekfefah",
+        "address": "tb1q83qrstn96z4n9vvm5aqxy6qjgzdwf2pcf7s4at",
         "final_balance_sats": 0
       },
       {
-        "address": "tb1qnqsg0pc394vt4wmg5cpxjvktyp6zc4a30w2lkk",
+        "address": "tb1q0nd5pmdswvkewu09vap7c87ymlutwzn9eepgmw",
         "final_balance_sats": 0
       },
       {
-        "address": "tb1qyxx57g8yummgr0h58wncc40a9fh8hc60td4f5z",
+        "address": "tb1qv30p7h8qv0ttrskl4uswgurmufxslnxtzgf4y4",
         "final_balance_sats": 0
       },
       {
-        "address": "tb1qct7qvtq4s3lcyxs4vdksmckedk6hj8kvc5a5fw",
+        "address": "tb1qxwz8etk0s95ppcazllgz7uaejwlg6jusstwamp",
         "final_balance_sats": 0
       },
       {
-        "address": "tb1qyyds2l65yht5v2r06kgezuhn8qnzzsxsn442ul",
+        "address": "tb1qlkggy40x9w3s6y7fsnmwwvt3v0av2hq68mzpdu",
         "final_balance_sats": 0
       },
       {
-        "address": "tb1qxn96mynfsecxz5d6uup58mz0zh8gyqavge3exk",
+        "address": "tb1qq4pcvpyjnqeh7we5vwmm5nlh84ew2jusvddhc8",
         "final_balance_sats": 0
       },
       {
-        "address": "tb1q45cphngtk63r5xet2ug0lneva8hzspjaw0r8sj",
+        "address": "tb1qa5yejrwe59h0apun5h0veekx49md9p2k5t2n30",
         "final_balance_sats": 0
       },
       {
-        "address": "tb1qe4520vj4eq7klzeypjskch5l5muehnpa6yrtlu",
+        "address": "tb1q7wdwg2cx6msl4yzen7c09s4uc4red2gukgwmuy",
         "final_balance_sats": 0
       },
       {
-        "address": "tb1qa7x5a5sdxl39eppcupx453vr338afmywlss3r3",
+        "address": "tb1qv3nmvkd5tfc52y4zl9g0gulwkps4q58qfh00ce",
         "final_balance_sats": 0
       },
       {
-        "address": "tb1qj03ywpmhv0uq99wjkayzkjrpgtyky2mhtgt9x7",
+        "address": "tb1qtru646uwvcnvd6eck6sa60vuuqeaw50eg9lca6",
         "final_balance_sats": 0
       },
       {
-        "address": "tb1qw8w3c4jqkmr9kgwsjt6n57f8hlk578rq3srn7x",
+        "address": "tb1q6qk8rnpz6n22w7wsprztnnfe0r3z7vukrfaul7",
         "final_balance_sats": 0
       },
       {
-        "address": "tb1qqn5y9fvxwvfflmzavw5nn498m5g0g6kwdy8dsv",
+        "address": "tb1qe64hsypl7jft8uuma7s79y4aza6trgp6q23n75",
         "final_balance_sats": 0
       },
       {
-        "address": "tb1q5qkcq9w8cdlf6qpk6hcr0y3wtc0le5e47lul4h",
+        "address": "tb1qy3nzuhs2fs668n2h00xktgur6mrpnnn3lqkaxs",
         "final_balance_sats": 0
       },
       {
-        "address": "tb1qwhq0dsw7puxegdw5a74cl9a8064fq0d3eskvfr",
+        "address": "tb1qwx7jaqhgt34dkh9zuagtdlj68d0zhl2zuwsnj7",
         "final_balance_sats": 0
       },
       {
-        "address": "tb1qqh3fqvul6pu5ne4zq53rjw5t0j9vjxf7hr5djw",
+        "address": "tb1qy62hrwraj3n08kld5z3034sr93fd4j8qmjcrdy",
         "final_balance_sats": 0
       },
       {
-        "address": "tb1qqdejat44my830zvnqwct0vc0cgyxv8wznezw0x",
+        "address": "tb1qlg6mudj9awvzfulrzf4g8nuyjrxre444x4wred",
         "final_balance_sats": 0
       },
       {
-        "address": "tb1qknnsndcvqxa5lxdeda9r4ut838t9clj2jnqtfs",
+        "address": "tb1q2vse06c408l85ze6wh3qm6304fhn7wgr80h8cu",
         "final_balance_sats": 0
       },
       {
-        "address": "tb1q3n7z0wtye968huqnwsjtrt3g3xn3z5cfa6a85y",
+        "address": "tb1qmp08pw0fhs9hdy6a99sk33slnxqp6pwq0q94zp",
         "final_balance_sats": 0
       },
       {
-        "address": "tb1q4cfhvt3vtpx5qxpvlhrpgtdnxhhhf9pdpn30jq",
+        "address": "tb1qpt206w5wpd7as72ef4pym5vymkjqe6wwk4r6gu",
         "final_balance_sats": 0
       },
       {
-        "address": "tb1qvu89yc2n7urcudej53cf5s9pf8kr5tpv5cyehd",
+        "address": "tb1qvcn03kfky6fuxcwf3altg8uln3gu49c6w6dhv2",
         "final_balance_sats": 0
       },
       {
-        "address": "tb1qvhpk77ywyh42ltz5s3e7zfjgvxyjcm2nufn4fn",
-        "final_balance_sats": 0
-      },
-      {
-        "address": "tb1qtgmltsjcvh5hyk2u00qvz0ce8u0d2ctsw0txmv",
-        "final_balance_sats": 0
-      },
-      {
-        "address": "tb1qly0chrpeaaadnzhwkpn2k7j2g02phvarr3qtw5",
-        "final_balance_sats": 0
-      },
-      {
-        "address": "tb1q5jwzk6sl893qxe776nyu3sdpe685dvdjh57ka9",
-        "final_balance_sats": 0
-      },
-      {
-        "address": "tb1qx2le6sht48ds7a67wmn5ks6726cl0cfdg8lxdz",
-        "final_balance_sats": 0
-      },
-      {
-        "address": "tb1qas85nhxrfkwnc87z0e7j0fj25stvrzwmddtnun",
-        "final_balance_sats": 0
-      },
-      {
-        "address": "tb1qu9hqeju3ku9r8cpc07dvqwlvhv3pv5c2a3jqz2",
-        "final_balance_sats": 0
-      },
-      {
-        "address": "tb1qv3rx46hukkv3vydu5awhd5k2wnrp36mgl6ydl9",
-        "final_balance_sats": 0
-      },
-      {
-        "address": "tb1q0yec5z67042erntgs0kd2e4utkdf5wpyjmntef",
-        "final_balance_sats": 0
-      },
-      {
-        "address": "tb1qw3pnm9werl0lf2qh5f28qhxxvwgh9m9j3zchdl",
-        "final_balance_sats": 0
-      },
-      {
-        "address": "tb1qx08l22kcv536clxvcwh8c3cuv4kmgpwxtwxvhv",
-        "final_balance_sats": 0
-      },
-      {
-        "address": "tb1q7hacqfcxdzmhsfq7u3z3mqlp42e9ncqd5dym8h",
-        "final_balance_sats": 0
-      },
-      {
-        "address": "tb1qe3hreekdw8hwq86zxqzhktkszxtk9qc348m8n3",
-        "final_balance_sats": 0
-      },
-      {
-        "address": "tb1qcsj6hnmkml526jeyvm367a09dtuldnm6hjz9z5",
-        "final_balance_sats": 0
-      },
-      {
-        "address": "tb1q62z7cqt8skm9jrtfdl5jckcs6q0readnrtv6a4",
-        "final_balance_sats": 0
-      },
-      {
-        "address": "tb1qs4khtmnjcsxv92ac5mpnegu8czkgm8xz2yzth3",
-        "final_balance_sats": 0
-      },
-      {
-        "address": "tb1qzp4924qmkeuln79cceegxfnh2d0huw9dh9vyhq",
-        "final_balance_sats": 0
-      },
-      {
-        "address": "tb1qjtgy3r9zkq5aezxwpwrpqpq5wpu3eslk6awejf",
-        "final_balance_sats": 0
-      },
-      {
-        "address": "tb1qerqa6guy7c5qm73rxrd25ykar7r2e4tn2sekvs",
-        "final_balance_sats": 0
-      },
-      {
-        "address": "tb1qjq7rmvpu4gv75x55mlt8c250jv6lp7ux4rna0e",
-        "final_balance_sats": 0
-      },
-      {
-        "address": "tb1qn0w7ndwfl2d23cxyhampqqt4svw48kykj20mh5",
-        "final_balance_sats": 0
-      },
-      {
-        "address": "tb1qcp75uftpmw6jlgdzuw0rera5pxvjw3g5gzktlm",
-        "final_balance_sats": 0
-      },
-      {
-        "address": "tb1q3n7peqvm40dq24pme2y430c7azlvkrxcwz2mgf",
-        "final_balance_sats": 0
-      },
-      {
-        "address": "tb1qhsuec8n772jncjt8mtkcsqwzay7crwr78e7tpf",
-        "final_balance_sats": 0
-      },
-      {
-        "address": "tb1q5y3n2kek9zayeh5caefkxfm8mmv4xnaen3pwjv",
-        "final_balance_sats": 0
-      },
-      {
-        "address": "tb1qjs96uhgg7vrgrs3rj6qaa0zv47gyxl29fnh20h",
-        "final_balance_sats": 0
-      },
-      {
-        "address": "tb1qa5t9mdw433vz3csfm93td64u7qsavafgthnyqa",
-        "final_balance_sats": 0
-      },
-      {
-        "address": "tb1q05jhzdyc8ehe0zs69n2g2qyrul300ssnjy5frc",
-        "final_balance_sats": 0
-      },
-      {
-        "address": "tb1q9my40q6ktz93nmnyq6d0ed445s6882mg0fyvp0",
-        "final_balance_sats": 0
-      },
-      {
-        "address": "tb1qkkde2t34zudz5n7pe8syrkhz9sj3k4dy5hk9u7",
-        "final_balance_sats": 0
-      },
-      {
-        "address": "tb1qe5rz0agvkmuk866m4kpyc0dh0kl4szy89luhpd",
-        "final_balance_sats": 0
-      },
-      {
-        "address": "tb1qnx0sf7zkzndn498syny3h3qjc3pxy764qrvzkf",
-        "final_balance_sats": 0
-      },
-      {
-        "address": "tb1qfaytqzun0cv9htz2xwdukx9k9qjfmwx873d799",
-        "final_balance_sats": 0
-      },
-      {
-        "address": "tb1qurepu6s2308xrkqzd6dnlzycthkn3rmy5ysxar",
-        "final_balance_sats": 0
-      },
-      {
-        "address": "tb1q34dsm5hw2awg8rq9rpep083rupz64wgg96zq3v",
-        "final_balance_sats": 0
-      },
-      {
-        "address": "tb1qtlx9ga42jj2z5pshdruxs8vdw58pahxrmp78xw",
-        "final_balance_sats": 0
-      },
-      {
-        "address": "tb1q578cvmhpa8x2q6dv2fn6mp3kcv8jkfc4ltarvv",
-        "final_balance_sats": 0
-      },
-      {
-        "address": "tb1qelt6j3uwu8fvhklq78cnauqxhsy8n58l2tamch",
-        "final_balance_sats": 0
-      },
-      {
-        "address": "tb1qjkqprvkandmfljn5ru5ezq3hzrmfga2srsrsax",
-        "final_balance_sats": 0
-      },
-      {
-        "address": "tb1q5ae6sm69mlmmjvl9e4zmaqrnkj82ts9m7wp49a",
-        "final_balance_sats": 0
-      },
-      {
-        "address": "tb1q4rvx3lfkcnquvwy8z3nucwucs5fzfdfrr73wrl",
-        "final_balance_sats": 0
-      },
-      {
-        "address": "tb1q5xzezarx8thj3ln2qtsy65hsznzxe69gfmmf8y",
-        "final_balance_sats": 0
-      },
-      {
-        "address": "tb1qmxdsrxtf7tked6200e2cp0rhpwzuyy4x94864d",
-        "final_balance_sats": 0
-      },
-      {
-        "address": "tb1q4zjzjg277zfrfke85x8q58dzc3xq2ulkw87a8g",
-        "final_balance_sats": 0
-      },
-      {
-        "address": "tb1qz3q5vu66kwg0xy4qcr0hqc8p2y3k52nefm8y2h",
-        "final_balance_sats": 0
-      },
-      {
-        "address": "tb1qc2z82xp7fsp2xgnm674ldjaj93v7re8agplz2k",
-        "final_balance_sats": 0
-      },
-      {
-        "address": "tb1qjpr0rux0grsl7xgvq2j0vrnw2jnthhvqtjl23f",
-        "final_balance_sats": 0
-      },
-      {
-        "address": "tb1q2064pckdzvnzxncplk0ncy50q9sqxx6cwa8uzp",
-        "final_balance_sats": 0
-      },
-      {
-        "address": "tb1qdxhs2cmj6rru3ax6qex3zltnm0xsjx2e4en9xe",
-        "final_balance_sats": 0
-      },
-      {
-        "address": "tb1qgj39lddp4u90wyxmxue36xtwfdgwl3rq4guydk",
-        "final_balance_sats": 0
-      },
-      {
-        "address": "tb1q39v8wu7236k0tarhmgr60h4ukwc7jjufgu2e3h",
-        "final_balance_sats": 0
-      },
-      {
-        "address": "tb1qaja2m5p0hkahvstvtlf00k2pnh5xnyerz4h5gx",
-        "final_balance_sats": 0
-      },
-      {
-        "address": "tb1qhx3mszz76jk5h3sgxlxw3jegd4n8j4ls6qsk24",
-        "final_balance_sats": 0
-      },
-      {
-        "address": "tb1qwc0gtjuuxanctluw3xe7sqldpwj78vla47hvnv",
-        "final_balance_sats": 0
-      },
-      {
-        "address": "tb1qlzvjc7ez75lhm8krx84mfjr26cxt6wjq5sa87y",
-        "final_balance_sats": 0
-      },
-      {
-        "address": "tb1qdvh3d6psyaptc7lqjfuw9p078tufsyatdflmz9",
-        "final_balance_sats": 0
-      },
-      {
-        "address": "tb1qevk9qs69tuukp20rm6k46fyggnjstnl4fyxcka",
-        "final_balance_sats": 0
-      },
-      {
-        "address": "tb1qdez8sgeme5ernfjtwtsyzl82v74jpk5tvapwkt",
-        "final_balance_sats": 0
-      },
-      {
-        "address": "tb1qr34cavvhg6xnv5qvgqxuyse0czgdjkt3vsgeay",
-        "final_balance_sats": 0
-      },
-      {
-        "address": "tb1qxcslzvrl92qmxeqc5m28vgtt53k5kvnnst9nhf",
-        "final_balance_sats": 0
-      },
-      {
-        "address": "tb1quf7ajl39cq5n9l24ugjfq2tyhmg64tut5cd8ru",
-        "final_balance_sats": 0
-      },
-      {
-        "address": "tb1q52s3vhv0hhyql5rgslaqe6t208q8px9x703frh",
-        "final_balance_sats": 0
-      },
-      {
-        "address": "tb1qqf52709hx72xfp0u8ex96gqdqedazfyunls4gq",
+        "address": "tb1qmwlug08gwcnd6ttwtanfkghfhju5wu3vew3ux7",
         "final_balance_sats": 0
       }
     ],
     "sats_to_attackers": 0,
+    "unreadable_balances": [],
     "on_log": "88/88",
     "on_log_matched": 88,
     "on_log_total": 88,
     "missing_hashes": [],
-    "off_log": 6,
+    "off_log": 0,
     "allowed_harmless": 6,
+    "skipped": [6, 7, 40, 41, 73, 74],
+    "unreadable": [],
+    "unexpected": [],
+    "clawback_missing": [],
     "not_deployed": [],
     "not_deployed_note": null,
     "stopped_reason": null,

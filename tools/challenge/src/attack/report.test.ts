@@ -6,6 +6,8 @@ import {
   ReportWriteError,
   checkReportPath,
   defaultReportPath,
+  repoRoot,
+  reportNetwork,
   writeReport,
   type AttackReport,
 } from "./report.js";
@@ -13,6 +15,7 @@ import {
 const EMPTY: AttackReport = {
   header: {
     tool_commit: null,
+    tool_dirty: false,
     seed: 7,
     network: "mock",
     near_network: "testnet",
@@ -32,12 +35,17 @@ const EMPTY: AttackReport = {
   summary: {
     attacker_addresses: [],
     sats_to_attackers: 0,
+    unreadable_balances: [],
     on_log: "0/0",
     on_log_matched: 0,
     on_log_total: 0,
     missing_hashes: [],
     off_log: 0,
     allowed_harmless: 0,
+    skipped: [],
+    unreadable: [],
+    unexpected: [],
+    clawback_missing: [],
     not_deployed: [],
     not_deployed_note: null,
     stopped_reason: null,
@@ -45,51 +53,74 @@ const EMPTY: AttackReport = {
   },
 };
 
+const ROOT = "/repo";
 const dirs: string[] = [];
 afterEach(async () => {
   for (const dir of dirs.splice(0)) await rm(dir, { recursive: true, force: true });
 });
-const scratch = async () => {
-  const dir = await mkdtemp(join(tmpdir(), "attack-report-"));
-  dirs.push(dir);
-  return dir;
-};
 
-describe("checkReportPath", () => {
-  it("refuses a mock report under evidence/ and evidence/regtest/", () => {
-    expect(() => checkReportPath("evidence/x.json", "mock")).toThrow(ReportWriteError);
-    expect(() => checkReportPath("evidence/regtest/x.json", "mock")).toThrow(ReportWriteError);
+describe("repoRoot", () => {
+  it("finds the workspace root from the tool's directory", () => {
+    const root = repoRoot();
+    expect(root).not.toMatch(/tools[\\/]challenge$/);
+    expect(repoRoot(join(root, "tools", "challenge"))).toBe(root);
+  });
+});
+
+describe("checkReportPath (relative to the repository root)", () => {
+  it("refuses a mock or unknown-network report under evidence/, case-folded", () => {
+    expect(() => checkReportPath("/repo/evidence/x.json", "mock", ROOT)).toThrow(ReportWriteError);
+    expect(() => checkReportPath("/repo/Evidence/x.json", "mock", ROOT)).toThrow(ReportWriteError);
+    expect(() => checkReportPath("/repo/evidence/regtest/x.json", "mock", ROOT)).toThrow();
+    expect(() => checkReportPath("/repo/evidence/x.json", "unknown", ROOT)).toThrow();
   });
   it("refuses a regtest report under evidence/ but allows evidence/regtest/", () => {
-    expect(() => checkReportPath("evidence/x.json", "regtest")).toThrow(ReportWriteError);
-    expect(() => checkReportPath("evidence/regtest/x.json", "regtest")).not.toThrow();
+    expect(() => checkReportPath("/repo/evidence/x.json", "regtest", ROOT)).toThrow();
+    expect(() => checkReportPath("/repo/evidence/regtest/x.json", "regtest", ROOT)).not.toThrow();
   });
   it("allows a real-chain report under evidence/", () => {
-    expect(() => checkReportPath("evidence/x.json", "signet")).not.toThrow();
-    expect(() => checkReportPath("evidence/x.json", "bitcoin")).not.toThrow();
+    expect(() => checkReportPath("/repo/evidence/x.json", "signet", ROOT)).not.toThrow();
   });
-  it("allows a mock report elsewhere", () => {
-    expect(() => checkReportPath("/tmp/x.json", "mock")).not.toThrow();
-    expect(() => checkReportPath("./x.json", "mock")).not.toThrow();
+  it("only the root's evidence/ counts, not a nested one or one outside the repository", () => {
+    expect(() => checkReportPath("/repo/tools/evidence/x.json", "mock", ROOT)).not.toThrow();
+    expect(() => checkReportPath("/elsewhere/evidence/x.json", "mock", ROOT)).not.toThrow();
   });
 });
 
 describe("writeReport", () => {
-  it("writes the report and keeps every section", async () => {
-    const dir = await scratch();
+  it("writes the report with every section", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "attack-report-"));
+    dirs.push(dir);
     const path = join(dir, "report.json");
-    await writeReport(path, EMPTY);
+    await writeReport(path, EMPTY, ROOT);
     const parsed = JSON.parse(await readFile(path, "utf8")) as AttackReport;
-    expect(parsed.header.network).toBe("mock");
-    expect(parsed.summary.passed).toBe(true);
-    expect(parsed).toHaveProperty("header");
-    expect(parsed).toHaveProperty("rounds");
-    expect(parsed).toHaveProperty("attempts");
-    expect(parsed).toHaveProperty("summary");
+    expect(Object.keys(parsed)).toEqual(["header", "rounds", "attempts", "summary"]);
+    expect(parsed.header.tool_dirty).toBe(false);
   });
 
-  it("refuses to write a mock report into evidence/", async () => {
-    await expect(writeReport("evidence/mock.json", EMPTY)).rejects.toThrow(ReportWriteError);
+  it("refuses a mock report into the repository's evidence/ before writing", async () => {
+    await expect(writeReport(join(repoRoot(), "evidence", "mock.json"), EMPTY)).rejects.toThrow(
+      ReportWriteError,
+    );
+  });
+});
+
+describe("defaultReportPath", () => {
+  it("places real-chain reports in <repo>/evidence/ and mock reports in the temp dir", () => {
+    const at = "2026-11-03T12:30:00.000Z";
+    expect(defaultReportPath("signet", at, ROOT)).toBe(
+      "/repo/evidence/challenge-attack-signet-2026-11-03T12-30-00-000Z.json",
+    );
+    expect(defaultReportPath("regtest", at, ROOT)).toContain("/repo/evidence/regtest/");
+    expect(defaultReportPath("mock", at, ROOT).startsWith(tmpdir())).toBe(true);
+    expect(defaultReportPath("unknown", at, ROOT).startsWith(tmpdir())).toBe(true);
+  });
+});
+
+describe("reportNetwork", () => {
+  it("maps Bitcoin networks and rejects anything else", () => {
+    expect(reportNetwork("signet")).toBe("signet");
+    expect(reportNetwork("dogecoin")).toBeNull();
   });
 });
 
@@ -101,30 +132,23 @@ describe("committed dry-run sample", () => {
     );
     const report = JSON.parse(raw) as AttackReport;
     expect(report.header.network).toBe("mock");
+    expect(report.header).toHaveProperty("tool_dirty");
     expect(report.attempts).toHaveLength(100);
     expect(report.summary.sats_to_attackers).toBe(0);
     expect(report.summary.on_log_matched).toBe(report.summary.on_log_total);
     expect(report.summary.passed).toBe(true);
-    // Every attempt carries the fields a judge checks against the chain.
     for (const attempt of report.attempts) {
-      expect(attempt).toHaveProperty("expected");
-      expect(attempt).toHaveProperty("actual");
-      expect(attempt).toHaveProperty("args_sha256");
-      expect(["refused", "accepted", "allowed_harmless", "off_log", "unreadable"]).toContain(
-        attempt.actual_class,
-      );
+      for (const field of ["args", "args_sha256", "expected", "actual", "unexpected", "note"]) {
+        expect(attempt).toHaveProperty(field);
+      }
+      expect([
+        "refused",
+        "accepted",
+        "allowed_harmless",
+        "off_log",
+        "skipped",
+        "unreadable",
+      ]).toContain(attempt.actual_class);
     }
-  });
-});
-
-describe("defaultReportPath", () => {
-  it("places real-chain reports in evidence/ and mock reports outside it", () => {
-    expect(defaultReportPath("signet", "2026-11-03T12:30:00.000Z")).toBe(
-      "evidence/challenge-attack-signet-2026-11-03T12-30-00-000Z.json",
-    );
-    expect(defaultReportPath("regtest", "2026-11-03T12:30:00.000Z")).toContain("evidence/regtest/");
-    expect(defaultReportPath("mock", "2026-11-03T12:30:00.000Z")).toBe(
-      "./challenge-attack-mock-2026-11-03T12-30-00-000Z.json",
-    );
   });
 });

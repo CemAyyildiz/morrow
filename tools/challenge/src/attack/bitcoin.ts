@@ -24,6 +24,41 @@ const NETWORKS: Record<BtcNetwork, Network> = {
 
 const CURVE_N = 0xfffffffffffffffffffffffffffffffebaaedce6af48a03bbfd25e8cd0364141n;
 const MAX_SIGNATURE_BYTES = 73;
+/** The output must stay above this, or the node refuses it as dust before any script runs. */
+export const DUST_LIMIT_SATS = 546n;
+
+const varIntSize = (n: number) => (n < 0xfd ? 1 : n <= 0xffff ? 3 : 5);
+
+/**
+ * Upper bound of the transaction's vsize: the non-witness bytes, plus per input one item-count
+ * byte and every witness item of the path's template (the Owner signature at its 73-byte maximum,
+ * empty pushes, selectors, the script), plus the 2-byte segwit marker and flag.
+ */
+export function estimateVsize(
+  baseBytes: number,
+  inputs: number,
+  slots: readonly WitnessSlot[],
+  scriptBytes: number,
+): number {
+  const items = slots.reduce((sum, slot) => {
+    if (slot.kind === "signature") {
+      const len = slot.signer === "owner" ? MAX_SIGNATURE_BYTES : 0;
+      return sum + varIntSize(len) + len;
+    }
+    if (slot.kind === "selector")
+      return sum + varIntSize(slot.hex.length / 2) + slot.hex.length / 2;
+    if (slot.kind === "script") return sum + varIntSize(scriptBytes) + scriptBytes;
+    return sum + 1; // an empty push is its 0x00 length byte
+  }, 0);
+  const witnessBytes = 2 + inputs * (varIntSize(slots.length) + items);
+  return Math.ceil((baseBytes * 4 + witnessBytes) / 4);
+}
+
+/** A P2WPKH address for a 20-byte program (the run draws it from its seeded RNG). */
+export function p2wpkhAddress(program: Uint8Array, network: BtcNetwork): string {
+  if (program.length !== 20) throw new OwnerSpendError("A P2WPKH program is 20 bytes");
+  return baddress.toBech32(program, 0, NETWORKS[network].bech32);
+}
 
 const hex = (bytes: Uint8Array) =>
   Array.from(bytes, (b) => b.toString(16).padStart(2, "0")).join("");
@@ -103,16 +138,16 @@ export function buildOwnerSpend({
   for (const coin of coins) tx.addInput(unhex(coin.txid).reverse(), coin.vout, sequence);
   tx.addOutput(output, 0n);
 
-  // One signature slot and the script per input (the Withdrawal path also carries an empty
-  // Co-signer slot of 1 byte); a rough witness size for the fee.
-  const extra = path === "no_cosigner" ? 1 : 0;
-  const perInput =
-    1 + (1 + MAX_SIGNATURE_BYTES) + extra + 1 + (script.length < 0xfd ? 1 : 3) + script.length;
-  const witnessBytes = 2 + coins.length * perInput;
-  const vsize = Math.ceil((tx.byteLength(false) * 4 + witnessBytes) / 4);
-  const fee = BigInt(vsize) * BigInt(Math.max(0, Math.ceil(feeRateSatVb)));
+  const fee =
+    BigInt(estimateVsize(tx.byteLength(false), coins.length, template.slots, script.length)) *
+    BigInt(Math.max(0, Math.ceil(feeRateSatVb)));
   const total = coins.reduce((sum, coin) => sum + BigInt(coin.value_sats), 0n);
-  const amount = total > fee ? total - fee : 0n;
+  const amount = total - fee;
+  if (amount <= DUST_LIMIT_SATS) {
+    throw new OwnerSpendError(
+      `Coins (${total} sats) leave ${amount} sats after the ${fee}-sat fee: at or below dust (${DUST_LIMIT_SATS})`,
+    );
+  }
   const payout = tx.outs[0];
   if (!payout) throw new OwnerSpendError("Missing output");
   payout.value = amount;

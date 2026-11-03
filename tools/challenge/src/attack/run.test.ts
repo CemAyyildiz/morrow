@@ -1,35 +1,69 @@
-import { parseNearKey, type Utxo } from "@morrow/core-ts";
+import { createHash } from "node:crypto";
+import {
+  BitcoinBackendError,
+  WITNESS_TEMPLATES,
+  parseNearKey,
+  type NearKey,
+  type Utxo,
+} from "@morrow/core-ts";
 import { describe, expect, it } from "vitest";
-import { dryRunPorts, FakeBitcoin, DRY_RUN_FUNCTION_CALL_KEY } from "./dry-run.js";
-import { WITNESS_TEMPLATES } from "@morrow/core-ts";
-import type { CallResult, NearPort } from "./near.js";
 import type { PublicRound } from "../store.js";
+import { DRY_RUN_FUNCTION_CALL_KEY, FakeBitcoin, dryRunPorts } from "./dry-run.js";
+import type { CallPlan, CallResult, NearPort } from "./near.js";
 import {
   AttackRun,
+  canonicalJson,
   runAttack,
   type AttackParams,
   type AttackPorts,
   type BitcoinPort,
   type Clock,
   type LogEntryView,
-  type RoundSource,
-  type Watcher,
 } from "./run.js";
 
 const DRY: AttackParams = {
   seed: 7,
   n: 100,
   rounds: 3,
-  network: "mock",
   nearNetwork: "testnet",
   dryRun: true,
   toolCommit: null,
 };
+const SHORT: AttackParams = { ...DRY, n: 12, rounds: 1, logWaitMs: 1, clawbackWaitMs: 1 };
+const KEY = DRY_RUN_FUNCTION_CALL_KEY;
+const ALT_KEY =
+  "ed25519:GHMRn2eeRLkLSi4WEBqPhZ3FruDBxBiiRkS1Tnch12BiQ2LeVe6kW6diDdvLHwEtmZMnwSSCdVAUD1PALV8MrPi";
+const ACTIONS = [
+  "withdrawal_request",
+  "spend_allowance",
+  "refresh",
+  "policy_change",
+  "early_execute",
+] as const;
 
-describe("dry run (round script, all categories)", () => {
-  it("exits 0, is mock, 100 attempts over ≤3 rounds, 0 sats, every on-chain attempt logged", async () => {
-    const ports = await dryRunPorts();
-    const { report, exitCode } = await runAttack(ports, DRY);
+/** Wraps the dry-run `call` so one method answers as `answer` decides (undefined: unchanged). */
+async function dryWith(
+  answer: (plan: CallPlan, inner: () => Promise<CallResult>) => Promise<CallResult> | undefined,
+) {
+  const ports = await dryRunPorts();
+  const call = ports.near.call;
+  const batch = ports.near.callBatch;
+  const wrapped = (key: NearKey, plan: CallPlan) =>
+    answer(plan, () => call(key, plan)) ?? call(key, plan);
+  ports.near = {
+    ...ports.near,
+    call: wrapped,
+    callBatch: (key, plans) =>
+      plans.some((p) => answer(p, () => Promise.reject(new Error("probe"))) !== undefined)
+        ? Promise.all(plans.map((p) => wrapped(key, p)))
+        : batch(key, plans),
+  };
+  return ports;
+}
+
+describe("dry run", () => {
+  it("--n 100 --seed 7: exit 0, mock, 100 attempts over ≤3 rounds, all five actions, 0 sats, all logged", async () => {
+    const { report, exitCode } = await runAttack(await dryRunPorts(), DRY);
     expect(exitCode).toBe(0);
     expect(report.header.network).toBe("mock");
     expect(report.attempts).toHaveLength(100);
@@ -37,115 +71,225 @@ describe("dry run (round script, all categories)", () => {
     expect(report.summary.sats_to_attackers).toBe(0);
     expect(report.summary.on_log_matched).toBe(report.summary.on_log_total);
     expect(report.summary.missing_hashes).toEqual([]);
-    expect(report.summary.passed).toBe(true);
+    expect(report.rounds.every((r) => r.clawback_seen === true && r.clawback_op_id)).toBe(true);
     const cats = new Set(report.attempts.map((a) => a.category));
-    for (const c of [
-      "withdrawal_request",
-      "spend_allowance",
-      "refresh",
-      "policy_change",
-      "early_execute",
-    ] as const) {
-      expect(cats.has(c)).toBe(true);
-    }
-    // The round script: an ERR_UNAUTHORIZED clawback, a bad envelope, an accepted request.
-    const codes = report.attempts.map((a) => a.actual);
-    expect(codes).toContain("ERR_UNAUTHORIZED");
-    expect(codes).toContain("ERR_BAD_ENVELOPE");
-    expect(report.attempts.some((a) => a.actual_class === "accepted")).toBe(true);
+    for (const c of ACTIONS) expect(cats.has(c)).toBe(true);
   });
 
-  it("is deterministic for a seed", async () => {
+  it("refuses refresh, policy_change and spend_allowance by Policy on the active Vault", async () => {
+    const { report } = await runAttack(await dryRunPorts(), SHORT);
+    const pre = report.attempts.slice(0, 5).map((a) => [a.category, a.actual]);
+    expect(pre).toEqual([
+      ["clawback", "ERR_UNAUTHORIZED"],
+      ["withdrawal_request", "ERR_BAD_ENVELOPE"],
+      ["spend_allowance", "ERR_ALLOWANCE_LIMIT"],
+      ["refresh", "ERR_FEE_TOO_HIGH"],
+      ["policy_change", "ERR_SCRIPT_BOUND"],
+    ]);
+  });
+
+  it("is reproducible for a seed: same attempts, same attacker addresses", async () => {
     const a = await new AttackRun(await dryRunPorts(), DRY).execute();
     const b = await new AttackRun(await dryRunPorts(), DRY).execute();
     expect(a.attempts.map((x) => [x.category, x.actual])).toEqual(
       b.attempts.map((x) => [x.category, x.actual]),
     );
+    expect(a.summary.attacker_addresses).toEqual(b.summary.attacker_addresses);
   });
 
-  it("short run: --n 12 --rounds 1", async () => {
-    const { report, exitCode } = await runAttack(await dryRunPorts(), { ...DRY, n: 12, rounds: 1 });
-    expect(exitCode).toBe(0);
-    expect(report.attempts).toHaveLength(12);
-    expect(report.rounds).toHaveLength(1);
+  it("stores each call's args and hashes them canonically", async () => {
+    const { report } = await runAttack(await dryRunPorts(), SHORT);
+    const call = report.attempts.find((a) => a.method === "request_withdrawal")!;
+    expect(call.args).toMatchObject({ vault_id: "1" });
+    expect(call.args_sha256).toBe(
+      createHash("sha256").update(canonicalJson(call.args)).digest("hex"),
+    );
+    expect(canonicalJson({ b: 1, a: { d: 2, c: [3] } })).toBe('{"a":{"c":[3],"d":2},"b":1}');
+  });
+
+  it("sends the window attempts at once and records which outcome each met", async () => {
+    const ports = await dryRunPorts();
+    const batches: string[][] = [];
+    const batch = ports.near.callBatch;
+    ports.near = {
+      ...ports.near,
+      callBatch: (key, plans) => {
+        batches.push(plans.map((p) => p.method));
+        return batch(key, plans);
+      },
+    };
+    const { report } = await runAttack(ports, SHORT);
+    expect(batches).toEqual([["begin_execute", "sign_input", "request_withdrawal"]]);
+    const window = report.attempts.filter((a) => a.window_result !== null);
+    expect(window.map((a) => [a.actual, a.window_result])).toEqual([
+      ["ERR_NOT_EXECUTABLE", "own_code"],
+      ["ERR_BAD_OP_STATE", "own_code"],
+      ["ERR_OUTPOINT_RESERVED", "own_code"],
+    ]);
   });
 });
 
 describe("failures (exit 1)", () => {
-  it("an unexpected success fails the run", async () => {
-    const ports = await dryRunPorts();
-    const inner = ports.near.call;
-    // The Owner's own begin_clawback (expected ERR_UNAUTHORIZED) is wrongly accepted.
-    ports.near = {
-      ...ports.near,
-      call: async (key, plan) =>
-        plan.method === "begin_clawback"
-          ? ({ kind: "accepted", hash: "f".repeat(64), value: "9", logs: [] } as CallResult)
-          : inner(key, plan),
-    };
-    const { report, exitCode } = await runAttack(ports, { ...DRY, n: 12, rounds: 1 });
+  it("an unexpected success is marked and fails the run", async () => {
+    const ports = await dryWith((plan) =>
+      plan.method === "begin_clawback"
+        ? Promise.resolve({ kind: "accepted", hash: "f".repeat(64), value: "9", logs: [] })
+        : undefined,
+    );
+    const { report, exitCode } = await runAttack(ports, SHORT);
     expect(exitCode).toBe(1);
-    expect(report.summary.passed).toBe(false);
-    const claw = report.attempts.find((a) => a.category === "clawback");
-    expect(claw?.expected_match).toBe(false);
+    const claw = report.attempts.find((a) => a.category === "clawback")!;
+    expect(claw.unexpected).toBe(true);
+    expect(report.summary.unexpected).toContain(claw.id);
+  });
+
+  it("ERR_CLAWED_BACK is not accepted for a pre-phase refusal", async () => {
+    const ports = await dryWith((plan) =>
+      plan.method === "begin_clawback"
+        ? Promise.resolve({
+            kind: "refused",
+            hash: "e".repeat(64),
+            code: "ERR_CLAWED_BACK",
+            failure: "x",
+          })
+        : undefined,
+    );
+    const { report, exitCode } = await runAttack(ports, SHORT);
+    expect(exitCode).toBe(1);
+    expect(report.attempts.find((a) => a.category === "clawback")?.expected_match).toBe(false);
   });
 
   it("sats at an attacker address fail the run", async () => {
     const ports = await dryRunPorts();
     const base = ports.bitcoin;
-    const vaultCoin: Utxo = { txid: "ab".repeat(32), vout: 0, value_sats: "100000", height: 190 };
+    ports.bitcoin = {
+      ...base,
+      getTipHeight: () => base.getTipHeight(),
+      broadcast: (hex) => base.broadcast(hex),
+      getUtxos: async (address) => {
+        const real = await base.getUtxos(address);
+        return real.length > 0
+          ? real
+          : [{ txid: "cd".repeat(32), vout: 0, value_sats: "500", height: 200 }];
+      },
+    };
+    const { report, exitCode } = await runAttack(ports, SHORT);
+    expect(exitCode).toBe(1);
+    expect(report.summary.sats_to_attackers).toBeGreaterThan(0);
+  });
+
+  it("an unreadable attacker balance fails the run", async () => {
+    const ports = await dryRunPorts();
+    const base = ports.bitcoin;
+    const vaults = new Set<string>();
     ports.bitcoin = {
       getTipHeight: () => base.getTipHeight(),
       broadcast: (hex) => base.broadcast(hex),
-      // Vault addresses (tb1q…q…) keep their funded coin; any other address holds 500 sats.
       getUtxos: async (address) => {
         const real = await base.getUtxos(address);
-        if (real.length > 0) return real;
-        return address.startsWith("tb1q")
-          ? [{ txid: "cd".repeat(32), vout: 0, value_sats: "500", height: 200 }]
-          : [vaultCoin];
+        if (real.length > 0 || vaults.has(address)) {
+          vaults.add(address);
+          return real;
+        }
+        throw new Error("backend down");
       },
     };
-    const { report, exitCode } = await runAttack(ports, { ...DRY, n: 12, rounds: 1 });
+    const { report, exitCode } = await runAttack(ports, SHORT);
     expect(exitCode).toBe(1);
-    expect(report.summary.sats_to_attackers).toBeGreaterThan(0);
-    expect(report.summary.passed).toBe(false);
+    expect(report.summary.unreadable_balances.length).toBeGreaterThan(0);
   });
 
   it("a hash missing from the Attempt Log fails the run", async () => {
     const ports = await dryRunPorts();
     ports.feed = { entries: async () => [] };
-    const { report, exitCode } = await runAttack(ports, {
-      ...DRY,
-      n: 12,
-      rounds: 1,
-      logWaitMs: 1,
-    });
+    const { report, exitCode } = await runAttack(ports, SHORT);
     expect(exitCode).toBe(1);
-    expect(report.summary.on_log_matched).toBe(0);
     expect(report.summary.missing_hashes.length).toBeGreaterThan(0);
+  });
+
+  it("matches op ids only against withdrawal entries, not a Policy Change's change id", async () => {
+    const ports = await dryRunPorts();
+    const inner = ports.feed;
+    ports.feed = {
+      entries: async () =>
+        (await inner.entries()).map((v): LogEntryView =>
+          v.type === "withdrawal" ? { ...v, type: "policy_change", tx_hash: null } : v,
+        ),
+    };
+    const { report } = await runAttack(ports, SHORT);
+    const request = report.attempts.find((a) => a.actual_class === "accepted")!;
+    expect(request.log_entry).toBeNull();
+    expect(report.summary.passed).toBe(false);
+  });
+
+  it("an unreadable call fails the run", async () => {
+    const ports = await dryWith((plan) =>
+      plan.method === "begin_clawback"
+        ? Promise.resolve({ kind: "unreadable", hash: null, error: "socket hang up" })
+        : undefined,
+    );
+    const { report, exitCode } = await runAttack(ports, SHORT);
+    expect(exitCode).toBe(1);
+    expect(report.summary.unreadable).toHaveLength(1);
+  });
+
+  it("an unreadable call found in the log takes the logged outcome", async () => {
+    const ports = await dryWith((plan, inner) =>
+      (plan.args as { envelope?: string }).envelope === "ab".repeat(79)
+        ? inner().then((r) => ({ kind: "unreadable", hash: r.hash, error: "timeout after send" }))
+        : undefined,
+    );
+    const { report, exitCode } = await runAttack(ports, SHORT);
+    const bad = report.attempts.find((a) => a.category === "withdrawal_request")!;
+    expect(bad.actual).toBe("ERR_BAD_ENVELOPE");
+    expect(bad.log_entry).not.toBeNull();
+    expect(exitCode).toBe(0);
+  });
+
+  it("no Clawback seen: the round is marked, its fill skipped, and the run fails", async () => {
+    const ports = await dryRunPorts();
+    ports.watcher = { tick: async () => null };
+    const { report, exitCode } = await runAttack(ports, SHORT);
+    expect(exitCode).toBe(1);
+    expect(report.rounds[0]?.clawback_seen).toBe(false);
+    expect(report.summary.clawback_missing).toEqual([1]);
+    expect(report.attempts.length).toBeLessThan(12); // no fill
   });
 });
 
-describe("pre-inclusion refusal and allowance stop", () => {
-  it("stops cleanly when the key is below 0.05 NEAR, with a stopped_reason", async () => {
+describe("pre-inclusion refusals and the allowance stop", () => {
+  it("NotEnoughAllowance is off_log with the RPC error and stops the run", async () => {
+    const ports = await dryWith((plan) =>
+      (plan.args as { vault_id?: string }).vault_id === "2"
+        ? Promise.resolve({
+            kind: "not_included",
+            hash: "d".repeat(64),
+            reason: "allowance",
+            error: "NotEnoughAllowance",
+          })
+        : undefined,
+    );
+    const { report, exitCode } = await runAttack(ports, { ...SHORT, n: 24, rounds: 2 });
+    const off = report.attempts.find((a) => a.off_log?.kind === "pre_inclusion")!;
+    expect(off.off_log).toMatchObject({ reason: "allowance", error: "NotEnoughAllowance" });
+    expect(report.summary.stopped_reason).toMatch(/NotEnoughAllowance/);
+    // A clean allowance stop after one whole round still passes.
+    expect(exitCode).toBe(0);
+  });
+
+  it("an allowance stop before any whole round fails", async () => {
     const ports = await dryRunPorts();
     ports.near = {
       ...ports.near,
       accessKey: async () => ({ exists: true, nonce: 1, allowanceYocto: 1n }),
     };
-    const { report } = await runAttack(ports, { ...DRY, n: 12, rounds: 1 });
+    const { report, exitCode } = await runAttack(ports, SHORT);
     expect(report.summary.stopped_reason).toMatch(/0\.05 NEAR/);
-    // Only Bitcoin spends (which do not need the key's allowance) may have run.
-    expect(report.attempts.every((a) => a.method === null)).toBe(true);
+    expect(exitCode).toBe(1);
   });
 });
 
-// Hand-built ports for the scenarios the mock cannot produce.
-
-const KEY = DRY_RUN_FUNCTION_CALL_KEY;
-const ALT_KEY =
-  "ed25519:66m7p6tWp1rAfxZSpZsSKMee8gQwbaUHo94TFer32vkovBffNHHtMeZKVMGqj4Gz533H6qt6QhdUPLBWp8MEp13k";
+// Hand-built ports for what the mock cannot produce.
 
 class StepClock implements Clock {
   private t = 0;
@@ -157,7 +301,7 @@ class StepClock implements Clock {
   }
 }
 
-function roundFor(key: string): PublicRound {
+function roundFor(key: string, overrides: Partial<PublicRound> = {}): PublicRound {
   return {
     round: 1,
     vault_contract: "vault.challenge",
@@ -173,8 +317,20 @@ function roundFor(key: string): PublicRound {
     funding_txid: "ab".repeat(32),
     funding_height: 190,
     rotation_deadline_height: 21_214,
+    ...overrides,
   };
 }
+
+const KIT = {
+  kit_version: 1 as const,
+  btc_network: "signet" as const,
+  vault_script_hex: "aa".repeat(40),
+  allowance_script_hex: "aa".repeat(40),
+  addresses: { vault: "tb1qvault", allowance: "tb1qallow" },
+  escape_timelock_blocks: 26_280,
+  cosigner_pubkeys: { vault: `02${"aa".repeat(32)}`, allowance: `03${"bb".repeat(32)}` },
+  witness_templates: WITNESS_TEMPLATES,
+};
 
 function minimalNear(overrides: Partial<NearPort> = {}): NearPort {
   const vault = {
@@ -182,200 +338,259 @@ function minimalNear(overrides: Partial<NearPort> = {}): NearPort {
     owner_account: "r1.challenge",
     owner_key: `02${"11".repeat(32)}`,
     state: "active" as const,
-    cosigner_pubkeys: { vault: `02${"aa".repeat(32)}`, allowance: `03${"bb".repeat(32)}` },
-    addresses: { vault: "tb1qvault", allowance: "tb1qallow" },
+    cosigner_pubkeys: KIT.cosigner_pubkeys,
+    addresses: KIT.addresses,
     storage_balance: "0",
     created_at: "0",
     pending_change: null,
-    policy: {} as never,
+    policy: { watcher_x25519_pk: "44".repeat(32) } as never,
   };
-  return {
-    accessKey: async () => ({ exists: true, nonce: 1, allowanceYocto: null }),
-    getVault: async () => vault as never,
-    getVaultKit: async () =>
-      ({
-        kit_version: 1,
-        btc_network: "signet",
-        vault_script_hex: "mock-",
-        allowance_script_hex: "mock-",
-        addresses: { vault: "tb1qvault", allowance: "tb1qallow" },
-        escape_timelock_blocks: 26_280,
-        cosigner_pubkeys: { vault: `02${"aa".repeat(32)}`, allowance: `03${"bb".repeat(32)}` },
-        witness_templates: WITNESS_TEMPLATES,
-      }) as never,
-    codeHash: async () => "codehash",
-    tipHeight: async () => 1,
-    call: async () => ({
+  const call =
+    overrides.call ??
+    (async (): Promise<CallResult> => ({
       kind: "refused",
       hash: "1".repeat(64),
       code: "ERR_CLAWED_BACK",
       failure: "x",
-    }),
+    }));
+  return {
+    accessKey: async () => ({ exists: true, nonce: 1, allowanceYocto: null }),
+    getVault: async () => vault as never,
+    getVaultKit: async () => KIT as never,
+    codeHash: async () => "codehash",
+    tipHeight: async () => 1,
+    call,
+    callBatch: (key, plans) => Promise.all(plans.map((p) => call(key, p))),
     ...overrides,
   };
 }
 
-function emptyBitcoin(): BitcoinPort {
+function handPorts(overrides: Partial<AttackPorts> = {}): AttackPorts {
   return {
-    getUtxos: async () => [] as Utxo[],
-    getTipHeight: async () => 1,
-    broadcast: async () => "txid",
+    rounds: { current: async () => roundFor(KEY) },
+    near: minimalNear(),
+    bitcoin: { getUtxos: async () => [], getTipHeight: async () => 1, broadcast: async () => "x" },
+    feed: { entries: async () => [] },
+    watcher: { tick: async () => null },
+    clock: new StepClock(),
+    ...overrides,
   };
 }
+const HAND: AttackParams = { ...SHORT, n: 4 };
 
-describe("next round wait", () => {
-  it("waits through a 404 then continues with the round", async () => {
+describe("rounds", () => {
+  it("waits through a 404, then attacks the round", async () => {
     let served = 0;
-    const rounds: RoundSource = {
-      current: async () => (served++ === 0 ? null : roundFor(KEY)),
-    };
-    const watcher: Watcher = { tick: async () => null };
-    const feed = { entries: async () => [] as LogEntryView[] };
-    const ports: AttackPorts = {
-      rounds,
-      near: minimalNear(),
-      bitcoin: emptyBitcoin(),
-      feed,
-      watcher,
-      clock: new StepClock(),
-    };
-    const report = await new AttackRun(ports, {
-      ...DRY,
-      n: 4,
-      rounds: 1,
-      roundWaitMs: 10 * 60_000,
-    }).execute();
-    // It did not stop for lack of a round; attempts ran.
-    expect(report.summary.stopped_reason).toBeNull();
+    const report = await new AttackRun(
+      handPorts({ rounds: { current: async () => (served++ === 0 ? null : roundFor(KEY)) } }),
+      { ...HAND, roundWaitMs: 10 * 60_000 },
+    ).execute();
+    expect(report.header.challenge_rounds).toEqual([1]);
     expect(report.attempts.length).toBeGreaterThan(0);
   });
 
-  it("stops with a reason when no round confirms within the wait", async () => {
-    const ports: AttackPorts = {
-      rounds: { current: async () => null },
-      near: minimalNear(),
-      bitcoin: emptyBitcoin(),
-      feed: { entries: async () => [] },
-      watcher: { tick: async () => null },
-      clock: new StepClock(),
-    };
-    const report = await new AttackRun(ports, {
-      ...DRY,
-      n: 4,
-      rounds: 1,
+  it("stops with the last /round error and exits 1 when nothing was attacked", async () => {
+    const ports = handPorts({
+      rounds: {
+        current: async () => {
+          throw new Error("GET /round: HTTP 503 unavailable");
+        },
+      },
+    });
+    const { report, exitCode } = await runAttack(ports, { ...HAND, dryRun: false, roundWaitMs: 1 });
+    expect(report.summary.stopped_reason).toMatch(/HTTP 503 unavailable/);
+    expect(report.attempts).toHaveLength(0);
+    expect(report.header.network).toBe("unknown");
+    expect(exitCode).toBe(1);
+  });
+
+  it("never attacks the same round twice, and only an active Vault", async () => {
+    const report = await new AttackRun(handPorts(), {
+      ...HAND,
+      n: 8,
+      rounds: 2,
       roundWaitMs: 1,
     }).execute();
-    expect(report.summary.stopped_reason).toMatch(/no confirmed round/);
+    expect(report.header.challenge_rounds).toEqual([1]);
+    expect(report.summary.stopped_reason).toMatch(/already attacked/);
+
+    const closed = await new AttackRun(
+      handPorts({
+        near: minimalNear({
+          getVault: async () => ({ state: "clawed_back", policy: {} }) as never,
+        }),
+      }),
+      { ...HAND, roundWaitMs: 1 },
+    ).execute();
+    expect(closed.summary.stopped_reason).toMatch(/Vault is clawed_back/);
+  });
+
+  it("stops on a round with unusable fields", async () => {
+    const report = await new AttackRun(
+      handPorts({ rounds: { current: async () => roundFor(KEY, { owner_key_secret: "xyz" }) } }),
+      HAND,
+    ).execute();
+    expect(report.summary.stopped_reason).toMatch(/owner_key_secret/);
+    expect(report.attempts).toHaveLength(0);
+  });
+
+  it("stops when /round is on another NEAR network", async () => {
+    const report = await new AttackRun(
+      handPorts({ rounds: { current: async () => roundFor(KEY, { near_network: "mainnet" }) } }),
+      HAND,
+    ).execute();
+    expect(report.summary.stopped_reason).toMatch(/NEAR network mismatch/);
+    expect(report.header.near_network).toBe("mainnet");
   });
 });
 
 describe("key rotation mid-run", () => {
-  it("picks up a new key from /round and records both public keys", async () => {
+  it("picks up the new key from /round, signs with it, and records both public keys", async () => {
+    const oldPub = parseNearKey(KEY).publicKeyString;
+    const newPub = parseNearKey(ALT_KEY).publicKeyString;
     let rotated = false;
-    const rounds: RoundSource = {
-      current: async () => roundFor(rotated ? ALT_KEY : KEY),
-    };
+    const signedWith: string[] = [];
     const near = minimalNear({
       accessKey: async (_a, publicKey) => {
-        const altPub = parseNearKey(ALT_KEY).publicKeyString;
-        if (publicKey === altPub) return { exists: true, nonce: 1, allowanceYocto: null };
-        // The first key is spent; asking /round yields the rotated one.
-        rotated = true;
-        return { exists: true, nonce: 1, allowanceYocto: 1n };
+        if (publicKey === oldPub) rotated = true; // spent: the operator publishes a new key
+        return {
+          exists: true,
+          nonce: 1,
+          allowanceYocto: publicKey === oldPub ? 1n : null,
+        };
+      },
+      call: async (key) => {
+        signedWith.push(key.publicKeyString);
+        return { kind: "refused", hash: "1".repeat(64), code: "ERR_UNAUTHORIZED", failure: "x" };
       },
     });
-    const ports: AttackPorts = {
-      rounds,
-      near,
-      bitcoin: emptyBitcoin(),
-      feed: { entries: async () => [] },
-      watcher: { tick: async () => null },
-      clock: new StepClock(),
-    };
-    const report = await new AttackRun(ports, { ...DRY, n: 6, rounds: 1 }).execute();
-    expect(report.header.public_keys).toContain(parseNearKey(KEY).publicKeyString);
-    expect(report.header.public_keys).toContain(parseNearKey(ALT_KEY).publicKeyString);
+    const report = await new AttackRun(
+      handPorts({ near, rounds: { current: async () => roundFor(rotated ? ALT_KEY : KEY) } }),
+      HAND,
+    ).execute();
+    expect(oldPub).not.toBe(newPub);
+    expect(new Set(report.header.public_keys).size).toBe(2);
+    expect(signedWith.length).toBeGreaterThan(0);
+    expect(signedWith.every((k) => k === newPub)).toBe(true);
     expect(report.summary.stopped_reason).toBeNull();
   });
 });
 
-describe("Bitcoin owner-only broadcast", () => {
-  const kit = {
-    kit_version: 1 as const,
-    btc_network: "signet" as const,
-    vault_script_hex: "aa".repeat(40), // not a mock kit: the run will build and broadcast
-    allowance_script_hex: "aa".repeat(40),
-    addresses: { vault: "tb1qvault", allowance: "tb1qallow" },
-    escape_timelock_blocks: 26_280,
-    cosigner_pubkeys: { vault: `02${"aa".repeat(32)}`, allowance: `03${"bb".repeat(32)}` },
-    witness_templates: WITNESS_TEMPLATES,
-  };
-  const vaultCoin: Utxo = { txid: "ab".repeat(32), vout: 0, value_sats: "1000000", height: 190 };
+describe("Bitcoin Owner-Key-only spends", () => {
+  const coin: Utxo = { txid: "ab".repeat(32), vout: 0, value_sats: "1000000", height: 190 };
 
-  function ports(broadcast: BitcoinPort["broadcast"]): AttackPorts {
-    return {
-      rounds: { current: async () => roundFor(KEY) },
-      near: minimalNear({ getVaultKit: async () => kit as never }),
-      bitcoin: {
-        getUtxos: async (address) => (address === "tb1qvault" ? [vaultCoin] : []),
-        getTipHeight: async () => 1,
-        broadcast,
-      },
-      feed: { entries: async () => [] },
-      watcher: { tick: async () => null },
-      clock: new StepClock(),
-    };
+  async function run(broadcast: BitcoinPort["broadcast"], extra: Partial<BitcoinPort> = {}) {
+    const report = await new AttackRun(
+      handPorts({
+        bitcoin: {
+          getUtxos: async (address) => (address === "tb1qvault" ? [coin] : []),
+          getTipHeight: async () => 200,
+          broadcast,
+          ...extra,
+        },
+      }),
+      { ...HAND, n: 7 },
+    ).execute();
+    const pick = (category: string) => report.attempts.find((a) => a.category === category)!;
+    return { report, escape: pick("bitcoin_escape"), noCosigner: pick("bitcoin_no_cosigner") };
   }
 
-  it("records a rejected broadcast as off_log with the rejection text", async () => {
-    const report = await new AttackRun(
-      ports(async () => {
-        throw new Error("non-BIP68-final");
-      }),
-      { ...DRY, n: 5, rounds: 1 },
-    ).execute();
-    const bitcoin = report.attempts.filter((a) => a.method === null);
-    expect(bitcoin.length).toBeGreaterThan(0);
-    expect(bitcoin.every((a) => a.actual_class === "off_log")).toBe(true);
-    expect(bitcoin.every((a) => a.expected_match)).toBe(true);
-    const evidence = bitcoin[0]?.off_log;
-    expect(evidence?.kind).toBe("bitcoin");
-    if (evidence?.kind === "bitcoin") expect(evidence.rejection).toMatch(/non-BIP68-final/);
+  it("a node rejection for another reason is not the expected refusal", async () => {
+    const { escape, noCosigner } = await run(async () => {
+      throw new BitcoinBackendError(
+        "/tx: HTTP 400 sendrawtransaction RPC error: insufficient fee",
+        400,
+      );
+    });
+    // The text fits neither path: both are rejections, but not the ones the spends test.
+    expect(escape.actual).toBe("rejected:other_reason");
+    expect(escape.expected_match).toBe(false);
+    expect(noCosigner.expected_match).toBe(false);
   });
 
-  it("fails the run when the node accepts the broadcast", async () => {
-    const report = await new AttackRun(
-      ports(async () => "accepted-txid"),
-      { ...DRY, n: 5, rounds: 1 },
-    ).execute();
+  it("matches non-BIP68-final for the Escape and a script failure for the no-co-signer spend", async () => {
+    let n = 0;
+    const { escape, noCosigner } = await run(async () => {
+      n += 1;
+      throw new BitcoinBackendError(
+        n === 1
+          ? "/tx: HTTP 400 non-BIP68-final"
+          : "sendrawtransaction: mandatory-script-verify-flag-failed (Script evaluated without error but finished with a false/empty top stack element)",
+        n === 1 ? 400 : 500,
+      );
+    });
+    expect([escape.actual, escape.expected_match]).toEqual(["rejected", true]);
+    expect([noCosigner.actual, noCosigner.expected_match]).toEqual(["rejected", true]);
+    expect(escape.off_log).toMatchObject({
+      kind: "bitcoin",
+      rejection: expect.stringMatching(/BIP68/),
+    });
+    expect(escape.off_log?.kind === "bitcoin" && escape.off_log.raw_hex.length).toBeGreaterThan(0);
+  });
+
+  it("a backend that is down is unreadable, not a rejection", async () => {
+    const { escape } = await run(async () => {
+      throw new Error("connect ECONNREFUSED");
+    });
+    expect(escape.actual_class).toBe("unreadable");
+  });
+
+  it("an accepted broadcast is unexpected and fails the run", async () => {
+    const { report, escape } = await run(async () => "txid");
+    expect(escape.unexpected).toBe(true);
     expect(report.summary.passed).toBe(false);
-    const bitcoin = report.attempts.filter((a) => a.method === null);
-    expect(bitcoin.some((a) => !a.expected_match)).toBe(true);
+  });
+
+  it("never broadcasts the Escape once the coin has matured", async () => {
+    const sent: string[] = [];
+    const { escape } = await run(
+      async (hex) => {
+        sent.push(hex);
+        throw new BitcoinBackendError("/tx: HTTP 400 mandatory-script-verify-flag-failed", 400);
+      },
+      { getTipHeight: async () => 190 + 26_280 },
+    );
+    expect([escape.actual_class, escape.note]).toEqual(["skipped", "coin matured"]);
+    expect(sent).toHaveLength(1); // only the no-co-signer spend
+  });
+
+  it("a dust-sized coin cannot be built: unreadable with the reason", async () => {
+    coin.value_sats = "600";
+    try {
+      const { escape } = await run(async () => "txid");
+      expect(escape.actual_class).toBe("unreadable");
+      expect(escape.note).toMatch(/dust/);
+    } finally {
+      coin.value_sats = "1000000";
+    }
+  });
+
+  it("Vault coins that cannot be read make the spend unreadable", async () => {
+    const { escape } = await run(async () => "txid", {
+      getUtxos: async () => {
+        throw new Error("backend down");
+      },
+    });
+    expect(escape.actual_class).toBe("unreadable");
   });
 });
 
 describe("not deployed (live mix)", () => {
   it("lists refresh, spend_allowance, policy_change and sends none of them", async () => {
-    const report = await new AttackRun(
-      {
-        rounds: { current: async () => roundFor(KEY) },
-        near: minimalNear(),
-        bitcoin: emptyBitcoin(),
-        feed: { entries: async () => [] },
-        watcher: { tick: async () => null },
-        clock: new StepClock(),
-      },
-      { ...DRY, n: 20, rounds: 1, dryRun: false },
-    ).execute();
+    const report = await new AttackRun(handPorts(), {
+      ...HAND,
+      n: 20,
+      dryRun: false,
+    }).execute();
     expect(report.summary.not_deployed).toEqual(["refresh", "spend_allowance", "policy_change"]);
     const methods = new Set(report.attempts.map((a) => a.method));
-    expect(methods.has("refresh")).toBe(false);
-    expect(methods.has("spend_allowance")).toBe(false);
-    expect(methods.has("propose_policy_change")).toBe(false);
+    for (const m of ["refresh", "spend_allowance", "propose_policy_change"]) {
+      expect(methods.has(m)).toBe(false);
+    }
   });
 });
 
-describe("FakeBitcoin helper", () => {
+describe("FakeBitcoin", () => {
   it("funds an address and reads it back", async () => {
     const b = new FakeBitcoin();
     b.fund("tb1qx", 100_000n);

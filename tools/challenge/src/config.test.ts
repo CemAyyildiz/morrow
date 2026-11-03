@@ -4,6 +4,7 @@ import {
   loadBaseConfig,
   loadNearConfig,
   loadPolicyConfig,
+  loadAttackConfig,
   loadRunConfig,
 } from "./config.js";
 
@@ -150,4 +151,39 @@ describe("loadNearConfig", () => {
       );
     },
   );
+});
+
+describe("loadAttackConfig", () => {
+  it("needs only MORROW_CHALLENGE_URL and defaults the rest", () => {
+    expect(loadAttackConfig({ MORROW_CHALLENGE_URL: "https://challenge.example/" })).toEqual({
+      challengeUrl: "https://challenge.example",
+      nearNetwork: "testnet",
+      rpcUrl: "https://rpc.testnet.near.org",
+      btcBackendUrl: "https://mempool.space/signet/api",
+    });
+  });
+
+  it("reads the public overrides and never asks for an operator secret", () => {
+    expect(
+      loadAttackConfig({
+        MORROW_CHALLENGE_URL: "http://127.0.0.1:8081",
+        MORROW_NEAR_NETWORK: "mainnet",
+        MORROW_NEAR_RPC_URL: "https://rpc.example",
+        MORROW_BTC_BACKEND_URL: "https://esplora.example",
+      }),
+    ).toEqual({
+      challengeUrl: "http://127.0.0.1:8081",
+      nearNetwork: "mainnet",
+      rpcUrl: "https://rpc.example",
+      btcBackendUrl: "https://esplora.example",
+    });
+  });
+
+  it("refuses a missing or non-http challenge URL and an unknown NEAR network", () => {
+    expect(() => loadAttackConfig({})).toThrow(/MORROW_CHALLENGE_URL/);
+    expect(() => loadAttackConfig({ MORROW_CHALLENGE_URL: "ftp://x" })).toThrow(/http/);
+    expect(() =>
+      loadAttackConfig({ MORROW_CHALLENGE_URL: "http://x", MORROW_NEAR_NETWORK: "devnet" }),
+    ).toThrow(/MORROW_NEAR_NETWORK/);
+  });
 });

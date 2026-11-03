@@ -2,7 +2,15 @@ import { secp256k1 } from "@noble/curves/secp256k1.js";
 import { WITNESS_TEMPLATES, type Outpoint, type VaultKit } from "@morrow/core-ts";
 import { networks, opcodes, payments, script as bscript, Transaction } from "bitcoinjs-lib";
 import { describe, expect, it } from "vitest";
-import { buildOwnerSpend, signDer } from "./bitcoin.js";
+import {
+  DUST_LIMIT_SATS,
+  OwnerSpendError,
+  buildOwnerSpend,
+  estimateVsize,
+  signDer,
+} from "./bitcoin.js";
+
+const CURVE_N = 0xfffffffffffffffffffffffffffffffebaaedce6af48a03bbfd25e8cd0364141n;
 
 const hex = (b: Uint8Array) => Buffer.from(b).toString("hex");
 
@@ -72,6 +80,52 @@ describe("signDer", () => {
     const der = sig.subarray(0, sig.length - 1);
     const pub = secp256k1.getPublicKey(secret, true);
     expect(secp256k1.verify(der, sighash, pub, { prehash: false, format: "der" })).toBe(true);
+  });
+
+  it("keeps s in the low half (s ≤ n/2) for many signatures", () => {
+    for (let i = 0; i < 64; i += 1) {
+      const sig = signDer(new Uint8Array(32).fill(i), secp256k1.utils.randomSecretKey());
+      const rLen = sig[3] as number;
+      const sLen = sig[5 + rLen] as number;
+      const sBytes = sig.subarray(6 + rLen, 6 + rLen + sLen);
+      expect(BigInt(`0x${hex(sBytes)}`) <= CURVE_N / 2n).toBe(true);
+    }
+  });
+});
+
+describe("fee and dust guard", () => {
+  it("estimates each path from its own witness template, never below the real size", () => {
+    const { kit, ownerSecret } = fixture("regtest", 6);
+    for (const path of ["escape", "no_cosigner"] as const) {
+      const spend = buildOwnerSpend({
+        kit,
+        coins,
+        ownerSecretKey: ownerSecret,
+        destination: DEST_REGTEST,
+        feeRateSatVb: 1,
+        path,
+      });
+      const real = Transaction.fromHex(spend.rawHex).virtualSize();
+      expect(Number(spend.fee_sats)).toBeGreaterThanOrEqual(real);
+      expect(Number(spend.fee_sats)).toBeLessThanOrEqual(real + 2);
+    }
+    const slots = kit.witness_templates.withdrawal.slots;
+    expect(estimateVsize(100, 2, slots, 150)).toBeGreaterThan(estimateVsize(100, 1, slots, 150));
+  });
+
+  it("refuses to build an output at or below dust", () => {
+    const { kit, ownerSecret } = fixture("regtest", 6);
+    const build = (value: string) =>
+      buildOwnerSpend({
+        kit,
+        coins: [{ ...coins[0]!, value_sats: value }],
+        ownerSecretKey: ownerSecret,
+        destination: DEST_REGTEST,
+        feeRateSatVb: 2,
+        path: "escape",
+      });
+    expect(() => build("700")).toThrow(OwnerSpendError);
+    expect(BigInt(build("100000").amount_sats) > DUST_LIMIT_SATS).toBe(true);
   });
 });
 

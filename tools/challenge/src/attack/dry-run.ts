@@ -13,12 +13,12 @@ import {
   type Utxo,
   type Vault,
 } from "@morrow/core-ts";
+import { x25519 } from "@noble/curves/ed25519.js";
+import { secp256k1 } from "@noble/curves/secp256k1.js";
 import { KeyPair } from "near-api-js";
-import type { AttemptEntry } from "../attempts.js";
 import type { PublicRound } from "../store.js";
 import type { AccessKeyState, CallPlan, CallResult, NearPort } from "./near.js";
 import {
-  logViews,
   type AttackPorts,
   type BitcoinPort,
   type Clock,
@@ -34,6 +34,16 @@ const VAULT_CONTRACT: AccountId = "vault.challenge";
 
 const ONE_NEAR = 1_000_000_000_000_000_000_000_000n;
 
+const toHex = (bytes: Uint8Array) => Buffer.from(bytes).toString("hex");
+
+/** The published Owner Key secret of every dry-run round, and its real public key. */
+export const DRY_RUN_OWNER_SECRET = "11".repeat(32);
+const DRY_RUN_OWNER_KEY = toHex(
+  secp256k1.getPublicKey(Buffer.from(DRY_RUN_OWNER_SECRET, "hex"), true),
+);
+/** A real x25519 watcher key (fixed secret), so every envelope is really sealed. */
+const DRY_RUN_WATCHER_PK = toHex(x25519.getPublicKey(new Uint8Array(32).fill(5)));
+
 /** A deterministic 64-hex NEAR tx hash from a counter. */
 const fakeHash = (n: number) => n.toString(16).padStart(64, "0");
 
@@ -43,6 +53,7 @@ interface Included {
   kind: "rejected" | "withdrawal";
   op_id: string | null;
   vault_id: string | null;
+  code: string | null;
 }
 
 /** The mock contract wired as a `NearPort`, plus the pieces the harness needs. */
@@ -64,7 +75,7 @@ export class DryRunChain {
   async openVault(): Promise<string> {
     this.mock.asCaller(this.ownerAccount);
     return this.mock.createVault({
-      owner_key: `02${"11".repeat(32)}`,
+      owner_key: DRY_RUN_OWNER_KEY,
       deposit_yocto: ONE_NEAR.toString(),
       policy: standardPolicy(),
     });
@@ -83,6 +94,8 @@ export class DryRunChain {
       codeHash: async () => "mock11111111111111111111111111111111111111111",
       tipHeight: async () => 1000,
       call: (_key, plan) => this.call(plan),
+      // "At once": every call starts before any is awaited.
+      callBatch: (_key, plans) => Promise.all(plans.map((plan) => this.call(plan))),
     };
   }
 
@@ -93,12 +106,24 @@ export class DryRunChain {
       const value = await dispatch(this.mock, plan);
       if (plan.method === "request_withdrawal" && typeof value === "string") {
         const vaultId = (plan.args as { vault_id?: string }).vault_id ?? null;
-        this.included.push({ hash, kind: "withdrawal", op_id: value, vault_id: vaultId });
+        this.included.push({
+          hash,
+          kind: "withdrawal",
+          op_id: value,
+          vault_id: vaultId,
+          code: null,
+        });
       }
       return { kind: "accepted", hash, value, logs: [] };
     } catch (error) {
       if (error instanceof MorrowContractError) {
-        this.included.push({ hash, kind: "rejected", op_id: null, vault_id: null });
+        this.included.push({
+          hash,
+          kind: "rejected",
+          op_id: null,
+          vault_id: null,
+          code: error.code,
+        });
         return {
           kind: "refused",
           hash,
@@ -109,6 +134,9 @@ export class DryRunChain {
       throw error;
     }
   }
+
+  /** Clawback op per Vault, as the simulated watcher made it. */
+  readonly clawbacks = new Map<string, string>();
 
   /** The simulated watcher: claws back any live request as the Guardian. */
   watcher(): Watcher {
@@ -123,19 +151,32 @@ export class DryRunChain {
           utxos: [{ txid: clawTxid, vout: 0, value_sats: "100000" }],
           fee_rate_sat_vb: 2,
         });
+        this.clawbacks.set(vaultId, opId);
         return { op_id: opId, txid: null };
       },
     };
   }
 
-  /** The fake Attempt Log: every included call, newest first, numbered in discovery order. */
+  /**
+   * The fake Attempt Log: every included call in discovery order (oldest first), numbered from 1.
+   * A request carries the Clawback op that voided it; the mock builds no Bitcoin bytes, so there
+   * is no Clawback txid.
+   */
   feedEntries(): LogEntryView[] {
-    return this.included.map((i, index) => ({
-      n: index + 1,
-      tx_hash: i.hash,
-      op_id: i.op_id,
-      vault_id: i.vault_id,
-    }));
+    return this.included.map((i, index) => {
+      const clawback = i.vault_id === null ? undefined : this.clawbacks.get(i.vault_id);
+      return {
+        n: index + 1,
+        type: i.kind,
+        tx_hash: i.hash,
+        op_id: i.op_id,
+        vault_id: i.vault_id,
+        code: i.code,
+        clawback_op_id: clawback ?? null,
+        clawback_txid: null,
+        clawback_broadcast: i.kind === "withdrawal" ? false : null,
+      };
+    });
   }
 }
 
@@ -172,7 +213,7 @@ function standardPolicy(): Policy {
       ],
       recoveryAddress: randomP2wpkhAddress("signet"),
       network: "signet",
-      watcherX25519Pk: "44".repeat(32),
+      watcherX25519Pk: DRY_RUN_WATCHER_PK,
     }),
     allowance_limit_sats: "0",
   };
@@ -244,7 +285,7 @@ export async function dryRunPorts(): Promise<DryRunPorts> {
       vault_id: vaultId,
       owner_account: OWNER_ACCOUNT,
       owner_key: vault.owner_key,
-      owner_key_secret: "11".repeat(32),
+      owner_key_secret: DRY_RUN_OWNER_SECRET,
       near_function_call_key: fcKey.toString(),
       vault_address: vaultAddress,
       escape_timelock_blocks: vault.policy.escape_timelock_blocks,
@@ -276,9 +317,4 @@ export async function dryRunPorts(): Promise<DryRunPorts> {
     watcher: chain.watcher(),
     clock: new FastClock(),
   };
-}
-
-/** Converts the public feed shape (`GET /attempts`) to matching views (for the live run). */
-export function feedFromEntries(entries: readonly AttemptEntry[]): LogEntryView[] {
-  return logViews(entries);
 }

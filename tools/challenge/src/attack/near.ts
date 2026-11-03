@@ -1,7 +1,8 @@
 /**
  * The tool's NEAR client: JSON-RPC over `fetch`, signed with core-ts `parseNearKey` /
  * `signFunctionCall` (the same signer "Try with these keys" uses in the browser). It reads only
- * public data: access keys, blocks, accounts and contract views. Calls are strictly sequential.
+ * public data: access keys, blocks, accounts and contract views. Calls are sequential, except
+ * the window attempts, which `sendBatch` signs with consecutive nonces and sends concurrently.
  */
 import {
   decodeBlockHash,
@@ -112,7 +113,7 @@ export type CallResult =
   /** Refused by NEAR before inclusion (it can never be in the Attempt Log): the RPC error. */
   | {
       kind: "not_included";
-      hash: string;
+      hash: string | null;
       reason: "nonce" | "allowance" | "key_missing" | "invalid";
       error: string;
     }
@@ -150,7 +151,7 @@ function decodeBase64Json(value: string): unknown {
   }
 }
 
-/** The RPC client the run drives; the real one is `fetchNear`, the tests pass a fake. */
+/** The RPC client the run drives; the real one is `nearPort`, the tests pass a fake. */
 export interface NearPort {
   accessKey(accountId: AccountId, publicKey: string): Promise<AccessKeyState | "unreachable">;
   getVault(vaultId: string): Promise<Vault>;
@@ -161,110 +162,185 @@ export interface NearPort {
   tipHeight(): Promise<number>;
   /** Signs and sends one call; see `sendCall`. */
   call(key: NearKey, plan: CallPlan): Promise<CallResult>;
+  /**
+   * Signs `plans` with consecutive nonces from one `view_access_key` read and sends them
+   * concurrently ("at once"); see `sendBatch`. Results are in `plans` order.
+   */
+  callBatch(key: NearKey, plans: readonly CallPlan[]): Promise<CallResult[]>;
 }
+
+type Prepared =
+  { ok: true; nonce: number; blockHash: Uint8Array } | { ok: false; result: CallResult };
+
+/** `view_access_key` (final) for the nonce and `block` (final) for the block hash. */
+async function prepare(rpc: NearRpcCall, key: NearKey, signerId: AccountId): Promise<Prepared> {
+  const access = await rpc("query", {
+    request_type: "view_access_key",
+    finality: "final",
+    account_id: signerId,
+    public_key: key.publicKeyString,
+  });
+  if (access.kind === "unreachable") {
+    return { ok: false, result: { kind: "unreadable", hash: null, error: access.detail } };
+  }
+  if (access.kind === "error") {
+    const reason = rpcErrorKind(access.error);
+    const error = asText(access.error);
+    return {
+      ok: false,
+      result:
+        reason === "allowance" || reason === "key_missing"
+          ? { kind: "not_included", hash: null, reason, error }
+          : { kind: "unreadable", hash: null, error },
+    };
+  }
+  const accessKey = access.result;
+  if (isRecord(accessKey) && typeof accessKey.error === "string") {
+    const reason = rpcErrorKind(accessKey.error);
+    return {
+      ok: false,
+      result:
+        reason === "key_missing"
+          ? { kind: "not_included", hash: null, reason, error: accessKey.error }
+          : { kind: "unreadable", hash: null, error: accessKey.error },
+    };
+  }
+  const nonce = isRecord(accessKey) ? accessKey.nonce : undefined;
+  if (typeof nonce !== "number" || !Number.isSafeInteger(nonce) || nonce < 0) {
+    return {
+      ok: false,
+      result: { kind: "unreadable", hash: null, error: "no nonce in view_access_key" },
+    };
+  }
+  const block = await rpc("block", { finality: "final" });
+  const header = block.kind === "result" && isRecord(block.result) ? block.result.header : null;
+  if (!isRecord(header) || typeof header.hash !== "string") {
+    return { ok: false, result: { kind: "unreadable", hash: null, error: "no final block" } };
+  }
+  try {
+    return { ok: true, nonce, blockHash: decodeBlockHash(header.hash) };
+  } catch {
+    return { ok: false, result: { kind: "unreadable", hash: null, error: "bad block hash" } };
+  }
+}
+
+function sign(key: NearKey, plan: CallPlan, nonce: number, blockHash: Uint8Array) {
+  return signFunctionCall(
+    {
+      signerId: plan.signerId,
+      receiverId: plan.receiverId,
+      nonce: BigInt(nonce),
+      blockHash,
+      methodName: plan.method,
+      args: plan.args,
+      gas: gasFor(plan.method),
+      deposit: 0n,
+    },
+    key,
+  );
+}
+
+type Sent =
+  { kind: "done"; result: CallResult } | { kind: "nonce"; akNonce: number | null; error: string };
+
+/** Classifies one `send_tx` answer. */
+function classifySend(sent: RpcAnswer, plan: CallPlan, hash: string): Sent {
+  if (sent.kind === "result") return { kind: "done", result: readResult(sent.result, plan, hash) };
+  if (sent.kind === "unreachable") {
+    return { kind: "done", result: { kind: "unreadable", hash, error: sent.detail } };
+  }
+  const reason = rpcErrorKind(sent.error);
+  if (reason === "nonce") {
+    return { kind: "nonce", akNonce: akNonceOf(sent.error), error: asText(sent.error) };
+  }
+  if (reason === "allowance" || reason === "key_missing") {
+    return {
+      kind: "done",
+      result: { kind: "not_included", hash, reason, error: asText(sent.error) },
+    };
+  }
+  const error = sent.error;
+  // Only an invalid transaction is known never to have reached the chain. Anything else
+  // (a timeout, an internal error after forwarding) may have landed.
+  const invalid =
+    (isRecord(error) && isRecord(error.cause) && error.cause.name === "INVALID_TRANSACTION") ||
+    /InvalidTxError/.test(asText(error));
+  if (reason === "timeout" || !invalid) {
+    return { kind: "done", result: { kind: "unreadable", hash, error: asText(error) } };
+  }
+  const detail = isRecord(error) && error.data !== undefined ? error.data : error;
+  return {
+    kind: "done",
+    result: { kind: "not_included", hash, reason: "invalid", error: failureKind(detail) },
+  };
+}
+
+const sendSigned = (rpc: NearRpcCall, signedBase64: string) =>
+  rpc("send_tx", { signed_tx_base64: signedBase64, wait_until: "EXECUTED_OPTIMISTIC" });
 
 /**
  * Signs and sends one call: nonce from `view_access_key` + 1, block hash from the final block,
  * `send_tx` waiting for `EXECUTED_OPTIMISTIC`. On `InvalidNonce` it retries once with
- * `max(view nonce, ak_nonce) + 1`.
+ * `max(re-read view nonce, ak_nonce, the nonce just used) + 1`, so it never reuses a nonce.
  */
 export async function sendCall(
   rpc: NearRpcCall,
   key: NearKey,
   plan: CallPlan,
+  usedFloor = -1,
 ): Promise<CallResult> {
-  let taken = -1;
-  let hash: string | null = null;
+  let floor = usedFloor;
+  let last: { hash: string; error: string } | null = null;
   for (let attempt = 0; attempt < 2; attempt += 1) {
-    const access = await rpc("query", {
-      request_type: "view_access_key",
-      finality: "final",
-      account_id: plan.signerId,
-      public_key: key.publicKeyString,
-    });
-    if (access.kind === "unreachable") {
-      return { kind: "unreadable", hash: null, error: access.detail };
-    }
-    if (access.kind === "error") {
-      const reason = rpcErrorKind(access.error);
-      if (reason === "allowance" || reason === "key_missing") {
-        return { kind: "not_included", hash: hash ?? "", reason, error: asText(access.error) };
-      }
-      return { kind: "unreadable", hash: null, error: asText(access.error) };
-    }
-    const accessKey = access.result;
-    if (isRecord(accessKey) && typeof accessKey.error === "string") {
-      return { kind: "unreadable", hash: null, error: accessKey.error };
-    }
-    const nonce = isRecord(accessKey) ? accessKey.nonce : undefined;
-    if (typeof nonce !== "number" || !Number.isSafeInteger(nonce) || nonce < 0) {
-      return { kind: "unreadable", hash: null, error: "no nonce in view_access_key" };
-    }
-    const block = await rpc("block", { finality: "final" });
-    const header = block.kind === "result" && isRecord(block.result) ? block.result.header : null;
-    if (!isRecord(header) || typeof header.hash !== "string") {
-      return { kind: "unreadable", hash: null, error: "no final block" };
-    }
-    let blockHash: Uint8Array;
-    try {
-      blockHash = decodeBlockHash(header.hash);
-    } catch {
-      return { kind: "unreadable", hash: null, error: "bad block hash" };
-    }
-    const signed = signFunctionCall(
-      {
-        signerId: plan.signerId,
-        receiverId: plan.receiverId,
-        nonce: BigInt(Math.max(nonce, taken)) + 1n,
-        blockHash,
-        methodName: plan.method,
-        args: plan.args,
-        gas: gasFor(plan.method),
-        deposit: 0n,
-      },
-      key,
-    );
-    hash = signed.hash;
-    const sent = await rpc("send_tx", {
-      signed_tx_base64: signed.signedBase64,
-      wait_until: "EXECUTED_OPTIMISTIC",
-    });
-    if (sent.kind === "result") return readResult(sent.result, plan, signed.hash);
-    if (sent.kind === "unreachable") {
-      return { kind: "unreadable", hash: signed.hash, error: sent.detail };
-    }
-    const reason = rpcErrorKind(sent.error);
-    if (reason === "nonce") {
-      taken = Math.max(taken, akNonceOf(sent.error) ?? -1);
-      if (attempt === 0) continue;
-      return {
-        kind: "not_included",
-        hash: signed.hash,
-        reason: "nonce",
-        error: asText(sent.error),
-      };
-    }
-    if (reason === "allowance" || reason === "key_missing") {
-      return { kind: "not_included", hash: signed.hash, reason, error: asText(sent.error) };
-    }
-    const error = sent.error;
-    // Only an invalid transaction is known never to have reached the chain. Anything else
-    // (a timeout, an internal error after forwarding) may have landed.
-    const invalid =
-      (isRecord(error) && isRecord(error.cause) && error.cause.name === "INVALID_TRANSACTION") ||
-      /InvalidTxError/.test(asText(error));
-    if (reason === "timeout" || !invalid) {
-      return { kind: "unreadable", hash: signed.hash, error: asText(error) };
-    }
-    const detail = isRecord(error) && error.data !== undefined ? error.data : error;
-    return {
-      kind: "not_included",
-      hash: signed.hash,
-      reason: "invalid",
-      error: failureKind(detail),
-    };
+    const prepared = await prepare(rpc, key, plan.signerId);
+    if (!prepared.ok) return prepared.result;
+    const nonce = Math.max(prepared.nonce, floor) + 1;
+    const signed = sign(key, plan, nonce, prepared.blockHash);
+    const sent = classifySend(await sendSigned(rpc, signed.signedBase64), plan, signed.hash);
+    if (sent.kind === "done") return sent.result;
+    floor = Math.max(floor, nonce, sent.akNonce ?? -1);
+    last = { hash: signed.hash, error: sent.error };
   }
-  return { kind: "not_included", hash: hash ?? "", reason: "nonce", error: "InvalidNonce twice" };
+  return {
+    kind: "not_included",
+    hash: last?.hash ?? null,
+    reason: "nonce",
+    error: last?.error ?? "InvalidNonce twice",
+  };
+}
+
+/**
+ * The window attempts "at once": one `view_access_key` read, consecutive nonces, every
+ * `send_tx` in flight together. A call that meets `InvalidNonce` (another sender, or its
+ * siblings landing out of order) is retried on its own with `sendCall`, above every nonce used.
+ */
+export async function sendBatch(
+  rpc: NearRpcCall,
+  key: NearKey,
+  plans: readonly CallPlan[],
+): Promise<CallResult[]> {
+  const first = plans[0];
+  if (!first) return [];
+  const prepared = await prepare(rpc, key, first.signerId);
+  if (!prepared.ok) {
+    const failed = prepared.result;
+    return plans.map(() => failed);
+  }
+  const signed = plans.map((plan, i) =>
+    sign(key, plan, prepared.nonce + 1 + i, prepared.blockHash),
+  );
+  const highest = prepared.nonce + plans.length;
+  const answers = await Promise.all(signed.map((s) => sendSigned(rpc, s.signedBase64)));
+  const results: CallResult[] = [];
+  for (const [i, plan] of plans.entries()) {
+    const sent = classifySend(answers[i] as RpcAnswer, plan, (signed[i] as { hash: string }).hash);
+    results.push(
+      sent.kind === "done"
+        ? sent.result
+        : await sendCall(rpc, key, plan, Math.max(highest, sent.akNonce ?? -1)),
+    );
+  }
+  return results;
 }
 
 /** Reads a `send_tx` result: accepted or refused, else unreadable. Never guesses. */
@@ -356,12 +432,13 @@ export function nearPort(options: FetchNearOptions): NearPort {
         isRecord(permission) && isRecord(permission.FunctionCall)
           ? permission.FunctionCall.allowance
           : undefined;
-      return {
-        exists: true,
-        nonce,
-        allowanceYocto:
-          allowance === null || allowance === undefined ? null : BigInt(String(allowance)),
-      };
+      if (allowance === null || allowance === undefined) {
+        return { exists: true, nonce, allowanceYocto: null };
+      }
+      // A non-numeric allowance is an unreadable answer, never a crash.
+      if (typeof allowance !== "string" && typeof allowance !== "number") return "unreachable";
+      if (!/^\d+$/.test(String(allowance))) return "unreachable";
+      return { exists: true, nonce, allowanceYocto: BigInt(String(allowance)) };
     },
     getVault: (vaultId) => view<Vault>(contractOf(), "get_vault", { vault_id: vaultId }),
     getVaultKit: (vaultId) => view<VaultKit>(contractOf(), "get_vault_kit", { vault_id: vaultId }),
@@ -386,5 +463,6 @@ export function nearPort(options: FetchNearOptions): NearPort {
       return header.height;
     },
     call: (key, plan) => sendCall(rpc, key, plan),
+    callBatch: (key, plans) => sendBatch(rpc, key, plans),
   };
 }

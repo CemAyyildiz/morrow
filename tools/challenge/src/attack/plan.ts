@@ -3,11 +3,13 @@
  * categories always give the same plan.
  *
  * Each round follows one order:
- *   1. `pre`: refusals that need a live Vault and no op, then the two Owner-Key-only Bitcoin
- *      spends (while the Vault coin is still unspent and confirmed, so the node's rejection is the
- *      script's and BIP68's, not a mempool conflict with the Clawback);
+ *   1. `pre`: refusals that need a live Vault and no op (each refused by the Policy, not by the
+ *      Vault's state), then the two Owner-Key-only Bitcoin spends (while the Vault coin is still
+ *      unspent and confirmed, so the node's rejection is the script's and BIP68's, not a mempool
+ *      conflict with the Clawback);
  *   2. `request`: one Withdrawal Request of the full balance, which the watcher claws back;
- *   3. `window`: the attempts that race the Clawback, sent at once;
+ *   3. `window`: the attempts that race the Clawback, sent at once: signed with consecutive
+ *      nonces from one `view_access_key` read and sent concurrently;
  *   4. `fill`: after the Clawback, the rest of the round's budget, drawn by the seeded RNG.
  */
 
@@ -117,6 +119,8 @@ export type Move =
   | "clawback_as_owner"
   | "bad_envelope"
   | "allowance_over_limit"
+  | "refresh_over_fee_cap"
+  | "policy_change_script_bound"
   | "escape_early"
   | "no_cosigner"
   | "full_request"
@@ -152,6 +156,13 @@ export const MOVES: Record<Move, MoveInfo> = {
     category: "spend_allowance",
     phase: "pre",
     expected: ["ERR_ALLOWANCE_LIMIT"],
+  },
+  // Not deployed live yet: in the dry run the mock contract gives these Policy-level codes.
+  refresh_over_fee_cap: { category: "refresh", phase: "pre", expected: ["ERR_FEE_TOO_HIGH"] },
+  policy_change_script_bound: {
+    category: "policy_change",
+    phase: "pre",
+    expected: ["ERR_SCRIPT_BOUND"],
   },
   escape_early: { category: "bitcoin_escape", phase: "pre", expected: ["rejected"] },
   no_cosigner: { category: "bitcoin_no_cosigner", phase: "pre", expected: ["rejected"] },
@@ -203,6 +214,8 @@ const SCRIPT: readonly Move[] = [
   "clawback_as_owner",
   "bad_envelope",
   "allowance_over_limit",
+  "refresh_over_fee_cap",
+  "policy_change_script_bound",
   "escape_early",
   "no_cosigner",
   "full_request",

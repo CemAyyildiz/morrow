@@ -1,12 +1,18 @@
 /**
  * The `attack` command: parse flags, build the dry-run or live ports, run the scripted rounds,
- * write the report, print a short summary, and exit with `passed ? 0 : 1`.
+ * write the report, print a short summary, and return `passed ? 0 : 1`.
  */
 import { execFileSync } from "node:child_process";
 import { loadAttackConfig } from "../config.js";
 import { dryRunPorts } from "./dry-run.js";
-import { liveAttackPorts, reportNetwork } from "./live.js";
-import { defaultReportPath, writeReport, type AttackReport, type ReportNetwork } from "./report.js";
+import { liveAttackPorts } from "./live.js";
+import {
+  ReportWriteError,
+  defaultReportPath,
+  repoRoot,
+  writeReport,
+  type AttackReport,
+} from "./report.js";
 import { runAttack, type AttackParams, type AttackPorts } from "./run.js";
 
 export interface AttackFlags {
@@ -19,29 +25,25 @@ export interface AttackFlags {
   logWaitMs: number;
 }
 
-const FLAGS = new Set([
-  "--n",
-  "--rounds",
-  "--seed",
-  "--dry-run",
-  "--out",
-  "--round-wait",
-  "--log-wait",
-]);
+const VALUE_FLAGS = new Set(["--n", "--rounds", "--seed", "--out", "--round-wait", "--log-wait"]);
 
 /** Parses the `attack` flags. Minutes for the waits; `--seed` defaults to a random 32-bit value. */
-export function parseAttackFlags(argv: readonly string[]): AttackFlags {
+export function parseAttackFlags(
+  argv: readonly string[],
+  randomSeed: () => number = () => Math.floor(Math.random() * 0xffffffff),
+): AttackFlags {
   const values = new Map<string, string>();
   let dryRun = false;
   for (let i = 0; i < argv.length; i += 1) {
     const flag = argv[i] as string;
-    if (!FLAGS.has(flag)) throw new Error(`Unknown flag ${flag}`);
     if (flag === "--dry-run") {
       dryRun = true;
       continue;
     }
+    if (!VALUE_FLAGS.has(flag)) throw new Error(`Unknown flag ${flag}`);
     const value = argv[i + 1];
-    if (value === undefined) throw new Error(`${flag} needs a value`);
+    // A following flag is never a value: `--out --dry-run` is a missing value.
+    if (value === undefined || value.startsWith("--")) throw new Error(`${flag} needs a value`);
     values.set(flag, value);
     i += 1;
   }
@@ -49,14 +51,15 @@ export function parseAttackFlags(argv: readonly string[]): AttackFlags {
     const raw = values.get(flag);
     if (raw === undefined) return fallback;
     const n = Number(raw);
-    if (!Number.isSafeInteger(n) || n < min)
+    if (!/^\d+$/.test(raw) || !Number.isSafeInteger(n) || n < min) {
       throw new Error(`${flag} must be a whole number ≥ ${min}`);
+    }
     return n;
   };
   return {
     n: int("--n", 100),
     rounds: int("--rounds", 3),
-    seed: int("--seed", Math.floor(Math.random() * 0xffffffff), 0),
+    seed: values.has("--seed") ? int("--seed", 0, 0) : randomSeed(),
     dryRun,
     out: values.get("--out") ?? null,
     roundWaitMs: int("--round-wait", 60) * 60_000,
@@ -64,25 +67,25 @@ export function parseAttackFlags(argv: readonly string[]): AttackFlags {
   };
 }
 
-function toolCommit(): string | null {
+/** The tool's git commit and whether the working tree had uncommitted changes. */
+export function toolVersion(): { commit: string | null; dirty: boolean } {
+  const git = (args: string[]) =>
+    execFileSync("git", args, { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] }).trim();
   try {
-    return execFileSync("git", ["rev-parse", "HEAD"], { encoding: "utf8" }).trim();
+    return { commit: git(["rev-parse", "HEAD"]), dirty: git(["status", "--porcelain"]) !== "" };
   } catch {
-    return null;
+    return { commit: null, dirty: false };
   }
 }
 
 export interface AttackCommandDeps {
-  /** Overridable for tests. */
   buildDryRun?: () => Promise<AttackPorts>;
-  buildLive?: () => {
-    ports: AttackPorts;
-    network: ReportNetwork;
-    nearNetwork: "testnet" | "mainnet";
-  };
+  buildLive?: () => { ports: AttackPorts; nearNetwork: "testnet" | "mainnet" };
   write?: (path: string, report: AttackReport) => Promise<void>;
+  root?: string;
   now?: () => Date;
   stdout?: (line: string) => void;
+  version?: () => { commit: string | null; dirty: boolean };
 }
 
 /** Runs the command and returns the exit code (does not call `process.exit`). */
@@ -91,46 +94,46 @@ export async function runAttackCommand(
   deps: AttackCommandDeps = {},
 ): Promise<number> {
   const flags = parseAttackFlags(argv);
-  const write = deps.write ?? writeReport;
+  const root = deps.root ?? repoRoot();
+  const write = deps.write ?? ((path, report) => writeReport(path, report, root));
   const stdout = deps.stdout ?? ((line) => process.stdout.write(`${line}\n`));
   const now = deps.now ?? (() => new Date());
+  const version = (deps.version ?? toolVersion)();
 
   let ports: AttackPorts;
-  let network: ReportNetwork;
   let nearNetwork: "testnet" | "mainnet";
   if (flags.dryRun) {
     ports = deps.buildDryRun ? await deps.buildDryRun() : await dryRunPorts();
-    network = "mock";
     nearNetwork = "testnet";
   } else if (deps.buildLive) {
-    const built = deps.buildLive();
-    ports = built.ports;
-    network = built.network;
-    nearNetwork = built.nearNetwork;
+    ({ ports, nearNetwork } = deps.buildLive());
   } else {
     const config = loadAttackConfig();
     ports = liveAttackPorts(config);
     nearNetwork = config.nearNetwork;
-    // The report network comes from the first round's Bitcoin network; signet until one is seen.
-    const first = await ports.rounds.current().catch(() => null);
-    network = reportNetwork(first?.btc_network ?? "signet");
   }
 
   const params: AttackParams = {
     seed: flags.seed,
     n: flags.n,
     rounds: flags.rounds,
-    network,
     nearNetwork,
     dryRun: flags.dryRun,
-    toolCommit: toolCommit(),
+    toolCommit: version.commit,
+    toolDirty: version.dirty,
     roundWaitMs: flags.roundWaitMs,
     logWaitMs: flags.logWaitMs,
   };
 
   const { report, exitCode } = await runAttack(ports, params);
-  const path = flags.out ?? defaultReportPath(network, now().toISOString());
-  await write(path, report);
+  // The network is the first attacked round's, never assumed.
+  if (report.header.near_network !== nearNetwork) {
+    throw new ReportWriteError(
+      `Refusing to write: MORROW_NEAR_NETWORK is ${nearNetwork} but the round is on ${report.header.near_network}`,
+    );
+  }
+  const path = flags.out ?? defaultReportPath(report.header.network, now().toISOString(), root);
+  await write(path, report); // the evidence guard runs inside, right before writing
 
   const s = report.summary;
   stdout(
@@ -143,6 +146,8 @@ export async function runAttackCommand(
         on_log: s.on_log,
         off_log: s.off_log,
         allowed_harmless: s.allowed_harmless,
+        skipped: s.skipped.length,
+        unreadable: s.unreadable.length,
         sats_to_attackers: s.sats_to_attackers,
         not_deployed: s.not_deployed,
         stopped_reason: s.stopped_reason,
