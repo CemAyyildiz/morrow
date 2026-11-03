@@ -103,15 +103,16 @@ describe("CATEGORIES", () => {
 });
 
 describe("notDeployed", () => {
-  it("lists spend_allowance, policy_change for the live mix, in report order", () => {
+  it("lists only spend_allowance for the live mix", () => {
     expect(LIVE_METHODS).toContain("refresh");
-    expect(notDeployed(live)).toEqual(["spend_allowance", "policy_change"]);
+    expect(LIVE_METHODS).toContain("propose_policy_change");
+    expect(notDeployed(live)).toEqual(["spend_allowance"]);
     expect(notDeployed(all)).toEqual([]);
   });
   it("writes a plain-words note naming the methods and stories", () => {
     const note = notDeployedNote(live);
     expect(note).toContain("Allowance spend (spend_allowance, Story 5.2)");
-    expect(note).toContain("Policy Change (propose_policy_change, Story 5.1)");
+    expect(note).not.toContain("propose_policy_change");
     expect(note).not.toContain("refresh");
     expect(notDeployedNote(all)).toBeNull();
   });

@@ -1,7 +1,8 @@
 /**
  * The `--dry-run` harness: the attack run against a mock Vault Contract, a fake Bitcoin backend,
- * a simulated Auto-Clawback watcher and a fake Attempt Log feed. It exercises all five attempt
- * categories without a live Vault or operator keys, and it never writes into `evidence/`.
+ * a simulated watcher (vetoes Policy Changes, claws back requests) and a fake Attempt Log feed.
+ * It exercises all five attempt categories without a live Vault or operator keys, and it never
+ * writes into `evidence/`.
  */
 import {
   MockContractClient,
@@ -50,7 +51,7 @@ const fakeHash = (n: number) => n.toString(16).padStart(64, "0");
 /** A recorded on-chain call, for the fake Attempt Log. */
 interface Included {
   hash: string;
-  kind: "rejected" | "withdrawal";
+  kind: "rejected" | "withdrawal" | "policy_change";
   op_id: string | null;
   vault_id: string | null;
   code: string | null;
@@ -104,15 +105,15 @@ export class DryRunChain {
     this.mock.asCaller(plan.signerId);
     try {
       const value = await dispatch(this.mock, plan);
-      if (plan.method === "request_withdrawal" && typeof value === "string") {
+      const kind =
+        plan.method === "request_withdrawal"
+          ? "withdrawal"
+          : plan.method === "propose_policy_change"
+            ? "policy_change"
+            : null;
+      if (kind !== null && typeof value === "string") {
         const vaultId = (plan.args as { vault_id?: string }).vault_id ?? null;
-        this.included.push({
-          hash,
-          kind: "withdrawal",
-          op_id: value,
-          vault_id: vaultId,
-          code: null,
-        });
+        this.included.push({ hash, kind, op_id: value, vault_id: vaultId, code: null });
       }
       return { kind: "accepted", hash, value, logs: [] };
     } catch (error) {
@@ -137,13 +138,27 @@ export class DryRunChain {
 
   /** Clawback op per Vault, as the simulated watcher made it. */
   readonly clawbacks = new Map<string, string>();
+  /** Change ids the simulated watcher vetoed. */
+  readonly vetoed = new Set<string>();
 
-  /** The simulated watcher: claws back any live request as the Guardian. */
+  /**
+   * The simulated watcher, as the Guardian of a Challenge Vault: vetoes every pending Policy
+   * Change, then claws back once a Withdrawal Request was made.
+   */
   watcher(): Watcher {
     return {
       tick: async (vaultId): Promise<ClawbackInfo | null> => {
         const vault = await this.mock.getVault(vaultId).catch(() => null);
         if (!vault || vault.state === "clawed_back") return null;
+        const pending = vault.pending_change;
+        if (pending) {
+          await this.mock.asCaller(GUARDIAN).vetoPolicyChange(pending.change_id);
+          this.vetoed.add(pending.change_id);
+        }
+        const requested = this.included.some(
+          (i) => i.kind === "withdrawal" && i.vault_id === vaultId,
+        );
+        if (!requested) return null;
         // A distinct Clawback outpoint per Vault (the mock reserves them contract-globally).
         const clawTxid = Number(vaultId).toString(16).padStart(64, "c");
         const opId = await this.mock.asCaller(GUARDIAN).beginClawback({
@@ -160,11 +175,18 @@ export class DryRunChain {
   /**
    * The fake Attempt Log: every included call in discovery order (oldest first), numbered from 1.
    * A request carries the Clawback op that voided it; the mock builds no Bitcoin bytes, so there
-   * is no Clawback txid.
+   * is no Clawback txid. A Policy Change carries `vetoed` once the watcher vetoed it.
    */
   feedEntries(): LogEntryView[] {
     return this.included.map((i, index) => {
-      const clawback = i.vault_id === null ? undefined : this.clawbacks.get(i.vault_id);
+      const clawback =
+        i.kind === "withdrawal" && i.vault_id !== null ? this.clawbacks.get(i.vault_id) : undefined;
+      const outcome =
+        i.kind === "policy_change" && i.op_id !== null
+          ? this.vetoed.has(i.op_id)
+            ? "vetoed"
+            : "pending"
+          : null;
       return {
         n: index + 1,
         type: i.kind,
@@ -175,6 +197,7 @@ export class DryRunChain {
         clawback_op_id: clawback ?? null,
         clawback_txid: null,
         clawback_broadcast: i.kind === "withdrawal" ? false : null,
+        outcome,
       };
     });
   }

@@ -46,6 +46,7 @@ const EMPTY: AttackReport = {
     unreadable: [],
     unexpected: [],
     clawback_missing: [],
+    veto_missing: [],
     not_deployed: [],
     not_deployed_note: null,
     stopped_reason: null,

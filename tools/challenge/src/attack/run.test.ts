@@ -132,6 +132,113 @@ describe("dry run", () => {
   });
 });
 
+describe("Recovery Address redirect (TH-12)", () => {
+  const isRedirect = (a: { method: string | null; args: unknown }) =>
+    a.method === "propose_policy_change" &&
+    Object.hasOwn((a.args as { changes: object }).changes, "recovery_address");
+
+  it("is accepted, then vetoed by the watcher before the round goes on", async () => {
+    const ports = await dryRunPorts();
+    const { report, exitCode } = await runAttack(ports, DRY);
+    expect(exitCode).toBe(0);
+    const redirects = report.attempts.filter(isRedirect);
+    expect(redirects).toHaveLength(report.rounds.length);
+    for (const attempt of redirects) {
+      expect([attempt.actual, attempt.expected_match]).toEqual(["accepted", true]);
+      expect(attempt.log_entry).not.toBeNull();
+      const to = (attempt.args as { changes: { recovery_address: string } }).changes
+        .recovery_address;
+      expect(report.summary.attacker_addresses.map((a) => a.address)).toContain(to);
+      const round = report.rounds.find((r) => r.round === attempt.round)!;
+      expect(round.policy_change_id).toBe(attempt.op_id);
+      expect(round.policy_change_outcome).toBe("vetoed");
+    }
+    expect(report.summary.veto_missing).toEqual([]);
+    // The Clawback paid the Recovery Address set at creation, never the redirect.
+    const vault = await ports.chain.mock.getVault("1");
+    expect(vault.pending_change).toBeNull();
+    expect(vault.policy.recovery_address).not.toBe(
+      (redirects[0]!.args as { changes: { recovery_address: string } }).changes.recovery_address,
+    );
+  });
+
+  it("a change still pending at the wait's end fails the run", async () => {
+    const ports = await dryRunPorts();
+    const inner = ports.watcher;
+    // A watcher that claws back but never vetoes.
+    ports.watcher = {
+      tick: async (vaultId) => {
+        const vault = await ports.chain.mock.getVault(vaultId);
+        return vault.pending_change ? null : inner.tick(vaultId);
+      },
+    };
+    const { report, exitCode } = await runAttack(ports, SHORT);
+    expect(exitCode).toBe(1);
+    expect(report.rounds[0]?.policy_change_outcome).toBe("pending");
+    expect(report.summary.veto_missing).toEqual([1]);
+  });
+
+  it("an applied redirect fails the run", async () => {
+    const ports = await dryRunPorts();
+    const getVault = ports.near.getVault;
+    let to: string | null = null;
+    const call = ports.near.call;
+    ports.near = {
+      ...ports.near,
+      call: async (key, plan) => {
+        const result = await call(key, plan);
+        const changes = (plan.args as { changes?: { recovery_address?: string } }).changes;
+        if (changes?.recovery_address) to = changes.recovery_address;
+        return result;
+      },
+      getVault: async (id) => {
+        const vault = await getVault(id);
+        return to ? { ...vault, policy: { ...vault.policy, recovery_address: to } } : vault;
+      },
+    };
+    const { report, exitCode } = await runAttack(ports, SHORT);
+    expect(exitCode).toBe(1);
+    expect(report.rounds[0]?.policy_change_outcome).toBe("applied");
+    expect(report.summary.veto_missing).toEqual([1]);
+  });
+
+  it("live: reads the veto from the feed once the change is no longer pending", async () => {
+    let feedReads = 0;
+    const near = minimalNear({
+      call: async (_key, plan): Promise<CallResult> =>
+        plan.method === "propose_policy_change" &&
+        isRedirect({ method: plan.method, args: plan.args })
+          ? { kind: "accepted", hash: "5".repeat(64), value: "4", logs: [] }
+          : { kind: "refused", hash: "1".repeat(64), code: "ERR_CLAWED_BACK", failure: "x" },
+    });
+    const entry = (outcome: string): LogEntryView => ({
+      n: 1,
+      type: "policy_change",
+      tx_hash: "5".repeat(64),
+      op_id: "4",
+      vault_id: "1",
+      code: null,
+      clawback_op_id: null,
+      clawback_txid: null,
+      clawback_broadcast: null,
+      outcome,
+    });
+    const report = await new AttackRun(
+      handPorts({
+        near,
+        // The feed lags: it still shows the change pending on the first read.
+        feed: { entries: async () => [entry(feedReads++ === 0 ? "pending" : "vetoed")] },
+      }),
+      { ...HAND, n: 6, dryRun: false },
+    ).execute();
+    const redirect = report.attempts.find(isRedirect)!;
+    expect(redirect.actual).toBe("accepted");
+    expect(redirect.log_entry).toBe(1);
+    expect(report.rounds[0]?.policy_change_outcome).toBe("vetoed");
+    expect(report.summary.veto_missing).toEqual([]);
+  });
+});
+
 describe("failures (exit 1)", () => {
   it("an unexpected success is marked and fails the run", async () => {
     const ports = await dryWith((plan) =>
@@ -220,7 +327,9 @@ describe("failures (exit 1)", () => {
         ),
     };
     const { report } = await runAttack(ports, SHORT);
-    const request = report.attempts.find((a) => a.actual_class === "accepted")!;
+    const request = report.attempts.find(
+      (a) => a.category === "withdrawal_request" && a.actual_class === "accepted",
+    )!;
     expect(request.log_entry).toBeNull();
     expect(report.summary.passed).toBe(false);
   });
@@ -252,11 +361,11 @@ describe("failures (exit 1)", () => {
   it("no Clawback seen: the round is marked, its fill skipped, and the run fails", async () => {
     const ports = await dryRunPorts();
     ports.watcher = { tick: async () => null };
-    const { report, exitCode } = await runAttack(ports, SHORT);
+    const { report, exitCode } = await runAttack(ports, { ...SHORT, n: 14 });
     expect(exitCode).toBe(1);
     expect(report.rounds[0]?.clawback_seen).toBe(false);
     expect(report.summary.clawback_missing).toEqual([1]);
-    expect(report.attempts.length).toBeLessThan(12); // no fill
+    expect(report.attempts.length).toBeLessThan(14); // no fill
   });
 });
 
@@ -492,7 +601,7 @@ describe("Bitcoin Owner-Key-only spends", () => {
           ...extra,
         },
       }),
-      { ...HAND, n: 7 },
+      { ...HAND, n: 8 },
     ).execute();
     const pick = (category: string) => report.attempts.find((a) => a.category === category)!;
     return { report, escape: pick("bitcoin_escape"), noCosigner: pick("bitcoin_no_cosigner") };
@@ -579,19 +688,18 @@ describe("Bitcoin Owner-Key-only spends", () => {
 });
 
 describe("not deployed (live mix)", () => {
-  it("lists spend_allowance, policy_change and sends neither of them", async () => {
+  it("lists spend_allowance and never sends it; Policy Changes go out live (Story 5.1)", async () => {
     const report = await new AttackRun(handPorts(), {
       ...HAND,
       n: 20,
       dryRun: false,
     }).execute();
-    expect(report.summary.not_deployed).toEqual(["spend_allowance", "policy_change"]);
+    expect(report.summary.not_deployed).toEqual(["spend_allowance"]);
     expect(report.summary.not_deployed_note).toContain("Story 5.2");
-    expect(report.summary.not_deployed_note).toContain("Story 5.1");
+    expect(report.summary.not_deployed_note).not.toContain("Story 5.1");
     const methods = new Set(report.attempts.map((a) => a.method));
-    for (const m of ["spend_allowance", "propose_policy_change"]) {
-      expect(methods.has(m)).toBe(false);
-    }
+    expect(methods.has("spend_allowance")).toBe(false);
+    expect(methods.has("propose_policy_change")).toBe(true);
   });
 
   it("sends the over-cap Refresh live (Story 4.1), on a decoy coin", async () => {

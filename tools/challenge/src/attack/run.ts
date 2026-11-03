@@ -83,6 +83,8 @@ export interface LogEntryView {
   clawback_op_id: string | null;
   clawback_txid: string | null;
   clawback_broadcast: boolean | null;
+  /** A Policy Change's outcome (`pending`, `vetoed`, `withdrawn`, `applied`); else null. */
+  outcome: string | null;
 }
 
 export interface AttemptsFeed {
@@ -103,6 +105,7 @@ export function logViews(entries: readonly AttemptEntry[]): LogEntryView[] {
         vault_id: null,
         code: entry.code ?? entry.failure,
         ...none,
+        outcome: null,
       });
     } else if (entry.type === "withdrawal") {
       views.push({
@@ -115,6 +118,7 @@ export function logViews(entries: readonly AttemptEntry[]): LogEntryView[] {
         clawback_op_id: entry.clawback_op_id,
         clawback_txid: entry.clawback_txid,
         clawback_broadcast: entry.clawback_broadcast,
+        outcome: null,
       });
     } else if (entry.type === "policy_change") {
       views.push({
@@ -125,6 +129,7 @@ export function logViews(entries: readonly AttemptEntry[]): LogEntryView[] {
         vault_id: entry.vault_id,
         code: null,
         ...none,
+        outcome: entry.outcome,
       });
     }
   }
@@ -138,7 +143,8 @@ export interface ClawbackInfo {
 
 /**
  * The Auto-Clawback actor. Live: a no-op returning null (the real watcher acts on its own; the
- * run reads the Clawback from `get_vault` and the feed). Dry run: claws back a live request.
+ * run reads the Clawback and the veto from `get_vault` and the feed). Dry run: vetoes a pending
+ * Policy Change and claws back a live request.
  */
 export interface Watcher {
   tick(vaultId: string): Promise<ClawbackInfo | null>;
@@ -256,6 +262,8 @@ interface RoundContext {
   ownOpId: string | null;
   /** The full-balance request's actual outcome, once sent. */
   requestOutcome: string | null;
+  /** The Recovery Address this run's accepted redirect proposed. */
+  redirectedTo: string | null;
 }
 
 type StopKind = "allowance" | "other";
@@ -373,6 +381,9 @@ export class AttackRun {
     const clawbackMissing = this.rounds
       .filter((r) => r.clawback_seen === false)
       .map((r) => r.challenge_round);
+    const vetoMissing = this.rounds
+      .filter((r) => r.policy_change_id !== null && !VETO_ENDS.has(r.policy_change_outcome ?? ""))
+      .map((r) => r.challenge_round);
     // A clean stop: the key ran out of allowance after at least one whole round.
     const stopOk =
       this.stoppedReason === null || (this.stopKind === "allowance" && this.completedRounds >= 1);
@@ -384,7 +395,8 @@ export class AttackRun {
       satsToAttackers === 0 &&
       unreadableBalances.length === 0 &&
       missing.length === 0 &&
-      clawbackMissing.length === 0;
+      clawbackMissing.length === 0 &&
+      vetoMissing.length === 0;
 
     return {
       header: {
@@ -420,6 +432,7 @@ export class AttackRun {
         unreadable,
         unexpected: ids((a) => a.unexpected),
         clawback_missing: clawbackMissing,
+        veto_missing: vetoMissing,
         not_deployed: notDeployed(categories),
         not_deployed_note: notDeployedNote(categories),
         stopped_reason: this.stoppedReason,
@@ -504,6 +517,10 @@ export class AttackRun {
         continue;
       }
       if (await this.runAttempt(attempt, ctx, round)) done += 1;
+      // The redirect must be vetoed before the round goes on (a Clawback would freeze it pending).
+      if (attempt.move === "policy_change_redirect_recovery" && ctx.redirectedTo !== null) {
+        await this.awaitVeto(ctx);
+      }
       i += 1;
     }
 
@@ -569,6 +586,8 @@ export class AttackRun {
         clawback_op_id: null,
         clawback_txid: null,
         clawback_broadcast: null,
+        policy_change_id: null,
+        policy_change_outcome: null,
       },
       key,
       ownerSecret: hexToBytes(round.owner_key_secret),
@@ -583,6 +602,7 @@ export class AttackRun {
       vaultAddress,
       ownOpId: null,
       requestOutcome: null,
+      redirectedTo: null,
     };
   }
 
@@ -709,6 +729,13 @@ export class AttackRun {
           utxos: coins,
           envelope: envelope(),
         });
+      case "policy_change_redirect_recovery":
+        // TH-12: the thief points the Recovery Address at an attacker address and waits.
+        return call("propose_policy_change", {
+          vault_id: ctx.vaultId,
+          changes: { recovery_address: destination() },
+          envelope: envelope(),
+        });
       case "policy_change_after_clawback":
         return call("propose_policy_change", {
           vault_id: ctx.vaultId,
@@ -769,7 +796,10 @@ export class AttackRun {
         record.actual = "accepted";
         record.actual_class = "accepted";
         record.expected_match = attempt.expected.includes("accepted");
-        if (attempt.category === "withdrawal_request" && typeof result.value === "string") {
+        const idCategory =
+          attempt.category === "withdrawal_request" || attempt.category === "policy_change";
+        if (idCategory && typeof result.value === "string") {
+          // A withdrawal's op id or a Policy Change's change id.
           record.op_id = result.value;
           record.vault_id = ctx.vaultId;
         }
@@ -815,6 +845,11 @@ export class AttackRun {
         ctx.report.request_tx_hash = record.tx_hash;
         ctx.report.request_op_id = record.op_id;
       }
+    }
+    if (attempt.move === "policy_change_redirect_recovery" && record.actual_class === "accepted") {
+      ctx.report.policy_change_id = record.op_id;
+      const changes = (plan.args as { changes?: { recovery_address?: string } }).changes;
+      ctx.redirectedTo = changes?.recovery_address ?? null;
     }
     this.attempts.push(record);
   }
@@ -903,6 +938,48 @@ export class AttackRun {
       }
       if (this.ports.clock.now() >= deadline) {
         ctx.report.clawback_seen = false;
+        return;
+      }
+      await this.ports.clock.sleep(CLAWBACK_POLL_MS);
+    }
+  }
+
+  /**
+   * Polls `get_vault` until the redirect is no longer the pending change, then reads its outcome
+   * from the feed, within the Clawback's wait. `vetoed` is the expected end; `withdrawn` (another
+   * holder of the published Owner Key took it back) can never apply either. A Policy showing the
+   * redirected address reads `applied`; a change still pending at the end reads `pending`. Any
+   * other end lands in `veto_missing`, which fails the run.
+   */
+  private async awaitVeto(ctx: RoundContext): Promise<void> {
+    const changeId = ctx.report.policy_change_id;
+    if (changeId === null) return;
+    const deadline = this.ports.clock.now() + this.clawbackWaitMs;
+    for (;;) {
+      await this.ports.watcher.tick(ctx.vaultId).catch(() => null);
+      const vault = await this.ports.near.getVault(ctx.vaultId).catch(() => null);
+      if (
+        vault &&
+        ctx.redirectedTo !== null &&
+        vault.policy?.recovery_address === ctx.redirectedTo
+      ) {
+        ctx.report.policy_change_outcome = "applied";
+        return;
+      }
+      const pending = vault?.pending_change?.change_id === changeId;
+      if (vault && !pending) {
+        const views = await this.ports.feed.entries().catch(() => [] as LogEntryView[]);
+        const entry = views.find(
+          (v) => v.type === "policy_change" && v.op_id === changeId && v.vault_id === ctx.vaultId,
+        );
+        if (entry?.outcome && entry.outcome !== "pending") {
+          ctx.report.policy_change_outcome = entry.outcome;
+          return;
+        }
+      }
+      if (this.ports.clock.now() >= deadline) {
+        ctx.report.policy_change_outcome =
+          vault === null ? "unreadable" : pending ? "pending" : "unread";
         return;
       }
       await this.ports.clock.sleep(CLAWBACK_POLL_MS);
@@ -1027,6 +1104,9 @@ export class AttackRun {
   }
 }
 
+/** Ends of an accepted redirect that can never apply. */
+const VETO_ENDS = new Set(["vetoed", "withdrawn"]);
+
 /** A coin that is not the Vault's, for refusals whose inputs do not matter. */
 export const DECOY_COIN: Outpoint = { txid: "ef".repeat(32), vout: 7, value_sats: "100000" };
 
@@ -1042,10 +1122,16 @@ function needsLog(attempt: AttemptRecord): boolean {
 function matches(attempt: AttemptRecord, view: LogEntryView): boolean {
   // Rejected calls and scanned requests match by NEAR tx hash.
   if (attempt.tx_hash && view.tx_hash && attempt.tx_hash === view.tx_hash) return true;
-  // A withdrawal whose tx hash the feed has not scanned yet: Vault id + op id, withdrawals only
-  // (a Policy Change's change id lives in another number space).
+  // An entry whose tx hash the feed has not scanned yet: Vault id + id, within one number space
+  // (a withdrawal's op id and a Policy Change's change id are different counters).
+  const idType =
+    attempt.category === "withdrawal_request"
+      ? "withdrawal"
+      : attempt.category === "policy_change"
+        ? "policy_change"
+        : null;
   return (
-    view.type === "withdrawal" &&
+    view.type === idType &&
     attempt.op_id !== null &&
     attempt.op_id === view.op_id &&
     attempt.vault_id !== null &&
@@ -1066,7 +1152,7 @@ function reconcile(attempt: AttemptRecord, view: LogEntryView): void {
     attempt.actual_class = "accepted";
     attempt.expected_match = attempt.expected.includes("accepted");
     attempt.unexpected = !attempt.expected_match;
-    if (view.type === "withdrawal") {
+    if (view.type === "withdrawal" || view.type === "policy_change") {
       attempt.op_id = view.op_id;
       attempt.vault_id = view.vault_id;
     }

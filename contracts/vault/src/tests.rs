@@ -1450,3 +1450,354 @@ mod refresh {
         });
     }
 }
+
+mod policy_change {
+    use super::withdrawals_support::*;
+    use super::*;
+    use crate::core::policy::tests::RECOVERY_SIGNET;
+    use crate::core::policy::HOUR_NS;
+    use near_sdk::serde_json::json;
+
+    const NEW_RECOVERY: &str = "tb1qw508d6qejxtdg4y5r3zarvary0c5xw7kxpjzsx";
+    const WEEK: u64 = 7 * DAY_NS;
+
+    fn expect_panic(expected: &str, f: impl FnOnce() + std::panic::UnwindSafe) {
+        let message = panic_message(f);
+        assert!(
+            message.contains(expected),
+            "expected {expected}, got {message}"
+        );
+    }
+
+    fn propose(contract: &mut VaultContract, id: U64, changes: Value) -> U64 {
+        as_caller("owner.testnet");
+        contract.propose_policy_change(id, changes, envelope())
+    }
+
+    fn redirect(contract: &mut VaultContract, id: U64) -> U64 {
+        propose(contract, id, json!({ "recovery_address": NEW_RECOVERY }))
+    }
+
+    fn rejects_proposal(expected: &str, changes: Value) {
+        expect_panic(expected, move || {
+            let (mut contract, id) = active_vault();
+            propose(&mut contract, id, changes);
+        });
+    }
+
+    fn claw_destination(contract: &mut VaultContract, id: U64, at: u64) -> String {
+        at_time("emma.testnet", at);
+        let op_id = contract.begin_clawback(id, vec![utxo(9, 100_000)], 2, None);
+        contract.get_op(op_id).destination
+    }
+
+    #[test]
+    fn a_proposal_waits_in_public_and_reads_return_the_old_policy() {
+        let (mut contract, id) = active_vault();
+        let change_id = redirect(&mut contract, id);
+        assert_eq!(change_id, U64(1));
+
+        let vault = contract.get_vault(id);
+        assert_eq!(vault.policy, standard_policy());
+        let pending = vault.pending_change.expect("a pending change");
+        assert_eq!(pending.change_id, change_id);
+        assert_eq!(pending.state, PolicyChangeState::Pending);
+        assert_eq!(pending.proposed_at, U64(NOW));
+        assert_eq!(pending.effective_at, U64(NOW + WEEK));
+        assert_eq!(pending.vetoed_by, None);
+
+        let view = near_sdk::serde_json::to_value(contract.get_vault(id)).unwrap();
+        assert_eq!(
+            view["pending_change"]["changes"],
+            json!({ "recovery_address": NEW_RECOVERY })
+        );
+        assert_eq!(
+            view["pending_change"]["effective_at"],
+            (NOW + WEEK).to_string()
+        );
+
+        let event = contract.events_since(U64(0), 100).pop().unwrap();
+        assert_eq!(event.kind, "policy_change_proposed");
+        assert_eq!(
+            event.data,
+            json!({
+                "change_id": "1",
+                "changes": { "recovery_address": NEW_RECOVERY },
+                "effective_at": (NOW + WEEK).to_string(),
+                "envelope": envelope(),
+            })
+        );
+    }
+
+    #[test]
+    fn a_new_vault_has_no_pending_change() {
+        let (contract, id) = active_vault();
+        let view = near_sdk::serde_json::to_value(contract.get_vault(id)).unwrap();
+        assert_eq!(view["pending_change"], Value::Null);
+    }
+
+    #[test]
+    fn script_bound_fields_are_rejected() {
+        rejects_proposal("ERR_SCRIPT_BOUND", json!({ "escape_timelock_blocks": 1 }));
+        rejects_proposal(
+            "ERR_SCRIPT_BOUND",
+            json!({ "guardians": [], "delay_ns": "3600000000000" }),
+        );
+        rejects_proposal("ERR_SCRIPT_BOUND", json!({ "btc_network": "regtest" }));
+    }
+
+    #[test]
+    fn the_resulting_policy_must_pass_creation_bounds() {
+        rejects_proposal("ERR_POLICY_BOUNDS", json!({}));
+        rejects_proposal("ERR_POLICY_BOUNDS", json!({ "delay_ns": "1" }));
+        rejects_proposal(
+            "ERR_POLICY_BOUNDS",
+            json!({ "delay_ns": 3_600_000_000_000u64 }),
+        );
+        rejects_proposal(
+            "ERR_POLICY_BOUNDS",
+            json!({ "policy_change_delay_ns": (6 * DAY_NS).to_string() }),
+        );
+        rejects_proposal(
+            "ERR_POLICY_CHANGE_DELAY",
+            json!({ "delay_ns": (8 * DAY_NS).to_string() }),
+        );
+        rejects_proposal(
+            "ERR_BAD_ADDRESS",
+            json!({ "recovery_address": "bc1qw508d6qejxtdg4y5r3zarvary0c5xw7kv8f3t4" }),
+        );
+    }
+
+    #[test]
+    fn only_one_change_is_pending_at_a_time() {
+        expect_panic("ERR_CHANGE_PENDING", || {
+            let (mut contract, id) = active_vault();
+            redirect(&mut contract, id);
+            propose(&mut contract, id, json!({ "fee_cap_sats": "20000" }));
+        });
+    }
+
+    #[test]
+    fn only_the_owner_with_an_envelope_proposes() {
+        expect_panic("ERR_UNAUTHORIZED", || {
+            let (mut contract, id) = active_vault();
+            as_caller("emma.testnet");
+            contract.propose_policy_change(id, json!({ "fee_cap_sats": "20000" }), envelope());
+        });
+        expect_panic("ERR_BAD_ENVELOPE", || {
+            let (mut contract, id) = active_vault();
+            as_caller("owner.testnet");
+            contract.propose_policy_change(id, json!({ "fee_cap_sats": "20000" }), "ab".into());
+        });
+    }
+
+    #[test]
+    fn a_proposal_is_charged_to_the_vault_and_fails_when_it_is_short() {
+        let (mut contract, id) = active_vault();
+        let before = contract.get_vault(id).storage_balance.0;
+        redirect(&mut contract, id);
+        assert!(contract.get_vault(id).storage_balance.0 < before);
+
+        expect_panic("ERR_STORAGE_BUDGET", || {
+            let (mut contract, id) = active_vault();
+            contract.vaults.get_mut(&id.0).unwrap().storage_balance = U128(0);
+            redirect(&mut contract, id);
+        });
+    }
+
+    #[test]
+    fn a_guardian_vetoes_and_a_clawback_still_pays_the_original_address() {
+        let (mut contract, id) = active_vault();
+        let change_id = redirect(&mut contract, id);
+        // A Guardian's veto never fails on storage.
+        contract.vaults.get_mut(&id.0).unwrap().storage_balance = U128(0);
+        as_caller("emma.testnet");
+        contract.veto_policy_change(change_id, None);
+
+        let vault = contract.get_vault(id);
+        assert_eq!(vault.pending_change, None);
+        assert_eq!(vault.policy, standard_policy());
+        let stored = contract.changes.get(&change_id.0).unwrap();
+        assert_eq!(stored.state, PolicyChangeState::Vetoed);
+        assert_eq!(
+            stored.vetoed_by.as_ref().map(|a| a.as_str()),
+            Some("emma.testnet")
+        );
+        let event = contract.events_since(U64(0), 100).pop().unwrap();
+        assert_eq!(event.kind, "policy_change_vetoed");
+        assert_eq!(
+            event.data,
+            json!({ "change_id": "1", "by": "emma.testnet" })
+        );
+
+        assert_eq!(
+            claw_destination(&mut contract, id, NOW + WEEK),
+            RECOVERY_SIGNET
+        );
+    }
+
+    #[test]
+    fn a_settled_change_is_found_but_never_reactivated() {
+        expect_panic("ERR_CHANGE_NOT_FOUND", || {
+            let (mut contract, _) = active_vault();
+            as_caller("emma.testnet");
+            contract.veto_policy_change(U64(7), None);
+        });
+        expect_panic("ERR_CHANGE_NOT_FOUND", || {
+            let (mut contract, _) = active_vault();
+            contract.apply_policy_change(U64(7));
+        });
+        expect_panic("ERR_BAD_OP_STATE", || {
+            let (mut contract, id) = active_vault();
+            let change_id = redirect(&mut contract, id);
+            as_caller("emma.testnet");
+            contract.veto_policy_change(change_id, None);
+            as_caller("backup.testnet");
+            contract.veto_policy_change(change_id, None);
+        });
+        expect_panic("ERR_BAD_OP_STATE", || {
+            let (mut contract, id) = active_vault();
+            let change_id = redirect(&mut contract, id);
+            as_caller("emma.testnet");
+            contract.veto_policy_change(change_id, None);
+            at_time("anyone.testnet", NOW + WEEK);
+            contract.apply_policy_change(change_id);
+        });
+    }
+
+    #[test]
+    fn the_owner_withdraws_with_an_envelope() {
+        let (mut contract, id) = active_vault();
+        let change_id = redirect(&mut contract, id);
+        as_caller("owner.testnet");
+        contract.veto_policy_change(change_id, Some(envelope()));
+        assert_eq!(contract.get_vault(id).pending_change, None);
+        let stored = contract.changes.get(&change_id.0).unwrap();
+        assert_eq!(stored.state, PolicyChangeState::Withdrawn);
+        assert_eq!(stored.vetoed_by, None);
+        let event = contract.events_since(U64(0), 100).pop().unwrap();
+        assert_eq!(event.kind, "policy_change_withdrawn");
+        assert_eq!(event.data, json!({ "change_id": "1" }));
+
+        expect_panic("ERR_BAD_ENVELOPE", || {
+            let (mut contract, id) = active_vault();
+            let change_id = redirect(&mut contract, id);
+            contract.veto_policy_change(change_id, None);
+        });
+        expect_panic("ERR_UNAUTHORIZED", || {
+            let (mut contract, id) = active_vault();
+            let change_id = redirect(&mut contract, id);
+            as_caller("stranger.testnet");
+            contract.veto_policy_change(change_id, Some(envelope()));
+        });
+    }
+
+    #[test]
+    fn nobody_applies_before_effective_at() {
+        expect_panic("ERR_CHANGE_NOT_EFFECTIVE", || {
+            let (mut contract, id) = active_vault();
+            let change_id = redirect(&mut contract, id);
+            at_time("anyone.testnet", NOW + WEEK - 1);
+            contract.apply_policy_change(change_id);
+        });
+    }
+
+    #[test]
+    fn a_clawback_during_a_pending_change_pays_the_address_in_effect() {
+        let (mut contract, id) = active_vault();
+        let change_id = redirect(&mut contract, id);
+        assert_eq!(
+            claw_destination(&mut contract, id, NOW + WEEK - 1),
+            RECOVERY_SIGNET
+        );
+        expect_panic("ERR_CLAWED_BACK", move || {
+            at_time("anyone.testnet", NOW + WEEK);
+            contract.apply_policy_change(change_id);
+        });
+    }
+
+    #[test]
+    fn anyone_applies_after_effective_at_and_a_clawback_pays_the_new_address() {
+        let (mut contract, id) = active_vault();
+        let change_id = redirect(&mut contract, id);
+        at_time("anyone.testnet", NOW + WEEK);
+        contract.apply_policy_change(change_id);
+        let vault = contract.get_vault(id);
+        assert_eq!(vault.pending_change, None);
+        assert_eq!(
+            vault.policy,
+            Policy {
+                recovery_address: NEW_RECOVERY.into(),
+                ..standard_policy()
+            }
+        );
+        assert_eq!(
+            contract.changes.get(&change_id.0).unwrap().state,
+            PolicyChangeState::Applied
+        );
+        let event = contract.events_since(U64(0), 100).pop().unwrap();
+        assert_eq!(event.kind, "policy_change_applied");
+        assert_eq!(event.data, json!({ "change_id": "1" }));
+
+        assert_eq!(
+            claw_destination(&mut contract, id, NOW + WEEK),
+            NEW_RECOVERY
+        );
+    }
+
+    #[test]
+    fn a_shorter_change_delay_still_waits_the_current_one() {
+        let (mut contract, id) = active_vault();
+        contract
+            .vaults
+            .get_mut(&id.0)
+            .unwrap()
+            .policy
+            .policy_change_delay_ns = U64(14 * DAY_NS);
+        let change_id = propose(
+            &mut contract,
+            id,
+            json!({ "policy_change_delay_ns": WEEK.to_string() }),
+        );
+        let pending = contract.get_vault(id).pending_change.unwrap();
+        assert_eq!(pending.effective_at, U64(NOW + 14 * DAY_NS));
+        at_time("anyone.testnet", NOW + 14 * DAY_NS);
+        contract.apply_policy_change(change_id);
+        assert_eq!(
+            contract.get_vault(id).policy.policy_change_delay_ns,
+            U64(WEEK)
+        );
+    }
+
+    #[test]
+    fn re_proposing_after_a_veto_gets_a_new_id_and_restarts_the_delay() {
+        let (mut contract, id) = active_vault();
+        let first = redirect(&mut contract, id);
+        at_time("backup.testnet", NOW + HOUR_NS);
+        contract.veto_policy_change(first, None);
+        at_time("owner.testnet", NOW + 2 * HOUR_NS);
+        let second = contract.propose_policy_change(
+            id,
+            json!({ "recovery_address": NEW_RECOVERY }),
+            envelope(),
+        );
+        assert_eq!(second, U64(2));
+        let pending = contract.get_vault(id).pending_change.unwrap();
+        assert_eq!(pending.effective_at, U64(NOW + 2 * HOUR_NS + WEEK));
+    }
+
+    #[test]
+    fn a_clawed_back_vault_takes_no_policy_changes() {
+        expect_panic("ERR_CLAWED_BACK", || {
+            let (mut contract, id) = active_vault();
+            let change_id = redirect(&mut contract, id);
+            claw_destination(&mut contract, id, NOW);
+            contract.veto_policy_change(change_id, None);
+        });
+        expect_panic("ERR_CLAWED_BACK", || {
+            let (mut contract, id) = active_vault();
+            claw_destination(&mut contract, id, NOW);
+            redirect(&mut contract, id);
+        });
+    }
+}

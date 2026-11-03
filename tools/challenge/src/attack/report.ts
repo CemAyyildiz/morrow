@@ -96,6 +96,14 @@ export interface RoundReport {
   clawback_op_id: string | null;
   clawback_txid: string | null;
   clawback_broadcast: boolean | null;
+  /** The accepted Recovery Address redirect's change id, when one was accepted. */
+  policy_change_id: string | null;
+  /**
+   * What the veto wait saw: `vetoed` or `withdrawn` (it can never apply), `applied`, `pending`
+   * at the wait's end, `unread` (settled, but the feed showed no outcome) or `unreadable`.
+   * Null when no redirect was accepted.
+   */
+  policy_change_outcome: string | null;
 }
 
 export interface AttackerAddress {
@@ -120,6 +128,8 @@ export interface ReportSummary {
   unexpected: number[];
   /** Rounds whose Clawback was not seen within the wait. */
   clawback_missing: number[];
+  /** Rounds whose accepted Recovery Address redirect was not vetoed within the wait. */
+  veto_missing: number[];
   not_deployed: Category[];
   not_deployed_note: string | null;
   stopped_reason: string | null;

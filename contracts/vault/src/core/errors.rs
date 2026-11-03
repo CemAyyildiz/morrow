@@ -28,6 +28,10 @@ pub enum ErrorCode {
     InputIndex,
     SignerFailed,
     RefreshTooSoon,
+    ScriptBound,
+    ChangePending,
+    ChangeNotFound,
+    ChangeNotEffective,
 }
 
 impl ErrorCode {
@@ -59,6 +63,10 @@ impl ErrorCode {
             Self::InputIndex => "ERR_INPUT_INDEX",
             Self::SignerFailed => "ERR_SIGNER_FAILED",
             Self::RefreshTooSoon => "ERR_REFRESH_TOO_SOON",
+            Self::ScriptBound => "ERR_SCRIPT_BOUND",
+            Self::ChangePending => "ERR_CHANGE_PENDING",
+            Self::ChangeNotFound => "ERR_CHANGE_NOT_FOUND",
+            Self::ChangeNotEffective => "ERR_CHANGE_NOT_EFFECTIVE",
         }
     }
 }

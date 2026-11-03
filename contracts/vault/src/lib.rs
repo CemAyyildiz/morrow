@@ -7,7 +7,10 @@ pub mod events;
 use crate::core::address::p2wsh_address;
 use crate::core::address::{p2wsh_script_pubkey, script_pubkey};
 use crate::core::errors::{ErrorCode, Rejection};
-use crate::core::policy::{is_compressed_key, validate_policy, BtcNetwork, Policy};
+use crate::core::policy::{
+    is_compressed_key, parse_change, validate_policy, BtcNetwork, Policy, PolicyChange,
+    PolicyChangeState,
+};
 use crate::core::script::{
     build_vault_script, compress_derived_key, hex, parse_key, witness_templates, WitnessTemplate,
 };
@@ -20,7 +23,7 @@ use crate::core::tx::{
 };
 use crate::events::{record, EventView, StoredEvent, EVENTS_SINCE_MAX_LIMIT};
 use near_sdk::json_types::{U128, U64};
-use near_sdk::serde_json::json;
+use near_sdk::serde_json::{json, Value};
 use near_sdk::store::{LookupMap, Vector};
 use near_sdk::{
     env, near, AccountId, BorshStorageKey, Gas, NearToken, PanicOnDefault, Promise, PromiseError,
@@ -78,6 +81,7 @@ enum StorageKey {
     Reservations,
     VaultOps,
     ClawbackOutpoints,
+    Changes,
 }
 
 #[near(serializers = [borsh, json])]
@@ -109,6 +113,8 @@ pub struct Vault {
     /// Remaining storage deposit in yoctoNEAR.
     pub storage_balance: U128,
     pub created_at: U64,
+    /// The single pending Policy Change, if any. The Policy itself changes only on apply.
+    pub pending_change: Option<PolicyChange>,
 }
 
 #[near(serializers = [json])]
@@ -163,6 +169,9 @@ pub struct VaultContract {
     vault_ops: LookupMap<u64, Vec<u64>>,
     /// Outpoint key → the clawback op sweeping it.
     clawback_outpoints: LookupMap<String, u64>,
+    /// Every Policy Change ever proposed, so a settled id is found but never reactivated.
+    changes: LookupMap<u64, PolicyChange>,
+    next_change_id: u64,
 }
 
 fn reject(rejection: &Rejection) -> ! {
@@ -197,6 +206,8 @@ impl VaultContract {
             reservations: LookupMap::new(StorageKey::Reservations),
             vault_ops: LookupMap::new(StorageKey::VaultOps),
             clawback_outpoints: LookupMap::new(StorageKey::ClawbackOutpoints),
+            changes: LookupMap::new(StorageKey::Changes),
+            next_change_id: 1,
         }
     }
 
@@ -231,6 +242,7 @@ impl VaultContract {
             addresses: None,
             storage_balance: U128(deposit.as_yoctonear()),
             created_at: U64(env::block_timestamp()),
+            pending_change: None,
         };
         self.vaults.insert(vault_id, vault);
         self.emit(
@@ -806,6 +818,116 @@ impl VaultContract {
         self.flush_and_charge(op.vault_id.0, storage_before);
     }
 
+    /// Proposes a Policy Change. It waits in public for the current Policy Change Delay: any
+    /// Guardian can veto it, the Owner can withdraw it, and anyone can apply it after
+    /// `effective_at`. Only whitelisted fields can change; the rest are Script-bound.
+    pub fn propose_policy_change(
+        &mut self,
+        vault_id: U64,
+        changes: Value,
+        envelope: String,
+    ) -> U64 {
+        let storage_before = env::storage_usage();
+        let vault = self.owner_action(vault_id.0, Some(&envelope)).clone();
+        if vault.pending_change.is_some() {
+            fail(ErrorCode::ChangePending);
+        }
+        let fields = parse_change(&changes).unwrap_or_else(|r| reject(&r));
+        fields
+            .apply_to(&vault.policy)
+            .unwrap_or_else(|r| reject(&r));
+
+        let change_id = self.next_change_id;
+        self.next_change_id += 1;
+        let now = env::block_timestamp();
+        let effective_at = U64(now.saturating_add(vault.policy.policy_change_delay_ns.0));
+        let change = PolicyChange {
+            change_id: U64(change_id),
+            vault_id,
+            changes: fields,
+            proposed_at: U64(now),
+            effective_at,
+            state: PolicyChangeState::Pending,
+            vetoed_by: None,
+        };
+        self.changes.insert(change_id, change.clone());
+        if let Some(stored) = self.vaults.get_mut(&vault_id.0) {
+            stored.pending_change = Some(change);
+        }
+        self.emit(
+            vault_id.0,
+            "policy_change_proposed",
+            json!({
+                "change_id": U64(change_id),
+                "changes": changes,
+                "effective_at": effective_at,
+                "envelope": envelope,
+            }),
+        );
+        self.flush_and_charge(vault_id.0, storage_before);
+        U64(change_id)
+    }
+
+    /// Stops a pending Policy Change: any Guardian vetoes it, or the Owner withdraws it with an
+    /// envelope. A settled change can never be reactivated. Charged like a Clawback, so a
+    /// Guardian's veto never fails on storage.
+    pub fn veto_policy_change(&mut self, change_id: U64, envelope: Option<String>) {
+        let storage_before = env::storage_usage();
+        let change = self.pending_change(change_id);
+        let vault = self.active_vault(change.vault_id.0).clone();
+        let caller = env::predecessor_account_id();
+        let is_guardian = vault
+            .policy
+            .guardians
+            .iter()
+            .any(|g| g.guardian_account == caller);
+        if is_guardian {
+            self.settle_change(change, PolicyChangeState::Vetoed, Some(caller.clone()));
+            self.emit(
+                vault.vault_id.0,
+                "policy_change_vetoed",
+                json!({ "change_id": change_id, "by": caller }),
+            );
+        } else if caller == vault.owner_account {
+            check_envelope(envelope.as_deref()).unwrap_or_else(|r| reject(&r));
+            self.settle_change(change, PolicyChangeState::Withdrawn, None);
+            self.emit(
+                vault.vault_id.0,
+                "policy_change_withdrawn",
+                json!({ "change_id": change_id }),
+            );
+        } else {
+            fail(ErrorCode::Unauthorized);
+        }
+        self.flush_all();
+        self.charge_storage(vault.vault_id.0, storage_before);
+    }
+
+    /// Applies a pending Policy Change once `effective_at` has passed. Anyone may call it.
+    pub fn apply_policy_change(&mut self, change_id: U64) {
+        let storage_before = env::storage_usage();
+        let change = self.pending_change(change_id);
+        let vault_id = change.vault_id.0;
+        if env::block_timestamp() < change.effective_at.0 {
+            fail(ErrorCode::ChangeNotEffective);
+        }
+        let policy = change
+            .changes
+            .apply_to(&self.active_vault(vault_id).policy)
+            .unwrap_or_else(|r| reject(&r));
+        self.settle_change(change, PolicyChangeState::Applied, None);
+        if let Some(stored) = self.vaults.get_mut(&vault_id) {
+            stored.policy = policy;
+        }
+        self.emit(
+            vault_id,
+            "policy_change_applied",
+            json!({ "change_id": change_id }),
+        );
+        self.flush_all();
+        self.charge_storage(vault_id, storage_before);
+    }
+
     // Views
 
     pub fn get_op(&self, op_id: U64) -> SpendOp {
@@ -918,6 +1040,35 @@ impl VaultContract {
         vault
     }
 
+    /// A known Policy Change, on an active Vault, still pending.
+    fn pending_change(&self, change_id: U64) -> PolicyChange {
+        let change = self
+            .changes
+            .get(&change_id.0)
+            .cloned()
+            .unwrap_or_else(|| fail(ErrorCode::ChangeNotFound));
+        self.active_vault(change.vault_id.0);
+        if change.state != PolicyChangeState::Pending {
+            fail(ErrorCode::BadOpState);
+        }
+        change
+    }
+
+    /// Moves a pending change to its final state and clears it from its Vault.
+    fn settle_change(
+        &mut self,
+        mut change: PolicyChange,
+        state: PolicyChangeState,
+        vetoed_by: Option<AccountId>,
+    ) {
+        change.state = state;
+        change.vetoed_by = vetoed_by;
+        if let Some(vault) = self.vaults.get_mut(&change.vault_id.0) {
+            vault.pending_change = None;
+        }
+        self.changes.insert(change.change_id.0, change);
+    }
+
     fn check_unreserved(&self, utxos: &[Outpoint]) {
         for utxo in utxos {
             if let Some(holder) = self.reservations.get(&utxo.key()) {
@@ -963,6 +1114,7 @@ impl VaultContract {
         self.reservations.flush();
         self.vault_ops.flush();
         self.clawback_outpoints.flush();
+        self.changes.flush();
     }
 
     /// Flushes collections and charges the added storage to the Vault, failing when it is short.

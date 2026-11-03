@@ -4,9 +4,9 @@
  *
  * Each round follows one order:
  *   1. `pre`: refusals that need a live Vault and no op (each refused by the Policy, not by the
- *      Vault's state), then the two Owner-Key-only Bitcoin spends (while the Vault coin is still
- *      unspent and confirmed, so the node's rejection is the script's and BIP68's, not a mempool
- *      conflict with the Clawback);
+ *      Vault's state), the Recovery Address redirect the watcher must veto, then the two
+ *      Owner-Key-only Bitcoin spends (while the Vault coin is still unspent and confirmed, so the
+ *      node's rejection is the script's and BIP68's, not a mempool conflict with the Clawback);
  *   2. `request`: one Withdrawal Request of the full balance, which the watcher claws back;
  *   3. `window`: the attempts that race the Clawback, sent at once: signed with consecutive
  *      nonces from one `view_access_key` read and sent concurrently;
@@ -35,7 +35,7 @@ export interface CategoryInfo {
   story?: string;
 }
 
-/** In report order: the not-deployed ones come out as spend_allowance, policy_change. */
+/** In report order: the not-deployed one comes out as spend_allowance. */
 export const CATEGORIES: Record<Category, CategoryInfo> = {
   withdrawal_request: { method: "request_withdrawal", label: "Withdrawal Request" },
   early_execute: { method: "begin_execute", label: "Execute before the Delay" },
@@ -77,6 +77,7 @@ export const LIVE_METHODS: readonly string[] = [
   "begin_clawback",
   "top_up_storage",
   "refresh",
+  "propose_policy_change",
 ];
 
 /** Categories the live mix may send: Bitcoin spends always, contract calls when deployed. */
@@ -122,6 +123,7 @@ export type Move =
   | "allowance_over_limit"
   | "refresh_over_fee_cap"
   | "policy_change_script_bound"
+  | "policy_change_redirect_recovery"
   | "escape_early"
   | "no_cosigner"
   | "full_request"
@@ -153,8 +155,7 @@ const AFTER_CLAWBACK = ["ERR_CLAWED_BACK", "ERR_VAULT_NOT_ACTIVE"] as const;
 export const MOVES: Record<Move, MoveInfo> = {
   clawback_as_owner: { category: "clawback", phase: "pre", expected: ["ERR_UNAUTHORIZED"] },
   bad_envelope: { category: "withdrawal_request", phase: "pre", expected: ["ERR_BAD_ENVELOPE"] },
-  // Allowance and Policy Change are not deployed live yet: in the dry run the mock contract
-  // gives their Policy-level codes.
+  // The Allowance is not deployed live yet: in the dry run the mock contract gives its code.
   allowance_over_limit: {
     category: "spend_allowance",
     phase: "pre",
@@ -162,10 +163,20 @@ export const MOVES: Record<Move, MoveInfo> = {
   },
   // Refused by the Fee Cap on the live contract (Story 4.1) and in the dry run's mock alike.
   refresh_over_fee_cap: { category: "refresh", phase: "pre", expected: ["ERR_FEE_TOO_HIGH"] },
+  // ERR_CHANGE_PENDING: another visitor's change is pending (the contract checks that first).
   policy_change_script_bound: {
     category: "policy_change",
     phase: "pre",
-    expected: ["ERR_SCRIPT_BOUND"],
+    expected: ["ERR_SCRIPT_BOUND", "ERR_CHANGE_PENDING"],
+  },
+  // TH-12: a thief with the Owner Account rewrites the Recovery Address and waits. The contract
+  // takes the proposal; the run then waits for the watcher's veto (still pending or applied at
+  // the wait's end fails the run). Another visitor's pending change, or short storage under
+  // spam, are refusals, never a risk.
+  policy_change_redirect_recovery: {
+    category: "policy_change",
+    phase: "pre",
+    expected: ["accepted", "ERR_CHANGE_PENDING", "ERR_STORAGE_BUDGET"],
   },
   escape_early: { category: "bitcoin_escape", phase: "pre", expected: ["rejected"] },
   no_cosigner: { category: "bitcoin_no_cosigner", phase: "pre", expected: ["rejected"] },
@@ -219,6 +230,7 @@ const SCRIPT: readonly Move[] = [
   "allowance_over_limit",
   "refresh_over_fee_cap",
   "policy_change_script_bound",
+  "policy_change_redirect_recovery",
   "escape_early",
   "no_cosigner",
   "full_request",

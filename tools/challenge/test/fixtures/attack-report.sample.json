@@ -1,6 +1,6 @@
 {
   "header": {
-    "tool_commit": "91d3dda8e09876ddb5a75c367a348684e23914ee",
+    "tool_commit": "0af246657d956adb78a5ebd27398c64a4dc19a7c",
     "tool_dirty": true,
     "seed": 7,
     "network": "mock",
@@ -25,12 +25,14 @@
       "funding_txid": "abababababababababababababababababababababababababababababababab",
       "balance_before_sats": 100000,
       "balance_after_sats": 100000,
-      "request_tx_hash": "0000000000000000000000000000000000000000000000000000000000000006",
+      "request_tx_hash": "0000000000000000000000000000000000000000000000000000000000000007",
       "request_op_id": "1",
       "clawback_seen": true,
       "clawback_op_id": "2",
       "clawback_txid": null,
-      "clawback_broadcast": false
+      "clawback_broadcast": false,
+      "policy_change_id": "1",
+      "policy_change_outcome": "vetoed"
     },
     {
       "round": 2,
@@ -40,12 +42,14 @@
       "funding_txid": "abababababababababababababababababababababababababababababababab",
       "balance_before_sats": 100000,
       "balance_after_sats": 100000,
-      "request_tx_hash": "0000000000000000000000000000000000000000000000000000000000000026",
+      "request_tx_hash": "0000000000000000000000000000000000000000000000000000000000000027",
       "request_op_id": "3",
       "clawback_seen": true,
       "clawback_op_id": "4",
       "clawback_txid": null,
-      "clawback_broadcast": false
+      "clawback_broadcast": false,
+      "policy_change_id": "2",
+      "policy_change_outcome": "vetoed"
     },
     {
       "round": 3,
@@ -55,12 +59,14 @@
       "funding_txid": "abababababababababababababababababababababababababababababababab",
       "balance_before_sats": 100000,
       "balance_after_sats": 100000,
-      "request_tx_hash": "0000000000000000000000000000000000000000000000000000000000000045",
+      "request_tx_hash": "0000000000000000000000000000000000000000000000000000000000000046",
       "request_op_id": "5",
       "clawback_seen": true,
       "clawback_op_id": "6",
       "clawback_txid": null,
-      "clawback_broadcast": false
+      "clawback_broadcast": false,
+      "policy_change_id": "3",
+      "policy_change_outcome": "vetoed"
     }
   ],
   "attempts": [
@@ -208,7 +214,7 @@
         "envelope": "cc5c673c9b518642e725def758eef6d8ceebfc4cba9dca1b010a55eb3aeb4f21718bc4f6aef7e5b522f72803428a840d5210c5281e9c76d8988bf1ab0338e54fc5c5dddfe7e9b08b7404e781d5db115e"
       },
       "args_sha256": "61c33cf853697effe5c6b759a7c939d2d6edebb56332717bcdc44421fa4cd9d2",
-      "expected": ["ERR_SCRIPT_BOUND"],
+      "expected": ["ERR_SCRIPT_BOUND", "ERR_CHANGE_PENDING"],
       "actual": "ERR_SCRIPT_BOUND",
       "actual_class": "refused",
       "expected_match": true,
@@ -224,6 +230,33 @@
     },
     {
       "id": 6,
+      "round": 1,
+      "category": "policy_change",
+      "method": "propose_policy_change",
+      "args": {
+        "vault_id": "1",
+        "changes": {
+          "recovery_address": "tb1qjmnpywxcwan7g4qn0s226es3zgu0rfy7qmt2k7"
+        },
+        "envelope": "ac324012f8364f653dbc82f9377ba726a0a686f6ebe72ca65e4331f131199d76963b8d7c70cbcede385f2e08835485a8b9886b5824ca336533c68f287ee263be81e967de89cd2ffddd5531d4ac8dff8d"
+      },
+      "args_sha256": "675207c4f9ec2b448c34dc8e8f370d7208b72db3aa5ab9b8a78fa7c5b16ddc0f",
+      "expected": ["accepted", "ERR_CHANGE_PENDING", "ERR_STORAGE_BUDGET"],
+      "actual": "accepted",
+      "actual_class": "accepted",
+      "expected_match": true,
+      "unexpected": false,
+      "window_result": null,
+      "tx_hash": "0000000000000000000000000000000000000000000000000000000000000006",
+      "explorer": null,
+      "op_id": "1",
+      "vault_id": "1",
+      "log_entry": 6,
+      "off_log": null,
+      "note": null
+    },
+    {
+      "id": 7,
       "round": 1,
       "category": "bitcoin_escape",
       "method": null,
@@ -244,7 +277,7 @@
       "note": "mock Vault kit: no script to spend"
     },
     {
-      "id": 7,
+      "id": 8,
       "round": 1,
       "category": "bitcoin_no_cosigner",
       "method": null,
@@ -265,89 +298,7 @@
       "note": "mock Vault kit: no script to spend"
     },
     {
-      "id": 8,
-      "round": 1,
-      "category": "withdrawal_request",
-      "method": "request_withdrawal",
-      "args": {
-        "vault_id": "1",
-        "amount_sats": "99380",
-        "destination": "tb1qjmnpywxcwan7g4qn0s226es3zgu0rfy7qmt2k7",
-        "fee_rate_sat_vb": 2,
-        "utxos": [
-          {
-            "txid": "abababababababababababababababababababababababababababababababab",
-            "vout": 0,
-            "value_sats": "100000"
-          }
-        ],
-        "envelope": "ac324012f8364f653dbc82f9377ba726a0a686f6ebe72ca65e4331f131199d76963b8d7c70cbcede385f2e08835485a8b9886b5824ca336533c68f287ee263be81e967de89cd2ffddd5531d4ac8dff8d"
-      },
-      "args_sha256": "a13dde3da4a564af8cedd77ed73855895f2a3da7e959d5df4bca7af24275d7b5",
-      "expected": ["accepted", "ERR_OUTPOINT_RESERVED", "ERR_CLAWED_BACK", "ERR_STORAGE_BUDGET"],
-      "actual": "accepted",
-      "actual_class": "accepted",
-      "expected_match": true,
-      "unexpected": false,
-      "window_result": null,
-      "tx_hash": "0000000000000000000000000000000000000000000000000000000000000006",
-      "explorer": null,
-      "op_id": "1",
-      "vault_id": "1",
-      "log_entry": 6,
-      "off_log": null,
-      "note": null
-    },
-    {
       "id": 9,
-      "round": 1,
-      "category": "early_execute",
-      "method": "begin_execute",
-      "args": {
-        "op_id": "1",
-        "envelope": "aeb6b7c7dbb70a1ed199efc5bcf2b46855a145716a8be4388213346de10dbe76189e76f78eaad8f61faf486fad18b8a87b8af75b12635ea4f349ecca646e2c8ba9ca33a9af34cf45b8bf9a373bd4774a"
-      },
-      "args_sha256": "61936c64048edd116d4083c2ff11966335f509387f92c74614f44e43d7e2ec2d",
-      "expected": ["ERR_NOT_EXECUTABLE", "ERR_CLAWED_BACK"],
-      "actual": "ERR_NOT_EXECUTABLE",
-      "actual_class": "refused",
-      "expected_match": true,
-      "unexpected": false,
-      "window_result": "own_code",
-      "tx_hash": "0000000000000000000000000000000000000000000000000000000000000007",
-      "explorer": null,
-      "op_id": null,
-      "vault_id": null,
-      "log_entry": 7,
-      "off_log": null,
-      "note": null
-    },
-    {
-      "id": 10,
-      "round": 1,
-      "category": "co_sign",
-      "method": "sign_input",
-      "args": {
-        "op_id": "1",
-        "input_index": 0
-      },
-      "args_sha256": "05405531ea6e1857ddafc4bb6c7824096e2b9051bad9a808d7992c24f4b2087d",
-      "expected": ["ERR_BAD_OP_STATE", "ERR_CLAWED_BACK"],
-      "actual": "ERR_BAD_OP_STATE",
-      "actual_class": "refused",
-      "expected_match": true,
-      "unexpected": false,
-      "window_result": "own_code",
-      "tx_hash": "0000000000000000000000000000000000000000000000000000000000000008",
-      "explorer": null,
-      "op_id": null,
-      "vault_id": null,
-      "log_entry": 8,
-      "off_log": null,
-      "note": null
-    },
-    {
-      "id": 11,
       "round": 1,
       "category": "withdrawal_request",
       "method": "request_withdrawal",
@@ -363,11 +314,59 @@
             "value_sats": "100000"
           }
         ],
+        "envelope": "aeb6b7c7dbb70a1ed199efc5bcf2b46855a145716a8be4388213346de10dbe76189e76f78eaad8f61faf486fad18b8a87b8af75b12635ea4f349ecca646e2c8ba9ca33a9af34cf45b8bf9a373bd4774a"
+      },
+      "args_sha256": "e35867ae12aac824502cefd21765b712054a69c3edc7a113b4683f63b321caf4",
+      "expected": ["accepted", "ERR_OUTPOINT_RESERVED", "ERR_CLAWED_BACK", "ERR_STORAGE_BUDGET"],
+      "actual": "accepted",
+      "actual_class": "accepted",
+      "expected_match": true,
+      "unexpected": false,
+      "window_result": null,
+      "tx_hash": "0000000000000000000000000000000000000000000000000000000000000007",
+      "explorer": null,
+      "op_id": "1",
+      "vault_id": "1",
+      "log_entry": 7,
+      "off_log": null,
+      "note": null
+    },
+    {
+      "id": 10,
+      "round": 1,
+      "category": "early_execute",
+      "method": "begin_execute",
+      "args": {
+        "op_id": "1",
         "envelope": "82ace2afb9a85c50041100d15419e2fd903c7113ff8e806ec0b96f320e0243612a91f10e0b3afe8804c4e2e38f665a7b245603b700502e1cab0259708046617f6307bd028ff1e40219d7d329205cbd24"
       },
-      "args_sha256": "523893d2f0f81238bf0588c9b0bc4a18182e0c8942d526eb438f8c3fce0195a8",
-      "expected": ["ERR_OUTPOINT_RESERVED", "ERR_CLAWED_BACK"],
-      "actual": "ERR_OUTPOINT_RESERVED",
+      "args_sha256": "1a1a176afdf6c1454dd5a490129f1917421d09ea494b4c09b48235905d84b94e",
+      "expected": ["ERR_NOT_EXECUTABLE", "ERR_CLAWED_BACK"],
+      "actual": "ERR_NOT_EXECUTABLE",
+      "actual_class": "refused",
+      "expected_match": true,
+      "unexpected": false,
+      "window_result": "own_code",
+      "tx_hash": "0000000000000000000000000000000000000000000000000000000000000008",
+      "explorer": null,
+      "op_id": null,
+      "vault_id": null,
+      "log_entry": 8,
+      "off_log": null,
+      "note": null
+    },
+    {
+      "id": 11,
+      "round": 1,
+      "category": "co_sign",
+      "method": "sign_input",
+      "args": {
+        "op_id": "1",
+        "input_index": 0
+      },
+      "args_sha256": "05405531ea6e1857ddafc4bb6c7824096e2b9051bad9a808d7992c24f4b2087d",
+      "expected": ["ERR_BAD_OP_STATE", "ERR_CLAWED_BACK"],
+      "actual": "ERR_BAD_OP_STATE",
       "actual_class": "refused",
       "expected_match": true,
       "unexpected": false,
@@ -400,12 +399,12 @@
         "envelope": "e3d5d61325ad517b8e36756c699485a75f92df55cb3e02ed5b030065a360aa696f32b79d3fe5f773a9af7da87af94c13a8c880b875c9e0e7402f6f19cb57ac67c4d5ef17b72f85e8be38287535bebe0a"
       },
       "args_sha256": "656243e3475ec94fb5423f91ded9aaca282e30fd48eda27aa559a4b753b9e14c",
-      "expected": ["ERR_CLAWED_BACK", "ERR_VAULT_NOT_ACTIVE"],
-      "actual": "ERR_CLAWED_BACK",
+      "expected": ["ERR_OUTPOINT_RESERVED", "ERR_CLAWED_BACK"],
+      "actual": "ERR_OUTPOINT_RESERVED",
       "actual_class": "refused",
       "expected_match": true,
       "unexpected": false,
-      "window_result": null,
+      "window_result": "own_code",
       "tx_hash": "000000000000000000000000000000000000000000000000000000000000000a",
       "explorer": null,
       "op_id": null,
@@ -451,6 +450,40 @@
     {
       "id": 14,
       "round": 1,
+      "category": "withdrawal_request",
+      "method": "request_withdrawal",
+      "args": {
+        "vault_id": "1",
+        "amount_sats": "99380",
+        "destination": "tb1qlr4qzz5t3mje00sm3a7ruvduyy6c0tlz6wdu67",
+        "fee_rate_sat_vb": 2,
+        "utxos": [
+          {
+            "txid": "abababababababababababababababababababababababababababababababab",
+            "vout": 0,
+            "value_sats": "100000"
+          }
+        ],
+        "envelope": "d3bebd52dd5e3ce1f3135338f59965477372278aef5c6c108a2119226487d516b7a52b0efcb8ac57a84e9425b7cee4d0694d1b7221681bfe2dbffb944692f2577cd2bdde9402eeacb81a9d64eb5adda0"
+      },
+      "args_sha256": "a828b7e654fce89aea98cfb1d579ae46b7fa2c1347cce22d9ca96d3d055caa3c",
+      "expected": ["ERR_CLAWED_BACK", "ERR_VAULT_NOT_ACTIVE"],
+      "actual": "ERR_CLAWED_BACK",
+      "actual_class": "refused",
+      "expected_match": true,
+      "unexpected": false,
+      "window_result": null,
+      "tx_hash": "000000000000000000000000000000000000000000000000000000000000000c",
+      "explorer": null,
+      "op_id": null,
+      "vault_id": null,
+      "log_entry": 12,
+      "off_log": null,
+      "note": null
+    },
+    {
+      "id": 15,
+      "round": 1,
       "category": "storage",
       "method": "top_up_storage",
       "args": {
@@ -463,7 +496,7 @@
       "expected_match": true,
       "unexpected": false,
       "window_result": null,
-      "tx_hash": "000000000000000000000000000000000000000000000000000000000000000c",
+      "tx_hash": "000000000000000000000000000000000000000000000000000000000000000d",
       "explorer": null,
       "op_id": null,
       "vault_id": null,
@@ -472,46 +505,14 @@
       "note": null
     },
     {
-      "id": 15,
+      "id": 16,
       "round": 1,
       "category": "spend_allowance",
       "method": "spend_allowance",
       "args": {
         "vault_id": "1",
         "amount_sats": "1000",
-        "destination": "tb1qlr4qzz5t3mje00sm3a7ruvduyy6c0tlz6wdu67",
-        "fee_rate_sat_vb": 2,
-        "utxos": [
-          {
-            "txid": "abababababababababababababababababababababababababababababababab",
-            "vout": 0,
-            "value_sats": "100000"
-          }
-        ],
-        "envelope": "d3bebd52dd5e3ce1f3135338f59965477372278aef5c6c108a2119226487d516b7a52b0efcb8ac57a84e9425b7cee4d0694d1b7221681bfe2dbffb944692f2577cd2bdde9402eeacb81a9d64eb5adda0"
-      },
-      "args_sha256": "0adbf9bb3f2b452752027c1a3f8c67e2e26014a1510cf94b9d8be63a0804725f",
-      "expected": ["ERR_CLAWED_BACK", "ERR_VAULT_NOT_ACTIVE"],
-      "actual": "ERR_CLAWED_BACK",
-      "actual_class": "refused",
-      "expected_match": true,
-      "unexpected": false,
-      "window_result": null,
-      "tx_hash": "000000000000000000000000000000000000000000000000000000000000000d",
-      "explorer": null,
-      "op_id": null,
-      "vault_id": null,
-      "log_entry": 12,
-      "off_log": null,
-      "note": null
-    },
-    {
-      "id": 16,
-      "round": 1,
-      "category": "refresh",
-      "method": "refresh",
-      "args": {
-        "vault_id": "1",
+        "destination": "tb1q9y9d85rquhy0j67eydr06qvchjmn3jgct7us3m",
         "fee_rate_sat_vb": 2,
         "utxos": [
           {
@@ -522,7 +523,7 @@
         ],
         "envelope": "b6d27b3abd90f8c169ba8032b21241b4406786c052f00ea0fc3a9b53a8d41b6f1f7ae70c90ab7f71f448b162609f5b63bd0c9d0e3f96f2533b87e73e9b1eff45252cf620853d000a5e919f632070b464"
       },
-      "args_sha256": "882001c66afe975dfe203e6a138a7e8bcd1c377796f54afedbfe51b5fc597395",
+      "args_sha256": "baad02e4f7e2af5a5629fe35b07df91c053cdd18db24fae7b409325a9537ec70",
       "expected": ["ERR_CLAWED_BACK", "ERR_VAULT_NOT_ACTIVE"],
       "actual": "ERR_CLAWED_BACK",
       "actual_class": "refused",
@@ -540,13 +541,21 @@
     {
       "id": 17,
       "round": 1,
-      "category": "co_sign",
-      "method": "sign_input",
+      "category": "refresh",
+      "method": "refresh",
       "args": {
-        "op_id": "1",
-        "input_index": 0
+        "vault_id": "1",
+        "fee_rate_sat_vb": 2,
+        "utxos": [
+          {
+            "txid": "abababababababababababababababababababababababababababababababab",
+            "vout": 0,
+            "value_sats": "100000"
+          }
+        ],
+        "envelope": "55307364adc189dda97e1ccd84ec446f2dd401c32150ddaf807cee44cbd016021bb9ffcc2fd46991c52487a132bd5195a2d7ec555c7a8e6c38c7a7f6ddb82a2057d9ca267d0e7b225f0d732b7b02babf"
       },
-      "args_sha256": "05405531ea6e1857ddafc4bb6c7824096e2b9051bad9a808d7992c24f4b2087d",
+      "args_sha256": "99326aba0a7da21031b5e5a329c6aacfd89699ced2cf71c0f587745f80a9cb2a",
       "expected": ["ERR_CLAWED_BACK", "ERR_VAULT_NOT_ACTIVE"],
       "actual": "ERR_CLAWED_BACK",
       "actual_class": "refused",
@@ -588,13 +597,13 @@
     {
       "id": 19,
       "round": 1,
-      "category": "early_execute",
-      "method": "begin_execute",
+      "category": "co_sign",
+      "method": "sign_input",
       "args": {
         "op_id": "1",
-        "envelope": "55307364adc189dda97e1ccd84ec446f2dd401c32150ddaf807cee44cbd016021bb9ffcc2fd46991c52487a132bd5195a2d7ec555c7a8e6c38c7a7f6ddb82a2057d9ca267d0e7b225f0d732b7b02babf"
+        "input_index": 0
       },
-      "args_sha256": "7156b89bf03811e2def258a49a3a7480035f16307c2dcaba27d2f50650dcdfe5",
+      "args_sha256": "05405531ea6e1857ddafc4bb6c7824096e2b9051bad9a808d7992c24f4b2087d",
       "expected": ["ERR_CLAWED_BACK", "ERR_VAULT_NOT_ACTIVE"],
       "actual": "ERR_CLAWED_BACK",
       "actual_class": "refused",
@@ -612,21 +621,13 @@
     {
       "id": 20,
       "round": 1,
-      "category": "refresh",
-      "method": "refresh",
+      "category": "early_execute",
+      "method": "begin_execute",
       "args": {
-        "vault_id": "1",
-        "fee_rate_sat_vb": 2,
-        "utxos": [
-          {
-            "txid": "abababababababababababababababababababababababababababababababab",
-            "vout": 0,
-            "value_sats": "100000"
-          }
-        ],
+        "op_id": "1",
         "envelope": "b538e9ddd9ab1f6918fc56970d85ec67480728aa2d1ae5ffe3ebf3f44a11d24682c7cbe364fdf06a47636de6f6e5bf1738d802c108af66254860781c7eb70afbc8a6930e885623793ca6c7912978d063"
       },
-      "args_sha256": "8c2df023e4626244ca246607df4d56ccea7924e2b3f987efdb59e598dd74afe2",
+      "args_sha256": "dca0bb15410e6bd93dc4d7de1f7aac064737ee5591406ecee20fa4d4c30e12aa",
       "expected": ["ERR_CLAWED_BACK", "ERR_VAULT_NOT_ACTIVE"],
       "actual": "ERR_CLAWED_BACK",
       "actual_class": "refused",
@@ -644,12 +645,10 @@
     {
       "id": 21,
       "round": 1,
-      "category": "spend_allowance",
-      "method": "spend_allowance",
+      "category": "refresh",
+      "method": "refresh",
       "args": {
         "vault_id": "1",
-        "amount_sats": "1000",
-        "destination": "tb1q9y9d85rquhy0j67eydr06qvchjmn3jgct7us3m",
         "fee_rate_sat_vb": 2,
         "utxos": [
           {
@@ -660,7 +659,7 @@
         ],
         "envelope": "685254a5210ecdee0b21b283c09aca22aa91388279144395b99ac9177f6a3d57011a5bf941c05e940aad647b69b05ded65cd821f389a80071f2415138ede82a492fbac954d8435f65d27b0edcbbe9fb6"
       },
-      "args_sha256": "b29fbc28a7211b6e30bd02cd726d9a3415f05ed7deec5a015db1615dabf998b3",
+      "args_sha256": "83f92aa11b857edac355b2f1a53955cb6f9b2d3d27dc5cd574da146a40d587d0",
       "expected": ["ERR_CLAWED_BACK", "ERR_VAULT_NOT_ACTIVE"],
       "actual": "ERR_CLAWED_BACK",
       "actual_class": "refused",
@@ -678,13 +677,23 @@
     {
       "id": 22,
       "round": 1,
-      "category": "early_execute",
-      "method": "begin_execute",
+      "category": "spend_allowance",
+      "method": "spend_allowance",
       "args": {
-        "op_id": "1",
+        "vault_id": "1",
+        "amount_sats": "1000",
+        "destination": "tb1qsdxxeju2up83qp6lpzfs32ut58epuhyzfu67ea",
+        "fee_rate_sat_vb": 2,
+        "utxos": [
+          {
+            "txid": "abababababababababababababababababababababababababababababababab",
+            "vout": 0,
+            "value_sats": "100000"
+          }
+        ],
         "envelope": "5be628355d89c8ad836c78209b73f74d71e9276989b5aa431225d4be4ef069643ab0ecf75299729b5ad9b7300e403c2b3db7e07e56adcbc5ae843cf2b2e14c62022bfe20ec25e94d0cafeebe4b9a623f"
       },
-      "args_sha256": "6c52bc9807daf11801d1dc58305e2e60a3ce92dc7524eb8b7ec25f0ebaa00954",
+      "args_sha256": "f724ebc135dff7914efc7e7e6c5add8981b5552a1bf20e7333f3265b73ecef1a",
       "expected": ["ERR_CLAWED_BACK", "ERR_VAULT_NOT_ACTIVE"],
       "actual": "ERR_CLAWED_BACK",
       "actual_class": "refused",
@@ -702,23 +711,13 @@
     {
       "id": 23,
       "round": 1,
-      "category": "withdrawal_request",
-      "method": "request_withdrawal",
+      "category": "early_execute",
+      "method": "begin_execute",
       "args": {
-        "vault_id": "1",
-        "amount_sats": "99380",
-        "destination": "tb1qsdxxeju2up83qp6lpzfs32ut58epuhyzfu67ea",
-        "fee_rate_sat_vb": 2,
-        "utxos": [
-          {
-            "txid": "abababababababababababababababababababababababababababababababab",
-            "vout": 0,
-            "value_sats": "100000"
-          }
-        ],
+        "op_id": "1",
         "envelope": "954f47ec6cadf610b2e536e68ede9eef3f830eda5753cf2509348bea5f44f27f506f0ec135a10701cbcd07a87812f9f1752a04025efc1cd160f9b99b9e46522e76a537679e00159ff1a700016bccd284"
       },
-      "args_sha256": "5ba075c36342735e29a66b18daf640aab5e3e5e4bdf7c1acd2fe09b3dd695264",
+      "args_sha256": "4c8f0c2d94e6ee4731681b2511b4956b47c913775fa52024583e74e4578d304e",
       "expected": ["ERR_CLAWED_BACK", "ERR_VAULT_NOT_ACTIVE"],
       "actual": "ERR_CLAWED_BACK",
       "actual_class": "refused",
@@ -736,11 +735,11 @@
     {
       "id": 24,
       "round": 1,
-      "category": "spend_allowance",
-      "method": "spend_allowance",
+      "category": "withdrawal_request",
+      "method": "request_withdrawal",
       "args": {
         "vault_id": "1",
-        "amount_sats": "1000",
+        "amount_sats": "99380",
         "destination": "tb1qe5qs7z6l8sz72w8v8kyxx8wtf7xe2gne8culea",
         "fee_rate_sat_vb": 2,
         "utxos": [
@@ -752,7 +751,7 @@
         ],
         "envelope": "aa3c077d75ad9a9608429b3e400cc35d74f1c01079ba01450cf17b49db5c317e1144bd63dfebe4aa0ab05dc4d9e6952018bf215952516a4f8313f5792187bfa8168747a22ebd98f55702466926ec62b8"
       },
-      "args_sha256": "4af8aae108ba7f75c75121959815299478e0de5c06485cdc86b6c5884142da59",
+      "args_sha256": "6ca19b339a25125dbe3322ab361527d0875b29f6c690eaad127c1056782c7b39",
       "expected": ["ERR_CLAWED_BACK", "ERR_VAULT_NOT_ACTIVE"],
       "actual": "ERR_CLAWED_BACK",
       "actual_class": "refused",
@@ -770,10 +769,12 @@
     {
       "id": 25,
       "round": 1,
-      "category": "refresh",
-      "method": "refresh",
+      "category": "spend_allowance",
+      "method": "spend_allowance",
       "args": {
         "vault_id": "1",
+        "amount_sats": "1000",
+        "destination": "tb1qa4u4l4sf5ggca8wtej2r3yf2cg7mjxl5qglxyu",
         "fee_rate_sat_vb": 2,
         "utxos": [
           {
@@ -784,7 +785,7 @@
         ],
         "envelope": "d33819b82442f9b334ffadcde3f75c64d8c2a4c912cda7c35ac5d3903b763a3df02c807603d7fe575715eec8d46c3da6804819b2459069303f564c414d8dd9164a198d90e2b62bd13cabc1a1c3f27d59"
       },
-      "args_sha256": "e876d300c06c34c8d75f715aa0a5083cb5640ec358c572414d9855baecfe949b",
+      "args_sha256": "410d1288a741f94b9b5a93fadac0f80348c6cf1df1923c8072e3869145742a41",
       "expected": ["ERR_CLAWED_BACK", "ERR_VAULT_NOT_ACTIVE"],
       "actual": "ERR_CLAWED_BACK",
       "actual_class": "refused",
@@ -802,13 +803,21 @@
     {
       "id": 26,
       "round": 1,
-      "category": "early_execute",
-      "method": "begin_execute",
+      "category": "refresh",
+      "method": "refresh",
       "args": {
-        "op_id": "1",
+        "vault_id": "1",
+        "fee_rate_sat_vb": 2,
+        "utxos": [
+          {
+            "txid": "abababababababababababababababababababababababababababababababab",
+            "vout": 0,
+            "value_sats": "100000"
+          }
+        ],
         "envelope": "e27f7f93e765e82efdc8718788dba8478e3c1d0016a735893cfe54faf789cf57d49ac319ac7a325b4f2417e760c32630c95111c0ba1c8a8277f943deb2e33c47d0cf7119bb36614d2ead623c19dba9a4"
       },
-      "args_sha256": "f86d3c7c1715b58af18affc026604b893ea1eda02098571a8ae0d81fec59908d",
+      "args_sha256": "480fc0937cae52c615023036468dd71718a3972ad37a86d435c688f0d97191e8",
       "expected": ["ERR_CLAWED_BACK", "ERR_VAULT_NOT_ACTIVE"],
       "actual": "ERR_CLAWED_BACK",
       "actual_class": "refused",
@@ -826,13 +835,13 @@
     {
       "id": 27,
       "round": 1,
-      "category": "co_sign",
-      "method": "sign_input",
+      "category": "early_execute",
+      "method": "begin_execute",
       "args": {
         "op_id": "1",
-        "input_index": 0
+        "envelope": "5a071b7af073834ea91e25774639ac6a85bd95a5ae574db649c6e8f5dfbd7a1d56cda5c6c496255464594ad21154e889b88e22acd53c482e7de21af4bdf4b87082afeea15679c7b03d22a7e710e42583"
       },
-      "args_sha256": "05405531ea6e1857ddafc4bb6c7824096e2b9051bad9a808d7992c24f4b2087d",
+      "args_sha256": "49b0d834751088a6b91de5ae1c1051771d2c7da931bd44e634628abe224f0d2a",
       "expected": ["ERR_CLAWED_BACK", "ERR_VAULT_NOT_ACTIVE"],
       "actual": "ERR_CLAWED_BACK",
       "actual_class": "refused",
@@ -850,13 +859,13 @@
     {
       "id": 28,
       "round": 1,
-      "category": "early_execute",
-      "method": "begin_execute",
+      "category": "co_sign",
+      "method": "sign_input",
       "args": {
         "op_id": "1",
-        "envelope": "5a071b7af073834ea91e25774639ac6a85bd95a5ae574db649c6e8f5dfbd7a1d56cda5c6c496255464594ad21154e889b88e22acd53c482e7de21af4bdf4b87082afeea15679c7b03d22a7e710e42583"
+        "input_index": 0
       },
-      "args_sha256": "49b0d834751088a6b91de5ae1c1051771d2c7da931bd44e634628abe224f0d2a",
+      "args_sha256": "05405531ea6e1857ddafc4bb6c7824096e2b9051bad9a808d7992c24f4b2087d",
       "expected": ["ERR_CLAWED_BACK", "ERR_VAULT_NOT_ACTIVE"],
       "actual": "ERR_CLAWED_BACK",
       "actual_class": "refused",
@@ -874,21 +883,13 @@
     {
       "id": 29,
       "round": 1,
-      "category": "refresh",
-      "method": "refresh",
+      "category": "early_execute",
+      "method": "begin_execute",
       "args": {
-        "vault_id": "1",
-        "fee_rate_sat_vb": 2,
-        "utxos": [
-          {
-            "txid": "abababababababababababababababababababababababababababababababab",
-            "vout": 0,
-            "value_sats": "100000"
-          }
-        ],
+        "op_id": "1",
         "envelope": "e4eae7157cf0b9324f4cf0d51b25843bb95c71d0b05a72160f4b6b850e69401aa2016aa0308fc7126685315421b34b5eb03eeb335011633e711e828afa066c1f0601f198c95ced9284c3adbd2a35c3be"
       },
-      "args_sha256": "7fa3f82e9ad47e9504a1cadb1c04ac9494e172a4d2f4bae5a4a7b4d8593da983",
+      "args_sha256": "5c5ada04ee4dc4c8bb29331489fdcc6d2fb50afef07152ce0a77bd69cdd9358c",
       "expected": ["ERR_CLAWED_BACK", "ERR_VAULT_NOT_ACTIVE"],
       "actual": "ERR_CLAWED_BACK",
       "actual_class": "refused",
@@ -906,13 +907,21 @@
     {
       "id": 30,
       "round": 1,
-      "category": "early_execute",
-      "method": "begin_execute",
+      "category": "refresh",
+      "method": "refresh",
       "args": {
-        "op_id": "1",
+        "vault_id": "1",
+        "fee_rate_sat_vb": 2,
+        "utxos": [
+          {
+            "txid": "abababababababababababababababababababababababababababababababab",
+            "vout": 0,
+            "value_sats": "100000"
+          }
+        ],
         "envelope": "231b795919574568467c5aea482aff73b79354462ab415dac6150c153375b25b4fa45bb99a47862359f811f261073f68593b803d1e376633c8b83c7acd668c788f3b3bed8e9e010416ad99daf78b919f"
       },
-      "args_sha256": "c021a3ad51958302d73a0dd17edcf7cfa5bcb4d74b1547bf642b2f77cb947d27",
+      "args_sha256": "a5972e1266ac720a304c1296d2ea44923af879642c2badd4a4f9ec7d473cf1fc",
       "expected": ["ERR_CLAWED_BACK", "ERR_VAULT_NOT_ACTIVE"],
       "actual": "ERR_CLAWED_BACK",
       "actual_class": "refused",
@@ -930,29 +939,6 @@
     {
       "id": 31,
       "round": 1,
-      "category": "storage",
-      "method": "top_up_storage",
-      "args": {
-        "vault_id": "1"
-      },
-      "args_sha256": "39cf4ceb0db8d10ee2a3d440591a5bac8a4fbb752e08d4f1594a13df36f4b11d",
-      "expected": ["harmless"],
-      "actual": "allowed_harmless",
-      "actual_class": "allowed_harmless",
-      "expected_match": true,
-      "unexpected": false,
-      "window_result": null,
-      "tx_hash": "000000000000000000000000000000000000000000000000000000000000001d",
-      "explorer": null,
-      "op_id": null,
-      "vault_id": null,
-      "log_entry": null,
-      "off_log": null,
-      "note": null
-    },
-    {
-      "id": 32,
-      "round": 1,
       "category": "early_execute",
       "method": "begin_execute",
       "args": {
@@ -966,7 +952,7 @@
       "expected_match": true,
       "unexpected": false,
       "window_result": null,
-      "tx_hash": "000000000000000000000000000000000000000000000000000000000000001e",
+      "tx_hash": "000000000000000000000000000000000000000000000000000000000000001d",
       "explorer": null,
       "op_id": null,
       "vault_id": null,
@@ -975,18 +961,38 @@
       "note": null
     },
     {
+      "id": 32,
+      "round": 1,
+      "category": "storage",
+      "method": "top_up_storage",
+      "args": {
+        "vault_id": "1"
+      },
+      "args_sha256": "39cf4ceb0db8d10ee2a3d440591a5bac8a4fbb752e08d4f1594a13df36f4b11d",
+      "expected": ["harmless"],
+      "actual": "allowed_harmless",
+      "actual_class": "allowed_harmless",
+      "expected_match": true,
+      "unexpected": false,
+      "window_result": null,
+      "tx_hash": "000000000000000000000000000000000000000000000000000000000000001e",
+      "explorer": null,
+      "op_id": null,
+      "vault_id": null,
+      "log_entry": null,
+      "off_log": null,
+      "note": null
+    },
+    {
       "id": 33,
       "round": 1,
-      "category": "policy_change",
-      "method": "propose_policy_change",
+      "category": "early_execute",
+      "method": "begin_execute",
       "args": {
-        "vault_id": "1",
-        "changes": {
-          "fee_cap_sats": "20000"
-        },
+        "op_id": "1",
         "envelope": "f3c75913b0f6548dd782613758fcacdd25023b60e0330b39cc9160fd2b566f6350873cba043ed79a7706ade8d5272e3b3055ea96f5552afc36f4b9e9abd6099b5bfb9f98e67cebc241f17881a7e26c61"
       },
-      "args_sha256": "c67df5c7d5845c906ce0198724610cf6ce5e21f81a02d53f88bcd526f206b19a",
+      "args_sha256": "497fa16289ef9c1d15ddfdece362f9609eed0d74920f15e74d82137b59cf0c67",
       "expected": ["ERR_CLAWED_BACK", "ERR_VAULT_NOT_ACTIVE"],
       "actual": "ERR_CLAWED_BACK",
       "actual_class": "refused",
@@ -1004,13 +1010,16 @@
     {
       "id": 34,
       "round": 1,
-      "category": "early_execute",
-      "method": "begin_execute",
+      "category": "policy_change",
+      "method": "propose_policy_change",
       "args": {
-        "op_id": "1",
+        "vault_id": "1",
+        "changes": {
+          "fee_cap_sats": "20000"
+        },
         "envelope": "7cf0015488f060a643a5586cff82458108715b4f30465a9c84018066f182c007dd3a99d93cc9bddff273c7db1eae285940127329f3a1bb6c6d1cddfcb1c36c8f73f9ce6b8a63315ddee1248b42fd8cc6"
       },
-      "args_sha256": "937e252cf856ddb4d73f1afc401d3e2830ed9ad186f16503fa9b29f5d9e8b7a0",
+      "args_sha256": "cefaa1da5dc37582386d7519cd19634c2a5aef2c173942b262d7717c19c0cf38",
       "expected": ["ERR_CLAWED_BACK", "ERR_VAULT_NOT_ACTIVE"],
       "actual": "ERR_CLAWED_BACK",
       "actual_class": "refused",
@@ -1064,7 +1073,7 @@
       "args": {
         "vault_id": "2",
         "amount_sats": "1000",
-        "destination": "tb1qa4u4l4sf5ggca8wtej2r3yf2cg7mjxl5qglxyu",
+        "destination": "tb1q83qrstn96z4n9vvm5aqxy6qjgzdwf2pcf7s4at",
         "fee_rate_sat_vb": 2,
         "utxos": [
           {
@@ -1075,7 +1084,7 @@
         ],
         "envelope": "ababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababab"
       },
-      "args_sha256": "ed6e4f33cb054386e2703e4306d8daf3f9400860b2fb33f945bf24f08e730bd0",
+      "args_sha256": "74bc2e6262166562ca06f854a276059c5f3ae526dce9f42053f76edec8607d50",
       "expected": ["ERR_BAD_ENVELOPE"],
       "actual": "ERR_BAD_ENVELOPE",
       "actual_class": "refused",
@@ -1098,7 +1107,7 @@
       "args": {
         "vault_id": "2",
         "amount_sats": "1000",
-        "destination": "tb1q83qrstn96z4n9vvm5aqxy6qjgzdwf2pcf7s4at",
+        "destination": "tb1q0nd5pmdswvkewu09vap7c87ymlutwzn9eepgmw",
         "fee_rate_sat_vb": 2,
         "utxos": [
           {
@@ -1109,7 +1118,7 @@
         ],
         "envelope": "9501b4f2f3cde91506958aede8624442192b9e1c8e897f3b75c32fcfc81d8f2288782f46110ef8b40c5973dc850e60f19cd6dbd9b75ffcaff506452f815642b30dfae18ec38636eb21b0115ba06c4eb7"
       },
-      "args_sha256": "210946fa59e79c4feed7058cf82e48198c5464eacad4aa9183f270596d43cf5d",
+      "args_sha256": "5af4d06ff078c92406ba863bbb6248328192dfdde983666f2e6f7fd1cbc9dd15",
       "expected": ["ERR_ALLOWANCE_LIMIT"],
       "actual": "ERR_ALLOWANCE_LIMIT",
       "actual_class": "refused",
@@ -1169,7 +1178,7 @@
         "envelope": "56e5c6e8987cc616cc37df6dc0cd75ef31e6a4d329d3ab4266bcf65eee5ad10381ad46b6e99d7c4af4242155c4ea7b55b42ade148417f318bc3d9e37c7f08346812cc8437854b5779b1801ef52f8a4ac"
       },
       "args_sha256": "c58d8570dadd61c3f37df97499325a43e922ddcd655d05c7a9ae55d3f7e0951d",
-      "expected": ["ERR_SCRIPT_BOUND"],
+      "expected": ["ERR_SCRIPT_BOUND", "ERR_CHANGE_PENDING"],
       "actual": "ERR_SCRIPT_BOUND",
       "actual_class": "refused",
       "expected_match": true,
@@ -1185,6 +1194,33 @@
     },
     {
       "id": 40,
+      "round": 2,
+      "category": "policy_change",
+      "method": "propose_policy_change",
+      "args": {
+        "vault_id": "2",
+        "changes": {
+          "recovery_address": "tb1qv30p7h8qv0ttrskl4uswgurmufxslnxtzgf4y4"
+        },
+        "envelope": "7e2e844b2afbd76fa909ef7b3121e2a6b3aa33da481be31bfd0612ac9b3c382cb350ddc67fcbbe26c57e560568cd22a633c9d2a9c8a905443340c24a753e14a8bcb38a8fbdaeab98fbaeb6daf8fd61b5"
+      },
+      "args_sha256": "6f4e8a486a79301e9108d84b136c1c7592834ef832099ee70929c1f07f18e7f1",
+      "expected": ["accepted", "ERR_CHANGE_PENDING", "ERR_STORAGE_BUDGET"],
+      "actual": "accepted",
+      "actual_class": "accepted",
+      "expected_match": true,
+      "unexpected": false,
+      "window_result": null,
+      "tx_hash": "0000000000000000000000000000000000000000000000000000000000000026",
+      "explorer": null,
+      "op_id": "2",
+      "vault_id": "2",
+      "log_entry": 36,
+      "off_log": null,
+      "note": null
+    },
+    {
+      "id": 41,
       "round": 2,
       "category": "bitcoin_escape",
       "method": null,
@@ -1205,7 +1241,7 @@
       "note": "mock Vault kit: no script to spend"
     },
     {
-      "id": 41,
+      "id": 42,
       "round": 2,
       "category": "bitcoin_no_cosigner",
       "method": null,
@@ -1226,14 +1262,14 @@
       "note": "mock Vault kit: no script to spend"
     },
     {
-      "id": 42,
+      "id": 43,
       "round": 2,
       "category": "withdrawal_request",
       "method": "request_withdrawal",
       "args": {
         "vault_id": "2",
         "amount_sats": "99380",
-        "destination": "tb1q0nd5pmdswvkewu09vap7c87ymlutwzn9eepgmw",
+        "destination": "tb1qxwz8etk0s95ppcazllgz7uaejwlg6jusstwamp",
         "fee_rate_sat_vb": 2,
         "utxos": [
           {
@@ -1242,43 +1278,19 @@
             "value_sats": "100000"
           }
         ],
-        "envelope": "7e2e844b2afbd76fa909ef7b3121e2a6b3aa33da481be31bfd0612ac9b3c382cb350ddc67fcbbe26c57e560568cd22a633c9d2a9c8a905443340c24a753e14a8bcb38a8fbdaeab98fbaeb6daf8fd61b5"
+        "envelope": "26eb222e5af9708954028edabd597f68757ac6c9bc7aa70f81882192aa05a41fd9de96f4c5b261542004b54fa1b168bfd60e66e0f795af7ba918551c7edd914bc3bcf88600f9cd9c09a4a179ddecf96e"
       },
-      "args_sha256": "7aa27d829372873ee99e256ea78e074c8985d08bbd881c2be2190d24bb2478cf",
+      "args_sha256": "c1f74f994f9c077afb929b16d405a5d11fbda135c33977879fedb695fd2b1154",
       "expected": ["accepted", "ERR_OUTPOINT_RESERVED", "ERR_CLAWED_BACK", "ERR_STORAGE_BUDGET"],
       "actual": "accepted",
       "actual_class": "accepted",
       "expected_match": true,
       "unexpected": false,
       "window_result": null,
-      "tx_hash": "0000000000000000000000000000000000000000000000000000000000000026",
+      "tx_hash": "0000000000000000000000000000000000000000000000000000000000000027",
       "explorer": null,
       "op_id": "3",
       "vault_id": "2",
-      "log_entry": 36,
-      "off_log": null,
-      "note": null
-    },
-    {
-      "id": 43,
-      "round": 2,
-      "category": "early_execute",
-      "method": "begin_execute",
-      "args": {
-        "op_id": "3",
-        "envelope": "26eb222e5af9708954028edabd597f68757ac6c9bc7aa70f81882192aa05a41fd9de96f4c5b261542004b54fa1b168bfd60e66e0f795af7ba918551c7edd914bc3bcf88600f9cd9c09a4a179ddecf96e"
-      },
-      "args_sha256": "b7d463e9ad33419d21a9c268408e73218e12b50c49abbd6520c1df761916ef78",
-      "expected": ["ERR_NOT_EXECUTABLE", "ERR_CLAWED_BACK"],
-      "actual": "ERR_NOT_EXECUTABLE",
-      "actual_class": "refused",
-      "expected_match": true,
-      "unexpected": false,
-      "window_result": "own_code",
-      "tx_hash": "0000000000000000000000000000000000000000000000000000000000000027",
-      "explorer": null,
-      "op_id": null,
-      "vault_id": null,
       "log_entry": 37,
       "off_log": null,
       "note": null
@@ -1286,15 +1298,15 @@
     {
       "id": 44,
       "round": 2,
-      "category": "co_sign",
-      "method": "sign_input",
+      "category": "early_execute",
+      "method": "begin_execute",
       "args": {
         "op_id": "3",
-        "input_index": 0
+        "envelope": "792642a5f5cbfaee5c07ba38588f53aa9c924adb8cbee23260ef8750262ffa14789547d4a70b7292f4313676eb3b26bc60402eee93187b10c5cfdb4869eeea4d6088011c48d7c7b830bfd334b89019e9"
       },
-      "args_sha256": "f20c82429a0885af63db052ee19f56b3cb78b788d784cb8a80362f26b56a8c4a",
-      "expected": ["ERR_BAD_OP_STATE", "ERR_CLAWED_BACK"],
-      "actual": "ERR_BAD_OP_STATE",
+      "args_sha256": "7781adb0e287bb47ea319fd6053ac231a2b573283ccf162cfd91da2ab0a900e6",
+      "expected": ["ERR_NOT_EXECUTABLE", "ERR_CLAWED_BACK"],
+      "actual": "ERR_NOT_EXECUTABLE",
       "actual_class": "refused",
       "expected_match": true,
       "unexpected": false,
@@ -1310,25 +1322,15 @@
     {
       "id": 45,
       "round": 2,
-      "category": "withdrawal_request",
-      "method": "request_withdrawal",
+      "category": "co_sign",
+      "method": "sign_input",
       "args": {
-        "vault_id": "2",
-        "amount_sats": "99380",
-        "destination": "tb1qv30p7h8qv0ttrskl4uswgurmufxslnxtzgf4y4",
-        "fee_rate_sat_vb": 2,
-        "utxos": [
-          {
-            "txid": "abababababababababababababababababababababababababababababababab",
-            "vout": 0,
-            "value_sats": "100000"
-          }
-        ],
-        "envelope": "792642a5f5cbfaee5c07ba38588f53aa9c924adb8cbee23260ef8750262ffa14789547d4a70b7292f4313676eb3b26bc60402eee93187b10c5cfdb4869eeea4d6088011c48d7c7b830bfd334b89019e9"
+        "op_id": "3",
+        "input_index": 0
       },
-      "args_sha256": "15026967f054b6e10371e2a5bf886112805137ed6c79f888b5f2730049798278",
-      "expected": ["ERR_OUTPOINT_RESERVED", "ERR_CLAWED_BACK"],
-      "actual": "ERR_OUTPOINT_RESERVED",
+      "args_sha256": "f20c82429a0885af63db052ee19f56b3cb78b788d784cb8a80362f26b56a8c4a",
+      "expected": ["ERR_BAD_OP_STATE", "ERR_CLAWED_BACK"],
+      "actual": "ERR_BAD_OP_STATE",
       "actual_class": "refused",
       "expected_match": true,
       "unexpected": false,
@@ -1344,6 +1346,40 @@
     {
       "id": 46,
       "round": 2,
+      "category": "withdrawal_request",
+      "method": "request_withdrawal",
+      "args": {
+        "vault_id": "2",
+        "amount_sats": "99380",
+        "destination": "tb1qlkggy40x9w3s6y7fsnmwwvt3v0av2hq68mzpdu",
+        "fee_rate_sat_vb": 2,
+        "utxos": [
+          {
+            "txid": "abababababababababababababababababababababababababababababababab",
+            "vout": 0,
+            "value_sats": "100000"
+          }
+        ],
+        "envelope": "0448fd54f81a06e526258e7c2f4f4bfd3bfcd7b700ffbf394d54beee87b48e20136ae578793ab55c4f4b0fc026877057d6f5fa709a5df1268d8607f4e43eb28239f0d1fad96669df45bd0edf40d7456b"
+      },
+      "args_sha256": "d8b7ff9b3c81d0d5b78ca98bbea5feba10c571ba1a3cbbfb8090f6f3430e2191",
+      "expected": ["ERR_OUTPOINT_RESERVED", "ERR_CLAWED_BACK"],
+      "actual": "ERR_OUTPOINT_RESERVED",
+      "actual_class": "refused",
+      "expected_match": true,
+      "unexpected": false,
+      "window_result": "own_code",
+      "tx_hash": "000000000000000000000000000000000000000000000000000000000000002a",
+      "explorer": null,
+      "op_id": null,
+      "vault_id": null,
+      "log_entry": 40,
+      "off_log": null,
+      "note": null
+    },
+    {
+      "id": 47,
+      "round": 2,
       "category": "refresh",
       "method": "refresh",
       "args": {
@@ -1356,36 +1392,9 @@
             "value_sats": "100000"
           }
         ],
-        "envelope": "0448fd54f81a06e526258e7c2f4f4bfd3bfcd7b700ffbf394d54beee87b48e20136ae578793ab55c4f4b0fc026877057d6f5fa709a5df1268d8607f4e43eb28239f0d1fad96669df45bd0edf40d7456b"
-      },
-      "args_sha256": "1323784a00f4573ad80f4a6a595b346b88570068c740c2c7de8faec7494d7ed8",
-      "expected": ["ERR_CLAWED_BACK", "ERR_VAULT_NOT_ACTIVE"],
-      "actual": "ERR_CLAWED_BACK",
-      "actual_class": "refused",
-      "expected_match": true,
-      "unexpected": false,
-      "window_result": null,
-      "tx_hash": "000000000000000000000000000000000000000000000000000000000000002a",
-      "explorer": null,
-      "op_id": null,
-      "vault_id": null,
-      "log_entry": 40,
-      "off_log": null,
-      "note": null
-    },
-    {
-      "id": 47,
-      "round": 2,
-      "category": "policy_change",
-      "method": "propose_policy_change",
-      "args": {
-        "vault_id": "2",
-        "changes": {
-          "fee_cap_sats": "20000"
-        },
         "envelope": "66dad529d3158e0ba7cdc2e925cc50ff27c51db1873ba383ab90def7f08ebb48dc4442f6fb1e93064aa2ff4c6eab52c9c395712e68f3065b9e899469b3c75db284d2072da86d5d1c89654ddd2d287f78"
       },
-      "args_sha256": "a19a72f0f2d1cd110097543a1a6cc0af7e0b70eb44e346544f9b347b133ece27",
+      "args_sha256": "32626f97bf3564ff606335370a2ae58665ba46bac3a53964e2110adcdcdf3bb7",
       "expected": ["ERR_CLAWED_BACK", "ERR_VAULT_NOT_ACTIVE"],
       "actual": "ERR_CLAWED_BACK",
       "actual_class": "refused",
@@ -1430,23 +1439,16 @@
     {
       "id": 49,
       "round": 2,
-      "category": "withdrawal_request",
-      "method": "request_withdrawal",
+      "category": "policy_change",
+      "method": "propose_policy_change",
       "args": {
         "vault_id": "2",
-        "amount_sats": "99380",
-        "destination": "tb1qxwz8etk0s95ppcazllgz7uaejwlg6jusstwamp",
-        "fee_rate_sat_vb": 2,
-        "utxos": [
-          {
-            "txid": "abababababababababababababababababababababababababababababababab",
-            "vout": 0,
-            "value_sats": "100000"
-          }
-        ],
+        "changes": {
+          "fee_cap_sats": "20000"
+        },
         "envelope": "c8a9acda2ce990a305a8bb667e332ee0d3da77f0d49f36730ff29b149de1392cc01319b0717bdc102befbb4f7f21d0f3d0c4ba55a70bf3b0cd122c1ebc59b6961e3a5e9ca73760db4af075385db97083"
       },
-      "args_sha256": "dc3133c0098d688b45d4293e9aebcf3763bde591370e44560677d5983083bc2e",
+      "args_sha256": "602044e129aa270775591098a813efe234cc910c803576784931c4964716fb00",
       "expected": ["ERR_CLAWED_BACK", "ERR_VAULT_NOT_ACTIVE"],
       "actual": "ERR_CLAWED_BACK",
       "actual_class": "refused",
@@ -1464,13 +1466,23 @@
     {
       "id": 50,
       "round": 2,
-      "category": "early_execute",
-      "method": "begin_execute",
+      "category": "withdrawal_request",
+      "method": "request_withdrawal",
       "args": {
-        "op_id": "3",
+        "vault_id": "2",
+        "amount_sats": "99380",
+        "destination": "tb1qq4pcvpyjnqeh7we5vwmm5nlh84ew2jusvddhc8",
+        "fee_rate_sat_vb": 2,
+        "utxos": [
+          {
+            "txid": "abababababababababababababababababababababababababababababababab",
+            "vout": 0,
+            "value_sats": "100000"
+          }
+        ],
         "envelope": "22f1272b6e5fddd5a99821dd93e997f1bf05f7734aa753152f50be03acdf0d5742b9939c74e6fc2ff494b6c8b8171e12d69556e6f0cd27b00e1dc7c3baa1b95948a3c9c292db81318e2453ef1f0404ad"
       },
-      "args_sha256": "30af45d280a53d6a7f7c09226c76b9c3f4163a48de5d5b71333154c0cccb3721",
+      "args_sha256": "cb72a23dd12a95bd2006c3b100f9cd7f711854315d16a453da9790a849b1b901",
       "expected": ["ERR_CLAWED_BACK", "ERR_VAULT_NOT_ACTIVE"],
       "actual": "ERR_CLAWED_BACK",
       "actual_class": "refused",
@@ -1488,13 +1500,13 @@
     {
       "id": 51,
       "round": 2,
-      "category": "co_sign",
-      "method": "sign_input",
+      "category": "early_execute",
+      "method": "begin_execute",
       "args": {
         "op_id": "3",
-        "input_index": 0
+        "envelope": "b1323e57077b4ba917b04c776ee68c05d62f736c6d63c712079fb2a39abce16cd1e8bf05d2a28a4736f6d1d4f4067abc2e8716b1d594fc075c2ec6d105d7101a24860b73abb727d3e0cc71e8dadeae7f"
       },
-      "args_sha256": "f20c82429a0885af63db052ee19f56b3cb78b788d784cb8a80362f26b56a8c4a",
+      "args_sha256": "4f115ce7776b414532a4b5484d2c06822df99606339e6a171ab1d2c2a828fda2",
       "expected": ["ERR_CLAWED_BACK", "ERR_VAULT_NOT_ACTIVE"],
       "actual": "ERR_CLAWED_BACK",
       "actual_class": "refused",
@@ -1536,23 +1548,13 @@
     {
       "id": 53,
       "round": 2,
-      "category": "withdrawal_request",
-      "method": "request_withdrawal",
+      "category": "co_sign",
+      "method": "sign_input",
       "args": {
-        "vault_id": "2",
-        "amount_sats": "99380",
-        "destination": "tb1qlkggy40x9w3s6y7fsnmwwvt3v0av2hq68mzpdu",
-        "fee_rate_sat_vb": 2,
-        "utxos": [
-          {
-            "txid": "abababababababababababababababababababababababababababababababab",
-            "vout": 0,
-            "value_sats": "100000"
-          }
-        ],
-        "envelope": "b1323e57077b4ba917b04c776ee68c05d62f736c6d63c712079fb2a39abce16cd1e8bf05d2a28a4736f6d1d4f4067abc2e8716b1d594fc075c2ec6d105d7101a24860b73abb727d3e0cc71e8dadeae7f"
+        "op_id": "3",
+        "input_index": 0
       },
-      "args_sha256": "7e307d100f66a8130d1ed46ca3b6d73de050e8269e800dfb6952efb649b7878f",
+      "args_sha256": "f20c82429a0885af63db052ee19f56b3cb78b788d784cb8a80362f26b56a8c4a",
       "expected": ["ERR_CLAWED_BACK", "ERR_VAULT_NOT_ACTIVE"],
       "actual": "ERR_CLAWED_BACK",
       "actual_class": "refused",
@@ -1575,7 +1577,7 @@
       "args": {
         "vault_id": "2",
         "amount_sats": "99380",
-        "destination": "tb1qq4pcvpyjnqeh7we5vwmm5nlh84ew2jusvddhc8",
+        "destination": "tb1qa5yejrwe59h0apun5h0veekx49md9p2k5t2n30",
         "fee_rate_sat_vb": 2,
         "utxos": [
           {
@@ -1586,7 +1588,7 @@
         ],
         "envelope": "42b9689f9b0cf730ceb84370a465b8d65ead66cedf1e5df4ef30460dc26cab610bbcd162e5e417b447f7b2319ac369d874fc5269be5ed7520a35bd50f709a7d9e009425b71f3c274e57c21364fc7b1e9"
       },
-      "args_sha256": "e22fed4ece699a2486e371d66fa2b5ea4cfaf4879137c081fa13453d5325a193",
+      "args_sha256": "7818b8038d05610cecade02eb26db9774131dbf2b17498b278ba231058ca07c2",
       "expected": ["ERR_CLAWED_BACK", "ERR_VAULT_NOT_ACTIVE"],
       "actual": "ERR_CLAWED_BACK",
       "actual_class": "refused",
@@ -1604,12 +1606,12 @@
     {
       "id": 55,
       "round": 2,
-      "category": "spend_allowance",
-      "method": "spend_allowance",
+      "category": "withdrawal_request",
+      "method": "request_withdrawal",
       "args": {
         "vault_id": "2",
-        "amount_sats": "1000",
-        "destination": "tb1qa5yejrwe59h0apun5h0veekx49md9p2k5t2n30",
+        "amount_sats": "99380",
+        "destination": "tb1q7wdwg2cx6msl4yzen7c09s4uc4red2gukgwmuy",
         "fee_rate_sat_vb": 2,
         "utxos": [
           {
@@ -1620,7 +1622,7 @@
         ],
         "envelope": "babb0f1578271c2b163d7b01209841baf4dbf66dba205b0afa5e9bbfe0563349ba73049cd6b595d278d2f7d45a05466921789fc80b9dadb2a6777cd634051c55f26b0bebf3b9278636f4514a175b96c9"
       },
-      "args_sha256": "3158529d75e6abf07da75f0d59bc57400095f3a963788c5894d8762fcf1b2d89",
+      "args_sha256": "920e90ad88c603c9a8dec902cab79a6873979d38e9903d2a9ace35b2a0c3c545",
       "expected": ["ERR_CLAWED_BACK", "ERR_VAULT_NOT_ACTIVE"],
       "actual": "ERR_CLAWED_BACK",
       "actual_class": "refused",
@@ -1638,13 +1640,23 @@
     {
       "id": 56,
       "round": 2,
-      "category": "co_sign",
-      "method": "sign_input",
+      "category": "spend_allowance",
+      "method": "spend_allowance",
       "args": {
-        "op_id": "3",
-        "input_index": 0
+        "vault_id": "2",
+        "amount_sats": "1000",
+        "destination": "tb1qv3nmvkd5tfc52y4zl9g0gulwkps4q58qfh00ce",
+        "fee_rate_sat_vb": 2,
+        "utxos": [
+          {
+            "txid": "abababababababababababababababababababababababababababababababab",
+            "vout": 0,
+            "value_sats": "100000"
+          }
+        ],
+        "envelope": "500c64e2478c31ccae811793bb46558042c6c52bdf6328c1c40108e3e8eb68112b2ba418e881f296fc00f16f307210f4c400d66a762f58b64685c4e901146969610524b43e4a0d652004dca6d615ef67"
       },
-      "args_sha256": "f20c82429a0885af63db052ee19f56b3cb78b788d784cb8a80362f26b56a8c4a",
+      "args_sha256": "c531520e1841499739f2aa3ccfe069154a7b80538e7bf34fecb910b6bdd897f1",
       "expected": ["ERR_CLAWED_BACK", "ERR_VAULT_NOT_ACTIVE"],
       "actual": "ERR_CLAWED_BACK",
       "actual_class": "refused",
@@ -1710,16 +1722,13 @@
     {
       "id": 59,
       "round": 2,
-      "category": "policy_change",
-      "method": "propose_policy_change",
+      "category": "co_sign",
+      "method": "sign_input",
       "args": {
-        "vault_id": "2",
-        "changes": {
-          "fee_cap_sats": "20000"
-        },
-        "envelope": "500c64e2478c31ccae811793bb46558042c6c52bdf6328c1c40108e3e8eb68112b2ba418e881f296fc00f16f307210f4c400d66a762f58b64685c4e901146969610524b43e4a0d652004dca6d615ef67"
+        "op_id": "3",
+        "input_index": 0
       },
-      "args_sha256": "615e1145aa7b15510632d0bb88d7534836af65f9b3c07ef6bdf2ace00dd6693d",
+      "args_sha256": "f20c82429a0885af63db052ee19f56b3cb78b788d784cb8a80362f26b56a8c4a",
       "expected": ["ERR_CLAWED_BACK", "ERR_VAULT_NOT_ACTIVE"],
       "actual": "ERR_CLAWED_BACK",
       "actual_class": "refused",
@@ -1737,23 +1746,16 @@
     {
       "id": 60,
       "round": 2,
-      "category": "spend_allowance",
-      "method": "spend_allowance",
+      "category": "policy_change",
+      "method": "propose_policy_change",
       "args": {
         "vault_id": "2",
-        "amount_sats": "1000",
-        "destination": "tb1q7wdwg2cx6msl4yzen7c09s4uc4red2gukgwmuy",
-        "fee_rate_sat_vb": 2,
-        "utxos": [
-          {
-            "txid": "abababababababababababababababababababababababababababababababab",
-            "vout": 0,
-            "value_sats": "100000"
-          }
-        ],
+        "changes": {
+          "fee_cap_sats": "20000"
+        },
         "envelope": "0c11d456d01b93253de82ab9d2f673e24f053a1a21922e840cc2e6648a46216504bb62e5335eec8fd443886bea6769afefe1a2e85c4758629353daf87867be5039b1d0d9c4052f2501ef57a48a5de1d8"
       },
-      "args_sha256": "8bb9243fcce7f4b2b4c64ee3cddfc80d714a27429bdd6af3bb507fe0c79b836f",
+      "args_sha256": "872cc9cb86422c16f67d9dc10faf8e61a927cf054f88ebe433a7a751d08a8e04",
       "expected": ["ERR_CLAWED_BACK", "ERR_VAULT_NOT_ACTIVE"],
       "actual": "ERR_CLAWED_BACK",
       "actual_class": "refused",
@@ -1776,7 +1778,7 @@
       "args": {
         "vault_id": "2",
         "amount_sats": "1000",
-        "destination": "tb1qv3nmvkd5tfc52y4zl9g0gulwkps4q58qfh00ce",
+        "destination": "tb1qtru646uwvcnvd6eck6sa60vuuqeaw50eg9lca6",
         "fee_rate_sat_vb": 2,
         "utxos": [
           {
@@ -1787,7 +1789,7 @@
         ],
         "envelope": "74b522583aa1d164e35fa06eeae57a17cdfd8c8489b2e9eb9559b349b620c1417813bd7ed9c9d485f49e57cfdd98957cd62b5fb9dd5a109b3dd3fd10016ff4ad7364df9a2c3fadf08ee643a88862295b"
       },
-      "args_sha256": "14b272b0b2287d2cbd34fe823d598e3f63b0c4d68f879b8a77d1678bd76afab2",
+      "args_sha256": "1b32fd0be8f7c45090fee4451b146420db5d77aa6b7e203bf15811026c647acf",
       "expected": ["ERR_CLAWED_BACK", "ERR_VAULT_NOT_ACTIVE"],
       "actual": "ERR_CLAWED_BACK",
       "actual_class": "refused",
@@ -1805,13 +1807,23 @@
     {
       "id": 62,
       "round": 2,
-      "category": "co_sign",
-      "method": "sign_input",
+      "category": "spend_allowance",
+      "method": "spend_allowance",
       "args": {
-        "op_id": "3",
-        "input_index": 0
+        "vault_id": "2",
+        "amount_sats": "1000",
+        "destination": "tb1q6qk8rnpz6n22w7wsprztnnfe0r3z7vukrfaul7",
+        "fee_rate_sat_vb": 2,
+        "utxos": [
+          {
+            "txid": "abababababababababababababababababababababababababababababababab",
+            "vout": 0,
+            "value_sats": "100000"
+          }
+        ],
+        "envelope": "423b21868ce3ec7dc8fecf23913b4729bba06ee9ccdaa66de860d4f749e30449b493b3ff5bc87471c4aae5f10e0047d1bf2a4ac7c3358022da380c149aae7baee652aadd7cdde27dde68962727aabb3b"
       },
-      "args_sha256": "f20c82429a0885af63db052ee19f56b3cb78b788d784cb8a80362f26b56a8c4a",
+      "args_sha256": "d0569163e383e8e6b30af287c008a58e19eebbc6daec9a3f2fad610ef84c0791",
       "expected": ["ERR_CLAWED_BACK", "ERR_VAULT_NOT_ACTIVE"],
       "actual": "ERR_CLAWED_BACK",
       "actual_class": "refused",
@@ -1853,23 +1865,13 @@
     {
       "id": 64,
       "round": 2,
-      "category": "withdrawal_request",
-      "method": "request_withdrawal",
+      "category": "co_sign",
+      "method": "sign_input",
       "args": {
-        "vault_id": "2",
-        "amount_sats": "99380",
-        "destination": "tb1qtru646uwvcnvd6eck6sa60vuuqeaw50eg9lca6",
-        "fee_rate_sat_vb": 2,
-        "utxos": [
-          {
-            "txid": "abababababababababababababababababababababababababababababababab",
-            "vout": 0,
-            "value_sats": "100000"
-          }
-        ],
-        "envelope": "423b21868ce3ec7dc8fecf23913b4729bba06ee9ccdaa66de860d4f749e30449b493b3ff5bc87471c4aae5f10e0047d1bf2a4ac7c3358022da380c149aae7baee652aadd7cdde27dde68962727aabb3b"
+        "op_id": "3",
+        "input_index": 0
       },
-      "args_sha256": "8c08b07102943e60b4113eed416fda5296b7533d1ff35c1a23bae4299e4684ab",
+      "args_sha256": "f20c82429a0885af63db052ee19f56b3cb78b788d784cb8a80362f26b56a8c4a",
       "expected": ["ERR_CLAWED_BACK", "ERR_VAULT_NOT_ACTIVE"],
       "actual": "ERR_CLAWED_BACK",
       "actual_class": "refused",
@@ -1892,7 +1894,7 @@
       "args": {
         "vault_id": "2",
         "amount_sats": "99380",
-        "destination": "tb1q6qk8rnpz6n22w7wsprztnnfe0r3z7vukrfaul7",
+        "destination": "tb1qe64hsypl7jft8uuma7s79y4aza6trgp6q23n75",
         "fee_rate_sat_vb": 2,
         "utxos": [
           {
@@ -1903,7 +1905,7 @@
         ],
         "envelope": "3865918e1be4ab8ec50ba6692840b08de347a26ea08ecf66c30d2066e7fb1d637257d5eec5e4506efcd82806bba641218455688a5b3ea98ac7b836d03134ad44f211c1a619393e64c23905a9517c04e7"
       },
-      "args_sha256": "e3f5b25c2079d342d6e5fdbb7165da4c7d33ff65cb9ce6301c02ce475b132046",
+      "args_sha256": "7809dbf420f8d6af39e53642389c19e8bfa3c7f50d9431614070917f342ded42",
       "expected": ["ERR_CLAWED_BACK", "ERR_VAULT_NOT_ACTIVE"],
       "actual": "ERR_CLAWED_BACK",
       "actual_class": "refused",
@@ -1921,16 +1923,23 @@
     {
       "id": 66,
       "round": 2,
-      "category": "policy_change",
-      "method": "propose_policy_change",
+      "category": "withdrawal_request",
+      "method": "request_withdrawal",
       "args": {
         "vault_id": "2",
-        "changes": {
-          "fee_cap_sats": "20000"
-        },
+        "amount_sats": "99380",
+        "destination": "tb1qy3nzuhs2fs668n2h00xktgur6mrpnnn3lqkaxs",
+        "fee_rate_sat_vb": 2,
+        "utxos": [
+          {
+            "txid": "abababababababababababababababababababababababababababababababab",
+            "vout": 0,
+            "value_sats": "100000"
+          }
+        ],
         "envelope": "2a2f1d3d191a76621bd442844b57a4ccac76294bfaa872d5f5b2e3585b15695ded6a113906d1dfb4a2a993f7ca5815dbd4f198f0864e4660ac8676df6b8ab6320612c3c46763cfa3345a1d0439ca8c0e"
       },
-      "args_sha256": "944a447265575892f98954aac6c1b2a881affb4aeb7299d46028987033459df7",
+      "args_sha256": "6bf5aeb0e4babdaf24215f8771222f1f68e71209dd66d2918aae3da2d30daa31",
       "expected": ["ERR_CLAWED_BACK", "ERR_VAULT_NOT_ACTIVE"],
       "actual": "ERR_CLAWED_BACK",
       "actual_class": "refused",
@@ -1948,13 +1957,16 @@
     {
       "id": 67,
       "round": 2,
-      "category": "co_sign",
-      "method": "sign_input",
+      "category": "policy_change",
+      "method": "propose_policy_change",
       "args": {
-        "op_id": "3",
-        "input_index": 0
+        "vault_id": "2",
+        "changes": {
+          "fee_cap_sats": "20000"
+        },
+        "envelope": "5a09b61df527561c8a7d41f9d030749e112b886a0698ef987b0d96ef66d36b17c4b9a836da87f5618e654f8d92c9040309e05454113b827aa3cd093b7fb183c708d2d75f9c9d1c36cc9c4b9cc05c2fe9"
       },
-      "args_sha256": "f20c82429a0885af63db052ee19f56b3cb78b788d784cb8a80362f26b56a8c4a",
+      "args_sha256": "9b8a44d8844371e69a42e15391cfa80e4ca4583d870bbeff312dde4445f97dc1",
       "expected": ["ERR_CLAWED_BACK", "ERR_VAULT_NOT_ACTIVE"],
       "actual": "ERR_CLAWED_BACK",
       "actual_class": "refused",
@@ -2008,7 +2020,7 @@
       "args": {
         "vault_id": "3",
         "amount_sats": "1000",
-        "destination": "tb1qe64hsypl7jft8uuma7s79y4aza6trgp6q23n75",
+        "destination": "tb1qwx7jaqhgt34dkh9zuagtdlj68d0zhl2zuwsnj7",
         "fee_rate_sat_vb": 2,
         "utxos": [
           {
@@ -2019,7 +2031,7 @@
         ],
         "envelope": "ababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababab"
       },
-      "args_sha256": "e07cb4f2c3f9a137ce7f3f37376019fe0b2bebf0985cfaeb3e624a131aa0ec50",
+      "args_sha256": "f2a806709fe19b657479f7ede065cdd7a7f6b3448b56723c9811d13a869f494c",
       "expected": ["ERR_BAD_ENVELOPE"],
       "actual": "ERR_BAD_ENVELOPE",
       "actual_class": "refused",
@@ -2042,7 +2054,7 @@
       "args": {
         "vault_id": "3",
         "amount_sats": "1000",
-        "destination": "tb1qy3nzuhs2fs668n2h00xktgur6mrpnnn3lqkaxs",
+        "destination": "tb1qy62hrwraj3n08kld5z3034sr93fd4j8qmjcrdy",
         "fee_rate_sat_vb": 2,
         "utxos": [
           {
@@ -2051,9 +2063,9 @@
             "value_sats": "100000"
           }
         ],
-        "envelope": "0299f5f48539be09fe50d029c545a246f6a4cf02097010b0df3959110057651ad026a88e1bac4cc1e3146ff12deaa4d8ef0ff3c70c10bc29e17931398e7e9b8e76638a503126b992da7dee638e9f498a"
+        "envelope": "a357c624c35cc734de8b55faf6361af7b49788817e487018a0a33dfba7bdc24bff47fb72fcab7af72e6d88b59fb40c3f426551e4f7bf8c49e467b8ac89046a75bfef54da7f76aa29a33628722fcb36af"
       },
-      "args_sha256": "3a71752e93da5da1605075b6c81ff977b855f402d4f9ce4cf4af5fcb6d33f9a5",
+      "args_sha256": "b1469c03b1a1713bf472189f2a3261daeaaf17dc31010a5b8e536c5230358dcf",
       "expected": ["ERR_ALLOWANCE_LIMIT"],
       "actual": "ERR_ALLOWANCE_LIMIT",
       "actual_class": "refused",
@@ -2083,9 +2095,9 @@
             "value_sats": "100000"
           }
         ],
-        "envelope": "a357c624c35cc734de8b55faf6361af7b49788817e487018a0a33dfba7bdc24bff47fb72fcab7af72e6d88b59fb40c3f426551e4f7bf8c49e467b8ac89046a75bfef54da7f76aa29a33628722fcb36af"
+        "envelope": "e94e942db15faf24e066ea2b4782501ff824469e2d90f0786ca05964a48ff6132cfebe8fee0b2e507ba2ea64fa7a5d14086a4f3246d1ab575c4a242c1acaeeb8ca2dbd82c840566ccfc9ceeaa19ba404"
       },
-      "args_sha256": "d214e8a37f3176a67c4421d4eaec95df6e98fe93975c61db2dfe84942a364e93",
+      "args_sha256": "fe5d882a73f30f8b50dc9d8d83a1107ab1a86a0dcb3a93f9eaba4c587b75f7c1",
       "expected": ["ERR_FEE_TOO_HIGH"],
       "actual": "ERR_FEE_TOO_HIGH",
       "actual_class": "refused",
@@ -2110,10 +2122,10 @@
         "changes": {
           "escape_timelock_blocks": 1
         },
-        "envelope": "e94e942db15faf24e066ea2b4782501ff824469e2d90f0786ca05964a48ff6132cfebe8fee0b2e507ba2ea64fa7a5d14086a4f3246d1ab575c4a242c1acaeeb8ca2dbd82c840566ccfc9ceeaa19ba404"
+        "envelope": "6d5fc04509015ec876ec122b7ddc053409dfd35af5c1c5e272980ee574142a7ba646e947e4c6247575d3c6d8ea62977facdf30ef333f97d0cd46fd60cc2055de2feaba329bee2fc69d9d0a0e415ed8f3"
       },
-      "args_sha256": "1542ba99e1cdc53cfd458ba6da207448db1eec30bcbd6e6019b578498da7b9a5",
-      "expected": ["ERR_SCRIPT_BOUND"],
+      "args_sha256": "e4e3536d56f2bede4b787c9145c2984078312b6b171444a5668145a70d263801",
+      "expected": ["ERR_SCRIPT_BOUND", "ERR_CHANGE_PENDING"],
       "actual": "ERR_SCRIPT_BOUND",
       "actual_class": "refused",
       "expected_match": true,
@@ -2129,6 +2141,33 @@
     },
     {
       "id": 73,
+      "round": 3,
+      "category": "policy_change",
+      "method": "propose_policy_change",
+      "args": {
+        "vault_id": "3",
+        "changes": {
+          "recovery_address": "tb1qlg6mudj9awvzfulrzf4g8nuyjrxre444x4wred"
+        },
+        "envelope": "c59cd69710dfb7fcfca148acd875c43e844633d624ed3d78ac55f544b4cb455a9b29469ac947133bde95a80a9bd51284e4e792fe9f7058cc8a9e3ca2337219ba7351c3403b0621e3b974d1445771d87c"
+      },
+      "args_sha256": "8106c5d37a5f959367845b7921a584d1aea8467553b9b3553432b15b6853a76b",
+      "expected": ["accepted", "ERR_CHANGE_PENDING", "ERR_STORAGE_BUDGET"],
+      "actual": "accepted",
+      "actual_class": "accepted",
+      "expected_match": true,
+      "unexpected": false,
+      "window_result": null,
+      "tx_hash": "0000000000000000000000000000000000000000000000000000000000000045",
+      "explorer": null,
+      "op_id": "3",
+      "vault_id": "3",
+      "log_entry": 67,
+      "off_log": null,
+      "note": null
+    },
+    {
+      "id": 74,
       "round": 3,
       "category": "bitcoin_escape",
       "method": null,
@@ -2149,7 +2188,7 @@
       "note": "mock Vault kit: no script to spend"
     },
     {
-      "id": 74,
+      "id": 75,
       "round": 3,
       "category": "bitcoin_no_cosigner",
       "method": null,
@@ -2170,14 +2209,14 @@
       "note": "mock Vault kit: no script to spend"
     },
     {
-      "id": 75,
+      "id": 76,
       "round": 3,
       "category": "withdrawal_request",
       "method": "request_withdrawal",
       "args": {
         "vault_id": "3",
         "amount_sats": "99380",
-        "destination": "tb1qwx7jaqhgt34dkh9zuagtdlj68d0zhl2zuwsnj7",
+        "destination": "tb1q2vse06c408l85ze6wh3qm6304fhn7wgr80h8cu",
         "fee_rate_sat_vb": 2,
         "utxos": [
           {
@@ -2186,43 +2225,19 @@
             "value_sats": "100000"
           }
         ],
-        "envelope": "6d5fc04509015ec876ec122b7ddc053409dfd35af5c1c5e272980ee574142a7ba646e947e4c6247575d3c6d8ea62977facdf30ef333f97d0cd46fd60cc2055de2feaba329bee2fc69d9d0a0e415ed8f3"
+        "envelope": "9ef62f7d94ce8963de7607c1a2dc2b8afd7017f26933e30e975aefc70ea4a906f5621791c7b6c0ca40a938d23033b14c7f200cdb8261515105c2bdd37fb57cc676c205693864ec0d819d3df99c4f9901"
       },
-      "args_sha256": "f250f0f0a72380f3597be72d515c1d6ccd452493d341a57b55a775125236019a",
+      "args_sha256": "21c1dbfe33786fa6788099ca691f177ed4417e1881df26cd180ff9ba7aa335df",
       "expected": ["accepted", "ERR_OUTPOINT_RESERVED", "ERR_CLAWED_BACK", "ERR_STORAGE_BUDGET"],
       "actual": "accepted",
       "actual_class": "accepted",
       "expected_match": true,
       "unexpected": false,
       "window_result": null,
-      "tx_hash": "0000000000000000000000000000000000000000000000000000000000000045",
+      "tx_hash": "0000000000000000000000000000000000000000000000000000000000000046",
       "explorer": null,
       "op_id": "5",
       "vault_id": "3",
-      "log_entry": 67,
-      "off_log": null,
-      "note": null
-    },
-    {
-      "id": 76,
-      "round": 3,
-      "category": "early_execute",
-      "method": "begin_execute",
-      "args": {
-        "op_id": "5",
-        "envelope": "c59cd69710dfb7fcfca148acd875c43e844633d624ed3d78ac55f544b4cb455a9b29469ac947133bde95a80a9bd51284e4e792fe9f7058cc8a9e3ca2337219ba7351c3403b0621e3b974d1445771d87c"
-      },
-      "args_sha256": "f665abe849bfee818d60d0774d9ad4df538a254c1206dd545cee240840fa1590",
-      "expected": ["ERR_NOT_EXECUTABLE", "ERR_CLAWED_BACK"],
-      "actual": "ERR_NOT_EXECUTABLE",
-      "actual_class": "refused",
-      "expected_match": true,
-      "unexpected": false,
-      "window_result": "own_code",
-      "tx_hash": "0000000000000000000000000000000000000000000000000000000000000046",
-      "explorer": null,
-      "op_id": null,
-      "vault_id": null,
       "log_entry": 68,
       "off_log": null,
       "note": null
@@ -2230,15 +2245,15 @@
     {
       "id": 77,
       "round": 3,
-      "category": "co_sign",
-      "method": "sign_input",
+      "category": "early_execute",
+      "method": "begin_execute",
       "args": {
         "op_id": "5",
-        "input_index": 0
+        "envelope": "dd7437f16697479e1af15d8c5548ab5591359f434c590f1cc500140866c3e6301869b55c269a81e323773f14432c15aa66c1ebb366e02d3910843dd2491fc21a16f09762211a7772af30d22436c4b74f"
       },
-      "args_sha256": "8161c7820a6eab311e26655d67beca795e97c62c191f569a0251e3e8ed2d0882",
-      "expected": ["ERR_BAD_OP_STATE", "ERR_CLAWED_BACK"],
-      "actual": "ERR_BAD_OP_STATE",
+      "args_sha256": "fd8d963637386d640a8f514cb1d08397c8f364aa12a7fbac55d200c8493211f6",
+      "expected": ["ERR_NOT_EXECUTABLE", "ERR_CLAWED_BACK"],
+      "actual": "ERR_NOT_EXECUTABLE",
       "actual_class": "refused",
       "expected_match": true,
       "unexpected": false,
@@ -2254,25 +2269,15 @@
     {
       "id": 78,
       "round": 3,
-      "category": "withdrawal_request",
-      "method": "request_withdrawal",
+      "category": "co_sign",
+      "method": "sign_input",
       "args": {
-        "vault_id": "3",
-        "amount_sats": "99380",
-        "destination": "tb1qy62hrwraj3n08kld5z3034sr93fd4j8qmjcrdy",
-        "fee_rate_sat_vb": 2,
-        "utxos": [
-          {
-            "txid": "abababababababababababababababababababababababababababababababab",
-            "vout": 0,
-            "value_sats": "100000"
-          }
-        ],
-        "envelope": "9ef62f7d94ce8963de7607c1a2dc2b8afd7017f26933e30e975aefc70ea4a906f5621791c7b6c0ca40a938d23033b14c7f200cdb8261515105c2bdd37fb57cc676c205693864ec0d819d3df99c4f9901"
+        "op_id": "5",
+        "input_index": 0
       },
-      "args_sha256": "d4de9fa49e3e14431cef51fbfe3fad1ab376111eace684706c55eb96d0b46c3b",
-      "expected": ["ERR_OUTPOINT_RESERVED", "ERR_CLAWED_BACK"],
-      "actual": "ERR_OUTPOINT_RESERVED",
+      "args_sha256": "8161c7820a6eab311e26655d67beca795e97c62c191f569a0251e3e8ed2d0882",
+      "expected": ["ERR_BAD_OP_STATE", "ERR_CLAWED_BACK"],
+      "actual": "ERR_BAD_OP_STATE",
       "actual_class": "refused",
       "expected_match": true,
       "unexpected": false,
@@ -2288,6 +2293,40 @@
     {
       "id": 79,
       "round": 3,
+      "category": "withdrawal_request",
+      "method": "request_withdrawal",
+      "args": {
+        "vault_id": "3",
+        "amount_sats": "99380",
+        "destination": "tb1qmp08pw0fhs9hdy6a99sk33slnxqp6pwq0q94zp",
+        "fee_rate_sat_vb": 2,
+        "utxos": [
+          {
+            "txid": "abababababababababababababababababababababababababababababababab",
+            "vout": 0,
+            "value_sats": "100000"
+          }
+        ],
+        "envelope": "595eb5628ab8f3fa5110aaf9d0ed7363a82ba4db5e9d18ca0bedbcdb95bf796845265cee627447c1bcfeafc2c2a950e5e2ee41c4f8a3860212c26d95581306d9b5401a6fa61036b148b64ecb90dce9a8"
+      },
+      "args_sha256": "22644c17e9125b6859e65ac535f296316982df117e0bf427aaa5ed0918bac1b3",
+      "expected": ["ERR_OUTPOINT_RESERVED", "ERR_CLAWED_BACK"],
+      "actual": "ERR_OUTPOINT_RESERVED",
+      "actual_class": "refused",
+      "expected_match": true,
+      "unexpected": false,
+      "window_result": "own_code",
+      "tx_hash": "0000000000000000000000000000000000000000000000000000000000000049",
+      "explorer": null,
+      "op_id": null,
+      "vault_id": null,
+      "log_entry": 71,
+      "off_log": null,
+      "note": null
+    },
+    {
+      "id": 80,
+      "round": 3,
       "category": "refresh",
       "method": "refresh",
       "args": {
@@ -2300,43 +2339,9 @@
             "value_sats": "100000"
           }
         ],
-        "envelope": "dd7437f16697479e1af15d8c5548ab5591359f434c590f1cc500140866c3e6301869b55c269a81e323773f14432c15aa66c1ebb366e02d3910843dd2491fc21a16f09762211a7772af30d22436c4b74f"
+        "envelope": "308a3e8b3fd4203f7501b0f4955bb226428184bcb249b1450198c6b5a25f9d208f79ccfb0de22a07159be9864f3832f37b9af7a9e57d648dc56b8e092c57e70ac3fed75098296f67f3078674460fa7ba"
       },
-      "args_sha256": "1474c46cbe43b859092bcd09d236e72fa19472d916b68893e58d28e3b0df14f4",
-      "expected": ["ERR_CLAWED_BACK", "ERR_VAULT_NOT_ACTIVE"],
-      "actual": "ERR_CLAWED_BACK",
-      "actual_class": "refused",
-      "expected_match": true,
-      "unexpected": false,
-      "window_result": null,
-      "tx_hash": "0000000000000000000000000000000000000000000000000000000000000049",
-      "explorer": null,
-      "op_id": null,
-      "vault_id": null,
-      "log_entry": 71,
-      "off_log": null,
-      "note": null
-    },
-    {
-      "id": 80,
-      "round": 3,
-      "category": "spend_allowance",
-      "method": "spend_allowance",
-      "args": {
-        "vault_id": "3",
-        "amount_sats": "1000",
-        "destination": "tb1qlg6mudj9awvzfulrzf4g8nuyjrxre444x4wred",
-        "fee_rate_sat_vb": 2,
-        "utxos": [
-          {
-            "txid": "abababababababababababababababababababababababababababababababab",
-            "vout": 0,
-            "value_sats": "100000"
-          }
-        ],
-        "envelope": "595eb5628ab8f3fa5110aaf9d0ed7363a82ba4db5e9d18ca0bedbcdb95bf796845265cee627447c1bcfeafc2c2a950e5e2ee41c4f8a3860212c26d95581306d9b5401a6fa61036b148b64ecb90dce9a8"
-      },
-      "args_sha256": "cbdad4c8f1e30dae4a1f03ed15ee05cf633b1228e9d7d8372249c12b256f12e8",
+      "args_sha256": "d5a8895bbc2c5becc8538df5875639b634a4edf666a2aa02dc5b27bc576a8465",
       "expected": ["ERR_CLAWED_BACK", "ERR_VAULT_NOT_ACTIVE"],
       "actual": "ERR_CLAWED_BACK",
       "actual_class": "refused",
@@ -2354,16 +2359,23 @@
     {
       "id": 81,
       "round": 3,
-      "category": "policy_change",
-      "method": "propose_policy_change",
+      "category": "spend_allowance",
+      "method": "spend_allowance",
       "args": {
         "vault_id": "3",
-        "changes": {
-          "fee_cap_sats": "20000"
-        },
-        "envelope": "308a3e8b3fd4203f7501b0f4955bb226428184bcb249b1450198c6b5a25f9d208f79ccfb0de22a07159be9864f3832f37b9af7a9e57d648dc56b8e092c57e70ac3fed75098296f67f3078674460fa7ba"
+        "amount_sats": "1000",
+        "destination": "tb1qpt206w5wpd7as72ef4pym5vymkjqe6wwk4r6gu",
+        "fee_rate_sat_vb": 2,
+        "utxos": [
+          {
+            "txid": "abababababababababababababababababababababababababababababababab",
+            "vout": 0,
+            "value_sats": "100000"
+          }
+        ],
+        "envelope": "e6a7c0abdd2d5188a01070151bfa849b9d7f1efe653744bbe44ebcf76d7f0d5b46cd14360fe533ff817bc62acb50a27cf19c08af12445b621b4a530a761e836118d5e221ca146c5969d9bf40fd91e0fd"
       },
-      "args_sha256": "a7252bbca94cd192bdb7b04de840f315b71a2d45288ae36e3957426f0935fb07",
+      "args_sha256": "1e86315537d0ff30bf9a0af0aee8b1d61b68fe3216977cfaeca5d437cad3f870",
       "expected": ["ERR_CLAWED_BACK", "ERR_VAULT_NOT_ACTIVE"],
       "actual": "ERR_CLAWED_BACK",
       "actual_class": "refused",
@@ -2381,6 +2393,33 @@
     {
       "id": 82,
       "round": 3,
+      "category": "policy_change",
+      "method": "propose_policy_change",
+      "args": {
+        "vault_id": "3",
+        "changes": {
+          "fee_cap_sats": "20000"
+        },
+        "envelope": "8d1092b04fa0b2dbcc3d0a4cf01e4c245a0ec86ee84108e3d91e7665f8aa56308f79f13cb657d173c0aaf950d4518a8065ce54c120b3dba6471881f3411bc216310406540315a255361f365789526bb9"
+      },
+      "args_sha256": "16bdb84be7251c73c1bbe565948c6cd0ba4a8071df5bdd3c4a1b4f6824bdcb8e",
+      "expected": ["ERR_CLAWED_BACK", "ERR_VAULT_NOT_ACTIVE"],
+      "actual": "ERR_CLAWED_BACK",
+      "actual_class": "refused",
+      "expected_match": true,
+      "unexpected": false,
+      "window_result": null,
+      "tx_hash": "000000000000000000000000000000000000000000000000000000000000004c",
+      "explorer": null,
+      "op_id": null,
+      "vault_id": null,
+      "log_entry": 74,
+      "off_log": null,
+      "note": null
+    },
+    {
+      "id": 83,
+      "round": 3,
       "category": "storage",
       "method": "top_up_storage",
       "args": {
@@ -2393,7 +2432,7 @@
       "expected_match": true,
       "unexpected": false,
       "window_result": null,
-      "tx_hash": "000000000000000000000000000000000000000000000000000000000000004c",
+      "tx_hash": "000000000000000000000000000000000000000000000000000000000000004d",
       "explorer": null,
       "op_id": null,
       "vault_id": null,
@@ -2402,7 +2441,7 @@
       "note": null
     },
     {
-      "id": 83,
+      "id": 84,
       "round": 3,
       "category": "policy_change",
       "method": "propose_policy_change",
@@ -2411,41 +2450,9 @@
         "changes": {
           "fee_cap_sats": "20000"
         },
-        "envelope": "e6a7c0abdd2d5188a01070151bfa849b9d7f1efe653744bbe44ebcf76d7f0d5b46cd14360fe533ff817bc62acb50a27cf19c08af12445b621b4a530a761e836118d5e221ca146c5969d9bf40fd91e0fd"
+        "envelope": "e1f518247b0c8119f9ea5c67c41135e8d57f47b9cffe0ee202091e73544b9d19fd3365e7a3c5ea0791cab6f076d502067397d6ad1282ce44b31e9d7ad591651fedf3c64557cde3137b627fec121d17d3"
       },
-      "args_sha256": "e3de45a2d96103f91baf6c3608d1e2a126aaa9b00f2e1e4d6800a4a2b63cdc4e",
-      "expected": ["ERR_CLAWED_BACK", "ERR_VAULT_NOT_ACTIVE"],
-      "actual": "ERR_CLAWED_BACK",
-      "actual_class": "refused",
-      "expected_match": true,
-      "unexpected": false,
-      "window_result": null,
-      "tx_hash": "000000000000000000000000000000000000000000000000000000000000004d",
-      "explorer": null,
-      "op_id": null,
-      "vault_id": null,
-      "log_entry": 74,
-      "off_log": null,
-      "note": null
-    },
-    {
-      "id": 84,
-      "round": 3,
-      "category": "refresh",
-      "method": "refresh",
-      "args": {
-        "vault_id": "3",
-        "fee_rate_sat_vb": 2,
-        "utxos": [
-          {
-            "txid": "abababababababababababababababababababababababababababababababab",
-            "vout": 0,
-            "value_sats": "100000"
-          }
-        ],
-        "envelope": "8d1092b04fa0b2dbcc3d0a4cf01e4c245a0ec86ee84108e3d91e7665f8aa56308f79f13cb657d173c0aaf950d4518a8065ce54c120b3dba6471881f3411bc216310406540315a255361f365789526bb9"
-      },
-      "args_sha256": "cc639e8d6b771d7b1a4625d60b067e06ee42bdc3b93eec11c6f5f17af898a6de",
+      "args_sha256": "c2bc7f8af38ff94fa338a4fcdad2ee2b5d192efe5f3089a38ea9ea10c7ca0f5b",
       "expected": ["ERR_CLAWED_BACK", "ERR_VAULT_NOT_ACTIVE"],
       "actual": "ERR_CLAWED_BACK",
       "actual_class": "refused",
@@ -2463,15 +2470,24 @@
     {
       "id": 85,
       "round": 3,
-      "category": "storage",
-      "method": "top_up_storage",
+      "category": "refresh",
+      "method": "refresh",
       "args": {
-        "vault_id": "3"
+        "vault_id": "3",
+        "fee_rate_sat_vb": 2,
+        "utxos": [
+          {
+            "txid": "abababababababababababababababababababababababababababababababab",
+            "vout": 0,
+            "value_sats": "100000"
+          }
+        ],
+        "envelope": "cc51c06fd96dc9da9b7ac89b1d44eb452222dd3f08775a87a215f8ff87f7ba530191c9875b2e8be3449f35b4f592ef70bbf9a426cb00582e3e8230fac31ade77d42a03f95d6cb929b33a5b40dacc30c3"
       },
-      "args_sha256": "a7465e4f88470368684dfb4dfa5498578006c3ead84eefdd4278e7f5b5014c62",
-      "expected": ["harmless"],
-      "actual": "allowed_harmless",
-      "actual_class": "allowed_harmless",
+      "args_sha256": "ce4e524dfdf9835a99d160023fa05f66acc80bed25503de7a5fa93c6934f88f9",
+      "expected": ["ERR_CLAWED_BACK", "ERR_VAULT_NOT_ACTIVE"],
+      "actual": "ERR_CLAWED_BACK",
+      "actual_class": "refused",
       "expected_match": true,
       "unexpected": false,
       "window_result": null,
@@ -2479,7 +2495,7 @@
       "explorer": null,
       "op_id": null,
       "vault_id": null,
-      "log_entry": null,
+      "log_entry": 76,
       "off_log": null,
       "note": null
     },
@@ -2509,6 +2525,29 @@
     {
       "id": 87,
       "round": 3,
+      "category": "storage",
+      "method": "top_up_storage",
+      "args": {
+        "vault_id": "3"
+      },
+      "args_sha256": "a7465e4f88470368684dfb4dfa5498578006c3ead84eefdd4278e7f5b5014c62",
+      "expected": ["harmless"],
+      "actual": "allowed_harmless",
+      "actual_class": "allowed_harmless",
+      "expected_match": true,
+      "unexpected": false,
+      "window_result": null,
+      "tx_hash": "0000000000000000000000000000000000000000000000000000000000000051",
+      "explorer": null,
+      "op_id": null,
+      "vault_id": null,
+      "log_entry": null,
+      "off_log": null,
+      "note": null
+    },
+    {
+      "id": 88,
+      "round": 3,
       "category": "refresh",
       "method": "refresh",
       "args": {
@@ -2521,36 +2560,9 @@
             "value_sats": "100000"
           }
         ],
-        "envelope": "e1f518247b0c8119f9ea5c67c41135e8d57f47b9cffe0ee202091e73544b9d19fd3365e7a3c5ea0791cab6f076d502067397d6ad1282ce44b31e9d7ad591651fedf3c64557cde3137b627fec121d17d3"
+        "envelope": "240c3e1cd87b2cd3b5f1a25acb4c33522a04345f956354a120a51ab51e22e505c92f10e49e014a2d93d2172a0f39c4476ceefe2d3275d1bc0085d2760f31bae27f01ea7c01a836b6de3d2dba9535872a"
       },
-      "args_sha256": "656518f471c0d27b6268277e14ece028888501909ec846876e7fb2d29579c16d",
-      "expected": ["ERR_CLAWED_BACK", "ERR_VAULT_NOT_ACTIVE"],
-      "actual": "ERR_CLAWED_BACK",
-      "actual_class": "refused",
-      "expected_match": true,
-      "unexpected": false,
-      "window_result": null,
-      "tx_hash": "0000000000000000000000000000000000000000000000000000000000000051",
-      "explorer": null,
-      "op_id": null,
-      "vault_id": null,
-      "log_entry": 76,
-      "off_log": null,
-      "note": null
-    },
-    {
-      "id": 88,
-      "round": 3,
-      "category": "policy_change",
-      "method": "propose_policy_change",
-      "args": {
-        "vault_id": "3",
-        "changes": {
-          "fee_cap_sats": "20000"
-        },
-        "envelope": "cc51c06fd96dc9da9b7ac89b1d44eb452222dd3f08775a87a215f8ff87f7ba530191c9875b2e8be3449f35b4f592ef70bbf9a426cb00582e3e8230fac31ade77d42a03f95d6cb929b33a5b40dacc30c3"
-      },
-      "args_sha256": "e407c2dcc25827a4062fa150c19d74cb4324b0106ad5a0437245daff8481c74e",
+      "args_sha256": "97e5a9b0a424151364442f146899d87361d6a8674021936d278edf68c9fa15fd",
       "expected": ["ERR_CLAWED_BACK", "ERR_VAULT_NOT_ACTIVE"],
       "actual": "ERR_CLAWED_BACK",
       "actual_class": "refused",
@@ -2568,23 +2580,16 @@
     {
       "id": 89,
       "round": 3,
-      "category": "withdrawal_request",
-      "method": "request_withdrawal",
+      "category": "policy_change",
+      "method": "propose_policy_change",
       "args": {
         "vault_id": "3",
-        "amount_sats": "99380",
-        "destination": "tb1q2vse06c408l85ze6wh3qm6304fhn7wgr80h8cu",
-        "fee_rate_sat_vb": 2,
-        "utxos": [
-          {
-            "txid": "abababababababababababababababababababababababababababababababab",
-            "vout": 0,
-            "value_sats": "100000"
-          }
-        ],
-        "envelope": "240c3e1cd87b2cd3b5f1a25acb4c33522a04345f956354a120a51ab51e22e505c92f10e49e014a2d93d2172a0f39c4476ceefe2d3275d1bc0085d2760f31bae27f01ea7c01a836b6de3d2dba9535872a"
+        "changes": {
+          "fee_cap_sats": "20000"
+        },
+        "envelope": "35d1265b148f0587af664cd23b9ed09d0544cad9e17a3922834c420e8b199e54aec9ff665b9f90e81db53b655da065fbeb24b223e802927d4e44520dbbb49183fbbe07f45bc559143730d05bd15e0ebd"
       },
-      "args_sha256": "28df32d0c2e79d572e805d68eeed77dffb53e7d209d8bea9a8bc9287349a213a",
+      "args_sha256": "012bf2149076a576dbaf1bea3a6c4c8617701b48aed1aaf7b5417f94da7f0e75",
       "expected": ["ERR_CLAWED_BACK", "ERR_VAULT_NOT_ACTIVE"],
       "actual": "ERR_CLAWED_BACK",
       "actual_class": "refused",
@@ -2602,10 +2607,12 @@
     {
       "id": 90,
       "round": 3,
-      "category": "refresh",
-      "method": "refresh",
+      "category": "withdrawal_request",
+      "method": "request_withdrawal",
       "args": {
         "vault_id": "3",
+        "amount_sats": "99380",
+        "destination": "tb1qvcn03kfky6fuxcwf3altg8uln3gu49c6w6dhv2",
         "fee_rate_sat_vb": 2,
         "utxos": [
           {
@@ -2614,9 +2621,9 @@
             "value_sats": "100000"
           }
         ],
-        "envelope": "35d1265b148f0587af664cd23b9ed09d0544cad9e17a3922834c420e8b199e54aec9ff665b9f90e81db53b655da065fbeb24b223e802927d4e44520dbbb49183fbbe07f45bc559143730d05bd15e0ebd"
+        "envelope": "42fc038d16e4cca587849251f6f8fd0997b7407ac41c2d0f296b91624a627d2a135bab88629aebcc9c93899eca0a62ffbab40893a5ce229d267eb66195fced5ac28f60e9d7aa2b48dad35cfd902a4f41"
       },
-      "args_sha256": "7226e8a932eb1bddc93c1fdf1fe1862481cadfd6e44efb71a5da85ee76490d42",
+      "args_sha256": "7e7be20652a2175529eece3c4168d2ee68178a8ab420a40d68d78c324b8f8acc",
       "expected": ["ERR_CLAWED_BACK", "ERR_VAULT_NOT_ACTIVE"],
       "actual": "ERR_CLAWED_BACK",
       "actual_class": "refused",
@@ -2633,64 +2640,6 @@
     },
     {
       "id": 91,
-      "round": 3,
-      "category": "co_sign",
-      "method": "sign_input",
-      "args": {
-        "op_id": "5",
-        "input_index": 0
-      },
-      "args_sha256": "8161c7820a6eab311e26655d67beca795e97c62c191f569a0251e3e8ed2d0882",
-      "expected": ["ERR_CLAWED_BACK", "ERR_VAULT_NOT_ACTIVE"],
-      "actual": "ERR_CLAWED_BACK",
-      "actual_class": "refused",
-      "expected_match": true,
-      "unexpected": false,
-      "window_result": null,
-      "tx_hash": "0000000000000000000000000000000000000000000000000000000000000055",
-      "explorer": null,
-      "op_id": null,
-      "vault_id": null,
-      "log_entry": 80,
-      "off_log": null,
-      "note": null
-    },
-    {
-      "id": 92,
-      "round": 3,
-      "category": "spend_allowance",
-      "method": "spend_allowance",
-      "args": {
-        "vault_id": "3",
-        "amount_sats": "1000",
-        "destination": "tb1qmp08pw0fhs9hdy6a99sk33slnxqp6pwq0q94zp",
-        "fee_rate_sat_vb": 2,
-        "utxos": [
-          {
-            "txid": "abababababababababababababababababababababababababababababababab",
-            "vout": 0,
-            "value_sats": "100000"
-          }
-        ],
-        "envelope": "42fc038d16e4cca587849251f6f8fd0997b7407ac41c2d0f296b91624a627d2a135bab88629aebcc9c93899eca0a62ffbab40893a5ce229d267eb66195fced5ac28f60e9d7aa2b48dad35cfd902a4f41"
-      },
-      "args_sha256": "2f285ed6c7e78e7fc1c30d2b7061be3280979badf7568011cf9885d1b503eea7",
-      "expected": ["ERR_CLAWED_BACK", "ERR_VAULT_NOT_ACTIVE"],
-      "actual": "ERR_CLAWED_BACK",
-      "actual_class": "refused",
-      "expected_match": true,
-      "unexpected": false,
-      "window_result": null,
-      "tx_hash": "0000000000000000000000000000000000000000000000000000000000000056",
-      "explorer": null,
-      "op_id": null,
-      "vault_id": null,
-      "log_entry": 81,
-      "off_log": null,
-      "note": null
-    },
-    {
-      "id": 93,
       "round": 3,
       "category": "refresh",
       "method": "refresh",
@@ -2713,23 +2662,47 @@
       "expected_match": true,
       "unexpected": false,
       "window_result": null,
-      "tx_hash": "0000000000000000000000000000000000000000000000000000000000000057",
+      "tx_hash": "0000000000000000000000000000000000000000000000000000000000000055",
       "explorer": null,
       "op_id": null,
       "vault_id": null,
-      "log_entry": 82,
+      "log_entry": 80,
       "off_log": null,
       "note": null
     },
     {
-      "id": 94,
+      "id": 92,
+      "round": 3,
+      "category": "co_sign",
+      "method": "sign_input",
+      "args": {
+        "op_id": "5",
+        "input_index": 0
+      },
+      "args_sha256": "8161c7820a6eab311e26655d67beca795e97c62c191f569a0251e3e8ed2d0882",
+      "expected": ["ERR_CLAWED_BACK", "ERR_VAULT_NOT_ACTIVE"],
+      "actual": "ERR_CLAWED_BACK",
+      "actual_class": "refused",
+      "expected_match": true,
+      "unexpected": false,
+      "window_result": null,
+      "tx_hash": "0000000000000000000000000000000000000000000000000000000000000056",
+      "explorer": null,
+      "op_id": null,
+      "vault_id": null,
+      "log_entry": 81,
+      "off_log": null,
+      "note": null
+    },
+    {
+      "id": 93,
       "round": 3,
       "category": "spend_allowance",
       "method": "spend_allowance",
       "args": {
         "vault_id": "3",
         "amount_sats": "1000",
-        "destination": "tb1qpt206w5wpd7as72ef4pym5vymkjqe6wwk4r6gu",
+        "destination": "tb1qmwlug08gwcnd6ttwtanfkghfhju5wu3vew3ux7",
         "fee_rate_sat_vb": 2,
         "utxos": [
           {
@@ -2740,46 +2713,23 @@
         ],
         "envelope": "1647e5b88c48217f94ee94820f84ae640e41b06d9e20b8f7e4eefa43f22c0d5e0f1ab8de22797cd5907fbcd3c7c5ed39b08b8fe1fd767ab7bb54cd04b3f67144ba7e67a6b9d336a1ae0e9cab4f33ae45"
       },
-      "args_sha256": "aee14e3464fe9203876c2fd4f2247e18dda4d05433d1ee836d9f7617e718e177",
+      "args_sha256": "4b5f02c26a86d8d21cb547bd2af42da2ebf214b9fca9cfa28bafdb79a2eed196",
       "expected": ["ERR_CLAWED_BACK", "ERR_VAULT_NOT_ACTIVE"],
       "actual": "ERR_CLAWED_BACK",
       "actual_class": "refused",
       "expected_match": true,
       "unexpected": false,
       "window_result": null,
-      "tx_hash": "0000000000000000000000000000000000000000000000000000000000000058",
+      "tx_hash": "0000000000000000000000000000000000000000000000000000000000000057",
       "explorer": null,
       "op_id": null,
       "vault_id": null,
-      "log_entry": 83,
+      "log_entry": 82,
       "off_log": null,
       "note": null
     },
     {
-      "id": 95,
-      "round": 3,
-      "category": "storage",
-      "method": "top_up_storage",
-      "args": {
-        "vault_id": "3"
-      },
-      "args_sha256": "a7465e4f88470368684dfb4dfa5498578006c3ead84eefdd4278e7f5b5014c62",
-      "expected": ["harmless"],
-      "actual": "allowed_harmless",
-      "actual_class": "allowed_harmless",
-      "expected_match": true,
-      "unexpected": false,
-      "window_result": null,
-      "tx_hash": "0000000000000000000000000000000000000000000000000000000000000059",
-      "explorer": null,
-      "op_id": null,
-      "vault_id": null,
-      "log_entry": null,
-      "off_log": null,
-      "note": null
-    },
-    {
-      "id": 96,
+      "id": 94,
       "round": 3,
       "category": "refresh",
       "method": "refresh",
@@ -2802,7 +2752,41 @@
       "expected_match": true,
       "unexpected": false,
       "window_result": null,
-      "tx_hash": "000000000000000000000000000000000000000000000000000000000000005a",
+      "tx_hash": "0000000000000000000000000000000000000000000000000000000000000058",
+      "explorer": null,
+      "op_id": null,
+      "vault_id": null,
+      "log_entry": 83,
+      "off_log": null,
+      "note": null
+    },
+    {
+      "id": 95,
+      "round": 3,
+      "category": "spend_allowance",
+      "method": "spend_allowance",
+      "args": {
+        "vault_id": "3",
+        "amount_sats": "1000",
+        "destination": "tb1qjdcghv8g8a4uhvqysgt4r2tg7jjfx5cj8s57hd",
+        "fee_rate_sat_vb": 2,
+        "utxos": [
+          {
+            "txid": "abababababababababababababababababababababababababababababababab",
+            "vout": 0,
+            "value_sats": "100000"
+          }
+        ],
+        "envelope": "7124abe1542168b564d9d2dca4613cf9de18581a2802fc99122898ba3d649e489a0256f8d862fa7ca008fb711f04cc212c30694d85f0b4b080d3db6a853c7b233b26b09814ef1e7ac0746a9b8b0f08ba"
+      },
+      "args_sha256": "f2474c1247b71e3302b305aa8362bf141f4a401cf94e226a36fa2759254bb8e8",
+      "expected": ["ERR_CLAWED_BACK", "ERR_VAULT_NOT_ACTIVE"],
+      "actual": "ERR_CLAWED_BACK",
+      "actual_class": "refused",
+      "expected_match": true,
+      "unexpected": false,
+      "window_result": null,
+      "tx_hash": "0000000000000000000000000000000000000000000000000000000000000059",
       "explorer": null,
       "op_id": null,
       "vault_id": null,
@@ -2811,18 +2795,46 @@
       "note": null
     },
     {
+      "id": 96,
+      "round": 3,
+      "category": "storage",
+      "method": "top_up_storage",
+      "args": {
+        "vault_id": "3"
+      },
+      "args_sha256": "a7465e4f88470368684dfb4dfa5498578006c3ead84eefdd4278e7f5b5014c62",
+      "expected": ["harmless"],
+      "actual": "allowed_harmless",
+      "actual_class": "allowed_harmless",
+      "expected_match": true,
+      "unexpected": false,
+      "window_result": null,
+      "tx_hash": "000000000000000000000000000000000000000000000000000000000000005a",
+      "explorer": null,
+      "op_id": null,
+      "vault_id": null,
+      "log_entry": null,
+      "off_log": null,
+      "note": null
+    },
+    {
       "id": 97,
       "round": 3,
-      "category": "policy_change",
-      "method": "propose_policy_change",
+      "category": "refresh",
+      "method": "refresh",
       "args": {
         "vault_id": "3",
-        "changes": {
-          "fee_cap_sats": "20000"
-        },
-        "envelope": "7124abe1542168b564d9d2dca4613cf9de18581a2802fc99122898ba3d649e489a0256f8d862fa7ca008fb711f04cc212c30694d85f0b4b080d3db6a853c7b233b26b09814ef1e7ac0746a9b8b0f08ba"
+        "fee_rate_sat_vb": 2,
+        "utxos": [
+          {
+            "txid": "abababababababababababababababababababababababababababababababab",
+            "vout": 0,
+            "value_sats": "100000"
+          }
+        ],
+        "envelope": "646b8bda26b8a7bf6e0ab41d55821763dbde5a53eebfe06c579c47662b5cb97c5893fb41a4ce289755ae5b678fa75043c5ea5bc0ebb3fabb371d6f1bee3b2a6d158164c58b9bf77c58b7eb18c76a7674"
       },
-      "args_sha256": "3ff037fc2d8c21cfcfed36c1245601db7ddbed23ae6e2ca0d115964aa94b0444",
+      "args_sha256": "cb7f3ecdfbb4aac2becf95c736f8df7290674e958c3efa582c080e84ee5570b1",
       "expected": ["ERR_CLAWED_BACK", "ERR_VAULT_NOT_ACTIVE"],
       "actual": "ERR_CLAWED_BACK",
       "actual_class": "refused",
@@ -2840,13 +2852,16 @@
     {
       "id": 98,
       "round": 3,
-      "category": "co_sign",
-      "method": "sign_input",
+      "category": "policy_change",
+      "method": "propose_policy_change",
       "args": {
-        "op_id": "5",
-        "input_index": 0
+        "vault_id": "3",
+        "changes": {
+          "fee_cap_sats": "20000"
+        },
+        "envelope": "c8552961e8610aca415ea00378396c9edbb3b13ccde26c26a405f8f75920167ff69b2289ccc151a41c995be5ee2e053f1b053537ad22a1de7dd6d49edd5c7a185005d0553fb5e94567436307a6c40974"
       },
-      "args_sha256": "8161c7820a6eab311e26655d67beca795e97c62c191f569a0251e3e8ed2d0882",
+      "args_sha256": "68d06a6ac2a80ecb9bb1887b026703872f01eaaf157371189dc007c151d81b0a",
       "expected": ["ERR_CLAWED_BACK", "ERR_VAULT_NOT_ACTIVE"],
       "actual": "ERR_CLAWED_BACK",
       "actual_class": "refused",
@@ -2864,23 +2879,13 @@
     {
       "id": 99,
       "round": 3,
-      "category": "spend_allowance",
-      "method": "spend_allowance",
+      "category": "co_sign",
+      "method": "sign_input",
       "args": {
-        "vault_id": "3",
-        "amount_sats": "1000",
-        "destination": "tb1qvcn03kfky6fuxcwf3altg8uln3gu49c6w6dhv2",
-        "fee_rate_sat_vb": 2,
-        "utxos": [
-          {
-            "txid": "abababababababababababababababababababababababababababababababab",
-            "vout": 0,
-            "value_sats": "100000"
-          }
-        ],
-        "envelope": "646b8bda26b8a7bf6e0ab41d55821763dbde5a53eebfe06c579c47662b5cb97c5893fb41a4ce289755ae5b678fa75043c5ea5bc0ebb3fabb371d6f1bee3b2a6d158164c58b9bf77c58b7eb18c76a7674"
+        "op_id": "5",
+        "input_index": 0
       },
-      "args_sha256": "077fc7383db4e1a24fd6f5ded33e03ebb8ae16d10170c3fa9bb2986174cf4c06",
+      "args_sha256": "8161c7820a6eab311e26655d67beca795e97c62c191f569a0251e3e8ed2d0882",
       "expected": ["ERR_CLAWED_BACK", "ERR_VAULT_NOT_ACTIVE"],
       "actual": "ERR_CLAWED_BACK",
       "actual_class": "refused",
@@ -2903,7 +2908,7 @@
       "args": {
         "vault_id": "3",
         "amount_sats": "1000",
-        "destination": "tb1qmwlug08gwcnd6ttwtanfkghfhju5wu3vew3ux7",
+        "destination": "tb1qczu4n2p52cq3ux77fhxd4nwapshw6frupa4d68",
         "fee_rate_sat_vb": 2,
         "utxos": [
           {
@@ -2912,9 +2917,9 @@
             "value_sats": "100000"
           }
         ],
-        "envelope": "c8552961e8610aca415ea00378396c9edbb3b13ccde26c26a405f8f75920167ff69b2289ccc151a41c995be5ee2e053f1b053537ad22a1de7dd6d49edd5c7a185005d0553fb5e94567436307a6c40974"
+        "envelope": "24bf6e326d5069abbcddcbc59a2f887e47c93544e73bc7cdead1832e3bbd483d38cb2d6e5df556a3dbfd71709f6d51d06995bb559dc5c2d0ff863bce4b90afe6c9c1b5a4e0868d9617c9c55645e1a38b"
       },
-      "args_sha256": "b2c30da7016a70e219d15fa4e980ba6c5f09d1fd80d7a88d20bb386bed1eeadc",
+      "args_sha256": "2f1df91a37d4dbdb3d5f5fc0733385f692fdb85143d58aba98e946d5da99fb0c",
       "expected": ["ERR_CLAWED_BACK", "ERR_VAULT_NOT_ACTIVE"],
       "actual": "ERR_CLAWED_BACK",
       "actual_class": "refused",
@@ -3059,6 +3064,14 @@
       {
         "address": "tb1qmwlug08gwcnd6ttwtanfkghfhju5wu3vew3ux7",
         "final_balance_sats": 0
+      },
+      {
+        "address": "tb1qjdcghv8g8a4uhvqysgt4r2tg7jjfx5cj8s57hd",
+        "final_balance_sats": 0
+      },
+      {
+        "address": "tb1qczu4n2p52cq3ux77fhxd4nwapshw6frupa4d68",
+        "final_balance_sats": 0
       }
     ],
     "sats_to_attackers": 0,
@@ -3069,10 +3082,11 @@
     "missing_hashes": [],
     "off_log": 0,
     "allowed_harmless": 6,
-    "skipped": [6, 7, 40, 41, 73, 74],
+    "skipped": [7, 8, 41, 42, 74, 75],
     "unreadable": [],
     "unexpected": [],
     "clawback_missing": [],
+    "veto_missing": [],
     "not_deployed": [],
     "not_deployed_note": null,
     "stopped_reason": null,

@@ -3,6 +3,7 @@
 use super::address::script_pubkey;
 use super::errors::{CoreResult, ErrorCode, Rejection};
 use near_sdk::json_types::U64;
+use near_sdk::serde_json::Value;
 use near_sdk::{near, AccountId};
 
 pub const MINUTE_NS: u64 = 60_000_000_000;
@@ -178,6 +179,147 @@ pub fn validate_policy(policy: &Policy, allowed_networks: &[BtcNetwork]) -> Core
     validate_adjustable(policy)
 }
 
+/// Policy fields a Policy Change may touch. Every other field is Script-bound.
+pub const CHANGEABLE_FIELDS: [&str; 7] = [
+    "delay_ns",
+    "recovery_address",
+    "allowance_limit_sats",
+    "fee_cap_sats",
+    "policy_change_delay_ns",
+    "fast_approval",
+    "fast_approval_floor_ns",
+];
+
+/// The fields one Policy Change sets; absent fields keep their current value.
+#[near(serializers = [borsh, json])]
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct PolicyChangeFields {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub delay_ns: Option<U64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub recovery_address: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub allowance_limit_sats: Option<U64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub fee_cap_sats: Option<U64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub policy_change_delay_ns: Option<U64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub fast_approval: Option<bool>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub fast_approval_floor_ns: Option<U64>,
+}
+
+#[near(serializers = [borsh, json])]
+#[serde(rename_all = "snake_case")]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum PolicyChangeState {
+    Pending,
+    Applied,
+    Vetoed,
+    Withdrawn,
+}
+
+#[near(serializers = [borsh, json])]
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct PolicyChange {
+    pub change_id: U64,
+    pub vault_id: U64,
+    pub changes: PolicyChangeFields,
+    pub proposed_at: U64,
+    pub effective_at: U64,
+    pub state: PolicyChangeState,
+    pub vetoed_by: Option<AccountId>,
+}
+
+/// A u64 sent as a canonical decimal string ("0" or no leading zero), as the clients send it.
+fn parse_u64(value: &Value, field: &str) -> CoreResult<U64> {
+    let text = value.as_str().unwrap_or_default();
+    let canonical = text == "0"
+        || (text.bytes().all(|b| b.is_ascii_digit()) && !text.is_empty() && !text.starts_with('0'));
+    canonical
+        .then(|| text.parse().ok())
+        .flatten()
+        .map(U64)
+        .ok_or_else(|| {
+            Rejection::with(
+                ErrorCode::PolicyBounds,
+                format!("{field} is not a u64 decimal string"),
+            )
+        })
+}
+
+/// Reads a proposed change from raw JSON. Keys are checked against the whitelist before any
+/// value is parsed, so a Script-bound field is always `ERR_SCRIPT_BOUND`, never dropped.
+pub fn parse_change(changes: &Value) -> CoreResult<PolicyChangeFields> {
+    let Some(map) = changes.as_object() else {
+        return Err(bounds_error("changes is not an object"));
+    };
+    if let Some(key) = map
+        .keys()
+        .find(|k| !CHANGEABLE_FIELDS.contains(&k.as_str()))
+    {
+        return Err(Rejection::with(ErrorCode::ScriptBound, key.clone()));
+    }
+    if map.is_empty() {
+        return Err(bounds_error("empty change"));
+    }
+    let number = |field: &str| map.get(field).map(|v| parse_u64(v, field)).transpose();
+    let recovery_address = map
+        .get("recovery_address")
+        .map(|v| {
+            v.as_str()
+                .map(str::to_string)
+                .ok_or_else(|| bounds_error("recovery_address"))
+        })
+        .transpose()?;
+    let fast_approval = map
+        .get("fast_approval")
+        .map(|v| v.as_bool().ok_or_else(|| bounds_error("fast_approval")))
+        .transpose()?;
+    Ok(PolicyChangeFields {
+        delay_ns: number("delay_ns")?,
+        recovery_address,
+        allowance_limit_sats: number("allowance_limit_sats")?,
+        fee_cap_sats: number("fee_cap_sats")?,
+        policy_change_delay_ns: number("policy_change_delay_ns")?,
+        fast_approval,
+        fast_approval_floor_ns: number("fast_approval_floor_ns")?,
+    })
+}
+
+impl PolicyChangeFields {
+    /// The Policy this change would produce, held to the same bounds as at creation.
+    pub fn apply_to(&self, current: &Policy) -> CoreResult<Policy> {
+        let next = Policy {
+            delay_ns: self.delay_ns.unwrap_or(current.delay_ns),
+            recovery_address: self
+                .recovery_address
+                .clone()
+                .unwrap_or_else(|| current.recovery_address.clone()),
+            allowance_limit_sats: self
+                .allowance_limit_sats
+                .unwrap_or(current.allowance_limit_sats),
+            fee_cap_sats: self.fee_cap_sats.unwrap_or(current.fee_cap_sats),
+            policy_change_delay_ns: self
+                .policy_change_delay_ns
+                .unwrap_or(current.policy_change_delay_ns),
+            fast_approval: self.fast_approval.unwrap_or(current.fast_approval),
+            fast_approval_floor_ns: self
+                .fast_approval_floor_ns
+                .unwrap_or(current.fast_approval_floor_ns),
+            ..current.clone()
+        };
+        validate_adjustable(&next)?;
+        Ok(next)
+    }
+}
+
+/// Validates a raw proposed change against the current Policy and returns the Policy it yields.
+pub fn apply_change(current: &Policy, changes: &Value) -> CoreResult<Policy> {
+    parse_change(changes)?.apply_to(current)
+}
+
 #[cfg(test)]
 pub mod tests {
     use super::*;
@@ -350,5 +492,98 @@ pub mod tests {
             ..standard_policy()
         };
         assert_eq!(code(&bad_watcher), Some(ErrorCode::BadKey));
+    }
+
+    mod changes {
+        use super::*;
+        use near_sdk::serde_json::json;
+
+        const NEW_RECOVERY: &str = "tb1qw508d6qejxtdg4y5r3zarvary0c5xw7kxpjzsx";
+
+        fn change_code(changes: Value) -> Option<ErrorCode> {
+            apply_change(&standard_policy(), &changes)
+                .err()
+                .map(|r| r.code)
+        }
+
+        #[test]
+        fn merges_only_the_fields_sent() {
+            let next = apply_change(
+                &standard_policy(),
+                &json!({ "recovery_address": NEW_RECOVERY, "fee_cap_sats": "20000" }),
+            )
+            .unwrap();
+            assert_eq!(
+                next,
+                Policy {
+                    recovery_address: NEW_RECOVERY.to_string(),
+                    fee_cap_sats: U64(20_000),
+                    ..standard_policy()
+                }
+            );
+        }
+
+        #[test]
+        fn rejects_script_bound_fields_before_parsing() {
+            for changes in [
+                json!({ "escape_timelock_blocks": 1 }),
+                json!({ "guardians": [] }),
+                json!({ "btc_network": "signet" }),
+                json!({ "watcher_x25519_pk": "00" }),
+                json!({ "delay_ns": "not a number", "owner_key": "02" }),
+            ] {
+                assert_eq!(change_code(changes), Some(ErrorCode::ScriptBound));
+            }
+        }
+
+        #[test]
+        fn rejects_empty_and_malformed_changes() {
+            for changes in [
+                json!({}),
+                json!([]),
+                json!(null),
+                json!({ "delay_ns": 3_600_000_000_000u64 }),
+                json!({ "delay_ns": "036000000000000" }),
+                json!({ "delay_ns": "+1" }),
+                json!({ "fee_cap_sats": "18446744073709551616" }),
+                json!({ "fast_approval": "true" }),
+                json!({ "recovery_address": 5 }),
+            ] {
+                assert_eq!(change_code(changes), Some(ErrorCode::PolicyBounds));
+            }
+        }
+
+        #[test]
+        fn holds_the_result_to_creation_bounds() {
+            assert_eq!(
+                change_code(json!({ "delay_ns": "1" })),
+                Some(ErrorCode::PolicyBounds)
+            );
+            assert_eq!(
+                change_code(json!({ "policy_change_delay_ns": (6 * DAY_NS).to_string() })),
+                Some(ErrorCode::PolicyBounds)
+            );
+            assert_eq!(
+                change_code(json!({ "delay_ns": (8 * DAY_NS).to_string() })),
+                Some(ErrorCode::PolicyChangeDelay)
+            );
+            assert_eq!(
+                change_code(
+                    json!({ "recovery_address": "bc1qw508d6qejxtdg4y5r3zarvary0c5xw7kv8f3t4" })
+                ),
+                Some(ErrorCode::BadAddress)
+            );
+            assert_eq!(
+                change_code(json!({ "fast_approval": true, "fast_approval_floor_ns": "0" })),
+                Some(ErrorCode::PolicyBounds)
+            );
+        }
+
+        #[test]
+        fn echoes_the_fields_as_sent() {
+            let sent = json!({ "allowance_limit_sats": "0", "fast_approval": true });
+            let fields = parse_change(&sent).unwrap();
+            assert_eq!(near_sdk::serde_json::to_value(&fields).unwrap(), sent);
+        }
     }
 }
