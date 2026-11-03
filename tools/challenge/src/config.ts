@@ -175,3 +175,33 @@ export function loadNearConfig(env: Env = process.env): NearConfig {
     parentKey: required(env, "MORROW_CHALLENGE_PARENT_KEY"),
   };
 }
+
+/** What the `attack` command needs. Every input is public; no operator secret is read. */
+export interface AttackConfig {
+  /** The challenge server base URL (`/round`, `/attempts`). */
+  challengeUrl: string;
+  nearNetwork: "testnet" | "mainnet";
+  rpcUrl: string;
+  btcBackendUrl: string;
+}
+
+/**
+ * Public-only configuration for the scripted run. It reads the challenge URL, the NEAR network
+ * and RPC, and the Bitcoin backend; it never reads the operator state file or any operator
+ * secret (the Vault Contract and keys come from `/round`).
+ */
+export function loadAttackConfig(env: Env = process.env): AttackConfig {
+  const nearNetwork = env.MORROW_NEAR_NETWORK ?? "testnet";
+  if (nearNetwork !== "testnet" && nearNetwork !== "mainnet") {
+    throw new Error("MORROW_NEAR_NETWORK must be testnet or mainnet");
+  }
+  return {
+    challengeUrl: httpUrl("MORROW_CHALLENGE_URL", required(env, "MORROW_CHALLENGE_URL")).replace(
+      /\/+$/,
+      "",
+    ),
+    nearNetwork,
+    rpcUrl: env.MORROW_NEAR_RPC_URL ?? `https://rpc.${nearNetwork}.near.org`,
+    btcBackendUrl: env.MORROW_BTC_BACKEND_URL ?? "https://mempool.space/signet/api",
+  };
+}

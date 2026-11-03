@@ -6,8 +6,12 @@
  *   serve           GET /round and GET /attempts for the challenge page
  *   run             the round loop (next round, rotation, top-up, key rotation, rejected
  *                   attempts) every 30 s, serving GET /round and GET /attempts; the only writer
+ *   attack [flags]  the scripted attacker: a seeded mix of refused attempts plus one clawed-back
+ *                   request, over public keys only, with a JSON report. Flags: --n --rounds
+ *                   --seed --dry-run --out --round-wait --log-wait
  */
 import { FastNearLocator, FetchNearRpc, backendFromUrl } from "@morrow/core-ts";
+import { runAttackCommand } from "./attack/command.js";
 import { FileAttemptStore } from "./attempts.js";
 import { loadBaseConfig, loadNearConfig, loadPolicyConfig, loadRunConfig } from "./config.js";
 import { createLogger } from "./log.js";
@@ -157,7 +161,13 @@ async function main(argv: string[]): Promise<void> {
     return;
   }
 
-  throw new Error("Usage: challenge open [--next] | status | serve | run");
+  if (command === "attack") {
+    const exitCode = await runAttackCommand(flags);
+    process.exitCode = exitCode;
+    return;
+  }
+
+  throw new Error("Usage: challenge open [--next] | status | serve | run | attack [flags]");
 }
 
 main(process.argv.slice(2)).catch((error: unknown) => {
