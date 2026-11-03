@@ -58,8 +58,11 @@ export const HOME_PATH = "/challenge";
 /** The public landing (Epic 9), drawn full-bleed outside the app shell. */
 export const LANDING_PATH = "/";
 
-/** Paths the router rewrites before rendering. None today: `/` is the landing. */
-export const REDIRECTS: Readonly<Record<string, string>> = {};
+/**
+ * Paths the router rewrites before rendering. `/rob` (the epic's name for the Challenge page)
+ * leads to the canonical `/challenge`.
+ */
+export const REDIRECTS: Readonly<Record<string, string>> = { "/rob": HOME_PATH };
 
 export type ResolvedRoute =
   | { kind: "redirect"; to: string }

@@ -1,11 +1,13 @@
 import { defineConfig } from "@playwright/test";
-import { WATCHER_URL, WEB_ENV, WEB_PORT } from "./e2e/services.ts";
+import { LIVE_WEB_ENV, LIVE_WEB_URL, WATCHER_URL, WEB_ENV, WEB_PORT } from "./e2e/services.ts";
 
 const CI = Boolean(process.env.CI);
 
 // The shell is checked against the production build served by `server/serve.ts`, the
 // production server, at the mockup's desktop size and at a phone size. Local stubs stand in
-// for the NEAR RPC, the Bitcoin backend and the watcher (e2e/stub-services.ts).
+// for the NEAR RPC, the Bitcoin backend, the watcher and the challenge feed
+// (e2e/stub-services.ts). A second instance of the same build has the challenge feed
+// configured (e2e/challenge.spec.ts); the first has none.
 export default defineConfig({
   testDir: "e2e",
   // Results live under node_modules so the root `eslint .` and `prettier --check .` never
@@ -41,6 +43,14 @@ export default defineConfig({
       // Always build and serve afresh, so the run never checks a stale bundle.
       reuseExistingServer: false,
       timeout: 120_000,
+    },
+    {
+      // Started after the build above: the same dist/, served with MORROW_CHALLENGE_URL.
+      command: "node server/serve.ts",
+      url: `${LIVE_WEB_URL}/challenge`,
+      env: LIVE_WEB_ENV,
+      reuseExistingServer: false,
+      timeout: 30_000,
     },
   ],
 });

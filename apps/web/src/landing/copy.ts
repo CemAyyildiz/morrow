@@ -2,9 +2,10 @@
 // copy.test.ts): no emoji, no exclamation marks, no hype words. Brand lines may say
 // "tomorrow": it is the product's promise, not a vague time.
 //
-// No count here is presented as a live fact. The record line keeps a no-number fallback
-// until story 9.4 wires the Attempt Log; the feature panels, the phone and the cards are
-// product illustrations of one example vault (Daniel's, guarded by Emma).
+// No count here is presented as a live fact unless it comes from the challenge feed: the record
+// line takes its counts from the Attempt Log and keeps a no-number fallback without one; the
+// feature panels, the phone and the cards are product illustrations of one example vault
+// (Daniel's, guarded by Emma).
 import type { BtcNetwork, ContractState } from "@/app/data";
 
 const COINS: Record<BtcNetwork, string> = {
@@ -202,12 +203,22 @@ export const landingCopy = {
   },
 
   record: {
-    // No-number fallback until story 9.4 wires the live count from the Attempt Log.
+    // The no-number fallback, shown while no challenge feed has answered.
     lead: "The real keys are published.",
     em: "Not one sat",
     tail: " leaves before the delay ends.",
     by: "The attempt log",
     byDetail: "Challenge vault · counted from on-chain events",
+    /** The mockup's sentence with the live counts from the Attempt Log. */
+    live: {
+      lead: (total: number) =>
+        `${total.toLocaleString("en-US")} ${total === 1 ? "attempt" : "attempts"} with the real keys.`,
+      em: (sats: number) => `${sats.toLocaleString("en-US")} ${sats === 1 ? "sat" : "sats"}`,
+      tail: " left the vault.",
+      /** The counts cover every round, not only the open one. */
+      byDetail: (round: number) =>
+        `Challenge vaults · every round so far, now round ${round} · counted from on-chain events`,
+    },
   },
 
   cards: {

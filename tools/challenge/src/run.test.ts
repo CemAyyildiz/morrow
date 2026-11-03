@@ -3,14 +3,24 @@ import type { AddressInfo } from "node:net";
 import type { Server } from "node:http";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { MockContractClient } from "@morrow/core-ts";
+import { MockContractClient, type MorrowEvent } from "@morrow/core-ts";
 import { afterEach, describe, expect, it } from "vitest";
-import { FileAttemptStore, InMemoryAttemptStore, type AttemptStore } from "./attempts.js";
+import {
+  FileAttemptStore,
+  InMemoryAttemptStore,
+  type AttemptStore,
+  type WithdrawalAttempt,
+} from "./attempts.js";
 import type { LogLevel } from "./log.js";
 import { STORAGE_TOP_UP_YOCTO } from "./near.js";
 import { RecoveryWallet } from "./recovery-wallet.js";
 import { openRound } from "./round.js";
-import { RoundRunner, type RoundRunnerOptions } from "./run.js";
+import {
+  MAX_CLAWBACK_CHECKS_PER_TICK,
+  RoundRunner,
+  txidOf,
+  type RoundRunnerOptions,
+} from "./run.js";
 import { createRoundServer } from "./serve.js";
 import {
   FileRoundStore,
@@ -30,6 +40,8 @@ import {
   fakeChainSources,
   fakeWatcher,
   mockRunNear,
+  p2wshAddress,
+  txid,
 } from "./test-helpers.js";
 
 const NEAR = 1_000_000_000_000_000_000_000_000n;
@@ -392,6 +404,7 @@ describe("RoundRunner: rejected attempts", () => {
       {
         type: "rejected",
         round: 1,
+        n: 1,
         tx_hash: "BAD1",
         block_timestamp: "1767225660000000000",
         time: "2026-01-01T00:01:00.000Z",
@@ -779,5 +792,229 @@ describe("RoundRunner: retired rounds and scan errors", () => {
         fields: expect.objectContaining({ error: "disk full" }),
       }),
     );
+  });
+});
+
+describe("RoundRunner: Attempt Log from events_since", () => {
+  const ENVELOPE = "ab".repeat(80);
+  const SECOND = 1_000_000_000n;
+  let utxo = 0;
+
+  async function request(t: ReturnType<typeof setup>, round: RoundRecord): Promise<string> {
+    utxo++;
+    return t.mock.asCaller(round.owner_account).requestWithdrawal({
+      vault_id: round.vault_id as string,
+      amount_sats: "50000",
+      destination: p2wshAddress(77),
+      fee_rate_sat_vb: 2,
+      utxos: [{ txid: txid(7000 + utxo), vout: 0, value_sats: "100000" }],
+      envelope: ENVELOPE,
+    });
+  }
+
+  /** The owner's successful `request_withdrawal` transaction, with its NEP-297 log. */
+  function requestTx(round: RoundRecord, hash: string, opId: string, at: bigint) {
+    return {
+      hash,
+      signer: round.owner_account,
+      receiver: CONTRACT,
+      method: "request_withdrawal",
+      blockTimestampNs: at.toString(),
+      logs: [
+        `EVENT_JSON:{"standard":"morrow","version":"1.0.0","event":"withdrawal_requested","data":[{"vault_id":"${round.vault_id}","payload":{"op_id":"${opId}"}}]}`,
+      ],
+    };
+  }
+
+  const withdrawals = async (t: ReturnType<typeof setup>) =>
+    (await t.attempts.entries()).filter((e): e is WithdrawalAttempt => e.type === "withdrawal");
+
+  it("clawback: one row with its NEAR hash, clawed back in 41 s, Bitcoin txid once broadcast", async () => {
+    const t = setup();
+    const { runner, round } = await withRound(t);
+    const requestedAt = t.mock.now();
+    const opId = await request(t, round);
+    t.chain.txs.push(requestTx(round, "REQ1", opId, requestedAt));
+
+    await runner.tick();
+    expect(await withdrawals(t)).toMatchObject([
+      {
+        round: 1,
+        n: 1,
+        op_id: opId,
+        outcome: "pending",
+        amount_sats: "50000",
+        requested_at: requestedAt.toString(),
+        tx_hash: "REQ1",
+      },
+    ]);
+
+    t.mock.advance(41n * SECOND);
+    await t.watcher.watcher.requestClawback(round.vault_id as string);
+    // The Bitcoin backend is down: no broadcast yet, retried next tick.
+    const getTx = t.backend.getTx.bind(t.backend);
+    t.backend.getTx = async () => {
+      throw new Error("backend down");
+    };
+    await runner.tick();
+    const [clawed] = await withdrawals(t);
+    expect(clawed).toMatchObject({ outcome: "clawed_back", clawback_broadcast: false });
+    expect(BigInt(clawed?.outcome_at as string) - requestedAt).toBe(41n * SECOND);
+    const op = await t.near.near.getOp(clawed?.clawback_op_id as string);
+    expect(clawed?.clawback_txid).toBe(txidOf(op.unsigned_tx_hex as string));
+    expect(t.logs.some((l) => l.msg === "clawback not readable yet; will retry")).toBe(true);
+
+    // Back up, but the transaction is not out yet.
+    t.backend.getTx = getTx;
+    await runner.tick();
+    expect((await withdrawals(t))[0]?.clawback_broadcast).toBe(false);
+
+    const id = clawed?.clawback_txid as string;
+    t.backend.txs.set(id, { txid: id, confirmations: 0, block_height: null });
+    await runner.tick();
+    expect((await withdrawals(t))[0]).toMatchObject({
+      clawback_txid: id,
+      clawback_broadcast: true,
+    });
+
+    const base = await serve(t.store, t.attempts);
+    const body = (await (await fetch(`${base}/attempts`)).json()) as {
+      entries: unknown[];
+      summary: Record<string, unknown>;
+    };
+    expect(body.entries).toHaveLength(1);
+    // Round 2 opened after the Clawback; round 1 keeps its attempt in the total.
+    expect(body.summary).toEqual({
+      round: 2,
+      attempts_round: 0,
+      attempts_total: 1,
+      sats_taken_total: 0,
+      last_attempt_at: new Date(Number(requestedAt / 1_000_000n)).toISOString(),
+    });
+  });
+
+  it("pending, early execute and a vetoed Policy Change are numbered in discovery order (events before the scan)", async () => {
+    const t = setup();
+    const { runner, round } = await withRound(t);
+    const opId = await request(t, round);
+    await runner.tick();
+    t.chain.txs.push({
+      hash: "EARLY",
+      signer: round.owner_account,
+      receiver: CONTRACT,
+      method: "begin_execute",
+      blockTimestampNs: t.mock.now().toString(),
+      failure: "ERR_NOT_EXECUTABLE",
+    });
+    t.mock.advance(SECOND);
+    const changeId = await t.mock.asCaller(round.owner_account).proposePolicyChange({
+      vault_id: round.vault_id as string,
+      changes: { fee_cap_sats: "20000" },
+      envelope: ENVELOPE,
+    });
+    await t.mock.asCaller(GUARDIAN).vetoPolicyChange(changeId);
+    await runner.tick();
+
+    const entries = await t.attempts.entries();
+    const rows = entries.map((e) => [
+      e.type,
+      "n" in e ? e.n : null,
+      "outcome" in e ? e.outcome : null,
+    ]);
+    expect(rows).toEqual([
+      ["policy_change", 2, "vetoed"],
+      ["withdrawal", 1, "pending"],
+      ["rejected", 3, null],
+    ]);
+    expect(entries.find((e) => e.type === "rejected")).toMatchObject({
+      method: "begin_execute",
+      code: "ERR_NOT_EXECUTABLE",
+    });
+    // The hero reads the pending request's executable_at.
+    expect((await withdrawals(t))[0]).toMatchObject({
+      op_id: opId,
+      executable_at: (await t.mock.getOp(opId)).executable_at,
+      tx_hash: null,
+    });
+    expect((await t.attempts.summary(1)).attempts_round).toBe(3);
+  });
+
+  it("hash unknown: the row waits for its tx hash until the scanner can read the transaction", async () => {
+    const t = setup();
+    const { runner, round } = await withRound(t);
+    const opId = await request(t, round);
+    t.chain.txs.push(requestTx(round, "LATE", opId, t.mock.now()));
+    t.chain.state.unreadable.add("LATE");
+    await runner.tick();
+    expect((await withdrawals(t))[0]?.tx_hash).toBeNull();
+    t.chain.state.unreadable.clear();
+    await runner.tick();
+    expect((await withdrawals(t))[0]?.tx_hash).toBe("LATE");
+  });
+
+  it("restart: same entries and numbers, and the tail resumes from the persisted cursor", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "morrow-run-"));
+    dirs.push(dir);
+    const files = () => ({
+      store: new FileRoundStore(join(dir, "rounds.json")),
+      attempts: new FileAttemptStore(join(dir, "attempts.json")),
+    });
+    const mock = new MockContractClient({ allowedNetworks: ["signet"] });
+    const backend = new FakeBackend();
+    const a = setup(files(), mock, backend);
+    const { round } = await withRound(a);
+    await request(a, round);
+    await a.runner().tick();
+    const before = await a.attempts.entries();
+    const cursor = await a.attempts.cursor();
+    expect(before).toHaveLength(1);
+
+    const b = setup(files(), mock, backend);
+    for (const [k, v] of a.near.keys) b.near.keys.set(k, v);
+    mock.advance(SECOND);
+    await request(b, round);
+    await b.runner().tick();
+    expect(b.near.eventsCalls[0]).toBe(cursor);
+    const after = await b.attempts.entries();
+    expect(after.map((e) => ("n" in e ? e.n : null))).toEqual([2, 1]);
+    expect(after[1]).toEqual(before[0]);
+  });
+
+  it("reads at most 10 pages of 100 events per tick and skips events of unserved Vaults", async () => {
+    const t = setup();
+    const { runner, round } = await withRound(t);
+    for (let i = 0; i < 1_050; i++) await t.mock.topUpStorage(round.vault_id as string, "1");
+    t.near.eventsCalls.length = 0;
+    await runner.tick();
+    expect(t.near.eventsCalls).toHaveLength(10);
+    const cursor = BigInt(await t.attempts.cursor());
+    await runner.tick();
+    expect(BigInt(await t.attempts.cursor())).toBeGreaterThan(cursor);
+    expect(await t.attempts.entries()).toEqual([]);
+  });
+
+  it("checks at most 20 Clawbacks per tick", async () => {
+    const t = setup();
+    const { runner } = await withRound(t);
+    const events = Array.from({ length: 25 }, (_, i) => [
+      {
+        seq: String(100_000 + 2 * i),
+        block_timestamp: "1767225600000000000",
+        vault_id: "1",
+        kind: "withdrawal_requested",
+        data: { op_id: String(500 + i), amount_sats: "1", destination: "x", executable_at: "1" },
+      },
+      {
+        seq: String(100_001 + 2 * i),
+        block_timestamp: "1767225641000000000",
+        vault_id: "1",
+        kind: "op_voided",
+        data: { op_id: String(500 + i), by_op_id: "999" },
+      },
+    ]).flat() as unknown as MorrowEvent[];
+    await t.attempts.applyEvents(events, () => 1);
+    t.near.getOpCalls.length = 0;
+    await runner.tick();
+    expect(t.near.getOpCalls).toHaveLength(MAX_CLAWBACK_CHECKS_PER_TICK);
   });
 });

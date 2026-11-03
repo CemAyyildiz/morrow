@@ -10,6 +10,8 @@ export const sampleConfig: AppConfig = {
   nearRpcUrl: null,
   btcBackendUrl: "http://localhost:3002",
   watcherUrl: null,
+  challengeUrl: null,
+  bountyUrl: null,
   contract: "locked",
   coSigner: "v1.signer-prod.testnet",
   heartbeat: { kind: "seen", minutes: 1, stale: false },
@@ -27,6 +29,7 @@ export const sampleChallenge: ChallengeData = {
   },
   attempts: {
     count: 13,
+    total: 13,
     satsOut: 0,
     hourly: [0, 0, 1, 0, 0, 2, 1, 0, 0, 0, 1, 0, 0, 3, 1, 0, 0, 1, 0, 2, 0, 0, 1, 0],
     lastAt: "03:11",
@@ -38,4 +41,10 @@ export const sampleChallenge: ChallengeData = {
   },
   satsTaken: 0,
   coSigner: { threshold: 11, total: 16 },
+  rotation: { height: 291_744, at: "13 Nov 06:12" },
+  coins: "Signet test coins · not real bitcoin",
+  bountyUrl: null,
+  keys: null,
+  log: null,
+  pending: null,
 };

@@ -5,10 +5,12 @@ import { normalizePath } from "./router";
 import { NAV_ROUTES, REDIRECTS, resolveRoute } from "./routes";
 
 describe("route resolution", () => {
-  it("resolves / to the landing, with no redirect left", () => {
+  it("resolves / to the landing; the only redirect is /rob to /challenge", () => {
     expect(resolveRoute("/")).toEqual({ kind: "landing" });
     expect(resolveRoute("")).toEqual({ kind: "landing" });
-    expect(REDIRECTS).toEqual({});
+    expect(REDIRECTS).toEqual({ "/rob": "/challenge" });
+    expect(resolveRoute("/rob")).toEqual({ kind: "redirect", to: "/challenge" });
+    expect(resolveRoute("/rob/")).toEqual({ kind: "redirect", to: "/challenge" });
   });
 
   it("lists the six nav items in sidebar order", () => {

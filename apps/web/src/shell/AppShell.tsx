@@ -3,12 +3,14 @@ import { useAppData } from "@/app/data";
 import { useRouter } from "@/app/router";
 import type { NavId } from "@/app/routes";
 import { copy } from "@/copy";
+import { AnnounceContext } from "./announce";
 import { PhoneBar, PhoneMenu, type MenuCloseFocus } from "./PhoneNav";
 import { Sidebar } from "./Sidebar";
 import { TestnetBanner } from "./TestnetBanner";
 
 // The product frame: skip link, testnet banner, phone bar or sidebar, the main column, the
-// phone menu, and the one polite live region.
+// phone menu, and the one polite live region. Screens announce live outcomes (a new Attempt
+// Log row) through it with `useAnnounce`.
 //
 // After each in-app navigation (not on first load) the region announces the page title,
 // keyed on the path so two pages with one title are both announced, and focus moves to
@@ -57,36 +59,38 @@ export function AppShell({
   });
 
   return (
-    <div className="flex min-h-dvh flex-col">
-      <div inert={menuOpen} className="contents">
-        <a
-          href="#main"
-          onClick={(event) => {
-            event.preventDefault();
-            main.current?.focus();
-          }}
-          className="sr-only focus:not-sr-only focus:fixed focus:top-2 focus:left-2 focus:z-50 focus:inline-flex focus:min-h-11 focus:items-center focus:rounded-full focus:border focus:border-line focus:bg-card-raised focus:px-[18px] focus:text-[14px] focus:font-semibold focus:text-ink"
-        >
-          {copy.skipToContent}
-        </a>
-        <TestnetBanner network={config.network} />
-        <PhoneBar open={menuOpen} onOpen={openMenu} buttonRef={menuButton} />
-        <div className="flex flex-1 flex-col desktop:grid desktop:grid-cols-[232px_minmax(0,1fr)]">
-          <Sidebar activeId={activeId} config={config} />
-          <main
-            ref={main}
-            id="main"
-            tabIndex={-1}
-            className="flex min-w-0 flex-col gap-stack px-gutter-mobile py-4 outline-none desktop:px-7 desktop:py-[22px]"
+    <AnnounceContext.Provider value={setAnnouncement}>
+      <div className="flex min-h-dvh flex-col">
+        <div inert={menuOpen} className="contents">
+          <a
+            href="#main"
+            onClick={(event) => {
+              event.preventDefault();
+              main.current?.focus();
+            }}
+            className="sr-only focus:not-sr-only focus:fixed focus:top-2 focus:left-2 focus:z-50 focus:inline-flex focus:min-h-11 focus:items-center focus:rounded-full focus:border focus:border-line focus:bg-card-raised focus:px-[18px] focus:text-[14px] focus:font-semibold focus:text-ink"
           >
-            {children}
-          </main>
+            {copy.skipToContent}
+          </a>
+          <TestnetBanner network={config.network} />
+          <PhoneBar open={menuOpen} onOpen={openMenu} buttonRef={menuButton} />
+          <div className="flex flex-1 flex-col desktop:grid desktop:grid-cols-[232px_minmax(0,1fr)]">
+            <Sidebar activeId={activeId} config={config} />
+            <main
+              ref={main}
+              id="main"
+              tabIndex={-1}
+              className="flex min-w-0 flex-col gap-stack px-gutter-mobile py-4 outline-none desktop:px-7 desktop:py-[22px]"
+            >
+              {children}
+            </main>
+          </div>
+        </div>
+        <PhoneMenu open={menuOpen} activeId={activeId} onClose={closeMenu} />
+        <div aria-live="polite" className="sr-only" data-testid="live-region">
+          <p key={path}>{announcement}</p>
         </div>
       </div>
-      <PhoneMenu open={menuOpen} activeId={activeId} onClose={closeMenu} />
-      <div aria-live="polite" className="sr-only" data-testid="live-region">
-        <p key={path}>{announcement}</p>
-      </div>
-    </div>
+    </AnnounceContext.Provider>
   );
 }

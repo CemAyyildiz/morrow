@@ -78,13 +78,20 @@ export const copy = {
     noRound: "No round is open yet",
     noRoundBody:
       "When a round opens, its vault, the published owner keys and every attempt to use them appear here.",
+    unreachable: "The Challenge feed is not answering",
+    unreachableBody: "The page asks again every 30 seconds. Retrying.",
     round: (round: number) => `round ${round}`,
     keysPublished: "keys published",
     downloadKeys: "Download keys",
     tryKeys: "Try with these keys",
     nextWithdrawal: "Next possible withdrawal",
     requested: (at: string) => `Requested ${at}`,
+    /** The earliest withdrawal time with its date, when it is not today. */
+    timeOnDay: (time: string, day: string) => `${time} on ${day}`,
+    noRequest: "No withdrawal request is pending",
     left: (remaining: string) => `${remaining} left`,
+    /** The right end of the delay bar while no request is pending: the whole Delay. */
+    fullDelay: (delay: string) => `${delay} delay`,
     delayElapsed: "Share of the delay that has passed",
     explainer: (time: string) =>
       `Anyone can use this vault's owner keys. The NEAR contract holding the other half won't sign before ${time}, and the guardian sends every attempt home.`,
@@ -94,6 +101,7 @@ export const copy = {
       `${count === 1 ? "attempt" : "attempts"} · ${plural(satsOut, "sat")} out`,
     attemptsWindow: (round: number) => `Round ${round} · last 24 h`,
     lastAttempt: (at: string) => `Last attempt ${at}`,
+    noAttemptYet: "No attempt yet",
     hourlySummary: (total: number, activeHours: number, peak: number) =>
       `${plural(total, "attempt")} in ${activeHours} of 24 hours, at most ${peak} in one hour`,
     heldInVault: "Held in vault",
@@ -101,11 +109,45 @@ export const copy = {
     perWithdrawal: "per withdrawal",
     satsTaken: "Sats taken",
     coSigner: "Co-signer",
+    factsLabel: "About this round",
+    /** The coins note for the round's Bitcoin network. */
+    coins: (btc: BtcNetwork) =>
+      btc === "bitcoin" ? "Real bitcoin" : `${BTC_COINS[btc]} test coins · not real bitcoin`,
+    /** The rotation deadline; `at` is an estimate from the tip at 10 minutes per block. */
+    rotation: (height: number, at: string | null) =>
+      `New vault by block ${height.toLocaleString("en-US")}${at === null ? "" : ` · about ${at}`}`,
+    bounty: "Mainnet Bounty",
+    /** The `how_to` text of the downloaded keys file. */
+    howTo:
+      "These are the published keys of a Morrow Challenge Vault. owner_key and owner_key_secret are the Owner Key that signs the Bitcoin side. near_function_call_key signs Vault Contract calls on vault_contract as owner_account. Request a withdrawal from vault_id and try to move the coins at vault_address. The Vault Contract will not co-sign before the Delay ends, and the guardian claws every request back to the operator's Recovery Address. Every attempt appears in the Attempt Log.",
   },
 
   attemptLog: {
     title: "Attempt log",
     empty: "No attempts this round yet. The keys are above.",
+    withdrawal: "Withdrawal Request",
+    policyChange: "Policy Change",
+    earlyExecute: "Early Execute",
+    unknownCall: "Contract call",
+    /** Marks a row from an earlier round than the one shown. */
+    roundTag: (round: number) => `round ${round}`,
+    outcome: {
+      clawedBack: (seconds: number) => `Clawed back in ${seconds} s`,
+      vetoed: "Vetoed",
+      rejected: (code: string) => `Rejected ${code}`,
+      pending: "Pending",
+      cancelled: "Cancelled",
+      signed: "Signed",
+      withdrawn: "Withdrawn",
+      applied: "Applied",
+    },
+    nearLink: "NEAR",
+    bitcoinLink: "Bitcoin",
+    nearTxLabel: (n: number) => `NEAR transaction of attempt ${n}`,
+    nearAccountLabel: (n: number) => `Owner Account of attempt ${n} on NEAR`,
+    bitcoinTxLabel: (n: number) => `Bitcoin transaction of attempt ${n}`,
+    /** Read out once when a new row arrives. */
+    announce: (n: number, action: string, outcome: string) => `Attempt ${n}: ${action}, ${outcome}`,
   },
 
   xray: {

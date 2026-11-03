@@ -1,10 +1,12 @@
-import type { AccountId, BitcoinBackend, U64, Vault } from "@morrow/core-ts";
+import type { AccountId, BitcoinBackend, MorrowEvent, SpendOp, U64, Vault } from "@morrow/core-ts";
+import { Transaction } from "bitcoinjs-lib";
 import { KeyPair } from "near-api-js";
 import {
   MAX_LOOKUPS_PER_TICK,
   scanRejectedAttempts,
   type AttemptSources,
   type AttemptStore,
+  type WithdrawalAttempt,
 } from "./attempts.js";
 import { DEFAULT_ROTATION_MARGIN_BLOCKS } from "./config.js";
 import type { Logger } from "./log.js";
@@ -36,6 +38,10 @@ export interface RunNear extends RoundNear {
   accessKey(accountId: AccountId, secretKey: string, publicKey: string): Promise<KeyState>;
   /** Deletes a key, signed by the account's full-access key. */
   deleteKey(accountId: AccountId, secretKey: string, publicKey: string): Promise<void>;
+  /** View: `events_since(cursor, limit)`, events with `seq > cursor`, ascending. */
+  eventsSince(cursor: U64, limit: number): Promise<MorrowEvent[]>;
+  /** View: `get_op`. */
+  getOp(opId: U64): Promise<SpendOp>;
 }
 
 export const TICK_MS = 30_000;
@@ -45,6 +51,16 @@ export const MAX_FAILED_OPENINGS = 5;
 /** Top-ups (storage and Owner Account balance): one per target per 10 min, 10 per UTC day. */
 export const TOP_UP_COOLDOWN_MS = 10 * 60_000;
 export const MAX_TOP_UPS_PER_DAY = 10;
+/** The event tail reads `events_since` pages of 100, at most 10 pages per tick. */
+export const EVENT_PAGE_SIZE = 100;
+export const MAX_EVENT_PAGES_PER_TICK = 10;
+/** Clawback lookups (`get_op` or the Bitcoin backend) per tick. */
+export const MAX_CLAWBACK_CHECKS_PER_TICK = 20;
+
+/** The txid of a transaction; the witness does not change it, so an unsigned one has it too. */
+export function txidOf(hex: string): string {
+  return Transaction.fromHex(hex).getId();
+}
 
 export interface RoundRunnerOptions {
   store: RoundStore;
@@ -76,9 +92,9 @@ const utcDay = (ms: number) => new Date(ms).toISOString().slice(0, 10);
 /**
  * The challenge round loop. Each tick reconciles the current round with the chain, in order:
  * funding confirmation, end of round (next round, rotation, hard-deadline Clawback), sweeps,
- * storage top-up, Owner Account balance, the published key's allowance, rejected attempts, and
- * retiring old rounds' keys. Ticks never overlap; a failing step is logged and retried on the
- * next tick.
+ * storage top-up, Owner Account balance, the published key's allowance, the event tail, Clawback
+ * txids, rejected attempts, and retiring old rounds' keys. Ticks never overlap; a failing step
+ * is logged and retried on the next tick.
  */
 export class RoundRunner {
   private running: Promise<void> | null = null;
@@ -136,6 +152,8 @@ export class RoundRunner {
     await this.step("storage", () => this.storage());
     await this.step("balance", () => this.ownerBalance());
     await this.step("key", () => this.functionCallKey());
+    await this.step("events", () => this.tailEvents());
+    await this.step("clawbacks", () => this.clawbacks());
     await this.step("attempts", () => this.scan());
     await this.step("retire", () => this.retireRounds());
   }
@@ -534,6 +552,92 @@ export class RoundRunner {
       if (remaining.length > 0) continue;
       await store.patch(round.round, { published_key_deleted: true }, ["closed"]);
       this.log("info", "retired round's published key deleted", { round: round.round });
+    }
+  }
+
+  // Attempt Log from events
+
+  /**
+   * Tails `events_since` from the persisted cursor, at most `MAX_EVENT_PAGES_PER_TICK` pages,
+   * keeping only events of served rounds' Vaults (any status).
+   */
+  private async tailEvents(): Promise<void> {
+    const { store, attempts, near } = this.options;
+    const rounds = new Map<string, number>();
+    for (const round of await store.rounds()) {
+      if (RoundRunner.served(round) && round.vault_id !== null)
+        rounds.set(round.vault_id, round.round);
+    }
+    const roundOf = (vaultId: U64) => rounds.get(vaultId) ?? null;
+    let cursor = await attempts.cursor();
+    for (let page = 0; page < MAX_EVENT_PAGES_PER_TICK; page++) {
+      const events = await near.eventsSince(cursor, EVENT_PAGE_SIZE);
+      if (events.length === 0) return;
+      const applied = await attempts.applyEvents(events, roundOf);
+      cursor = applied.cursor;
+      for (const entry of applied.opened) {
+        this.log("info", "attempt", {
+          round: entry.round,
+          n: entry.n,
+          type: entry.type,
+          seq: entry.seq,
+          vault_id: entry.vault_id,
+        });
+      }
+      for (const entry of applied.settled) {
+        this.log("info", "attempt settled", {
+          round: entry.round,
+          n: entry.n,
+          type: entry.type,
+          outcome: entry.outcome,
+        });
+      }
+      if (events.length < EVENT_PAGE_SIZE) return;
+    }
+  }
+
+  /**
+   * For clawed-back withdrawals: reads the Clawback op's transaction for its txid, then asks
+   * the Bitcoin backend until it returns the transaction (broadcast). At most
+   * `MAX_CLAWBACK_CHECKS_PER_TICK` lookups; a failing one is retried next tick.
+   */
+  private async clawbacks(): Promise<void> {
+    const { attempts, near, backend } = this.options;
+    const due = (await attempts.entries()).filter(
+      (e): e is WithdrawalAttempt =>
+        e.type === "withdrawal" &&
+        e.outcome === "clawed_back" &&
+        e.clawback_op_id !== null &&
+        !e.clawback_broadcast,
+    );
+    let budget = MAX_CLAWBACK_CHECKS_PER_TICK;
+    for (const entry of due) {
+      if (budget <= 0) return;
+      let txid = entry.clawback_txid;
+      try {
+        if (txid === null) {
+          budget--;
+          const op = await near.getOp(entry.clawback_op_id as U64);
+          if (op.unsigned_tx_hex === null) continue;
+          txid = txidOf(op.unsigned_tx_hex);
+          await attempts.patchClawback(entry.seq, {
+            clawback_txid: txid,
+            clawback_broadcast: false,
+          });
+          if (budget <= 0) return;
+        }
+        budget--;
+        if ((await backend.getTx(txid)) === null) continue;
+        await attempts.patchClawback(entry.seq, { clawback_txid: txid, clawback_broadcast: true });
+        this.log("info", "clawback broadcast", { round: entry.round, n: entry.n, txid });
+      } catch (error) {
+        this.log("warn", "clawback not readable yet; will retry", {
+          round: entry.round,
+          n: entry.n,
+          clawback_op_id: entry.clawback_op_id,
+          error: message(error),
+        });
+      }
     }
   }
 

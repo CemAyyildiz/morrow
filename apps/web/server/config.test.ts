@@ -36,7 +36,20 @@ describe("loadConfig", () => {
       btc_network: "signet",
       btc_backend_url: "https://mempool.space/signet/api",
       watcher_url: "https://watcher.example.org",
+      challenge_url: null,
+      bounty_url: null,
     });
+  });
+
+  it("reads the optional challenge feed and bounty link", () => {
+    const config = loadConfig({
+      ...VALID,
+      MORROW_CHALLENGE_URL: "https://challenge.example.org/feed/",
+      MORROW_BOUNTY_URL: "https://bounty.example.org/bounty",
+    });
+    expect(config.challenge_url).toBe("https://challenge.example.org/feed");
+    expect(config.bounty_url).toBe("https://bounty.example.org/bounty");
+    expect(loadConfig({ ...VALID, MORROW_CHALLENGE_URL: " " }).challenge_url).toBeNull();
   });
 
   it("uses the mainnet RPC on mainnet and none for the mock contract", () => {
@@ -89,6 +102,10 @@ describe("loadConfig", () => {
     ["MORROW_BTC_BACKEND_URL", { MORROW_BTC_BACKEND_URL: "ftp://mempool.space/api" }],
     ["MORROW_NEAR_RPC_URL", { MORROW_NEAR_RPC_URL: "http://rpc.testnet.near.org" }],
     ["MORROW_WATCHER_URL", { MORROW_WATCHER_URL: "javascript:alert(1)" }],
+    ["MORROW_CHALLENGE_URL", { MORROW_CHALLENGE_URL: "http://challenge.example.org" }],
+    ["MORROW_CHALLENGE_URL", { MORROW_CHALLENGE_URL: "https://user:pw@challenge.example.org" }],
+    ["MORROW_BOUNTY_URL", { MORROW_BOUNTY_URL: "not a url" }],
+    ["MORROW_BOUNTY_URL", { MORROW_BOUNTY_URL: "https://bounty.example.org/?key=1" }],
   ])("rejects a bad %s and never echoes the value", (variable, override) => {
     const env = { ...VALID, ...override };
     const error = failure(env);
@@ -118,6 +135,22 @@ describe("content security policy", () => {
         "connect-src 'self' https://rpc.example.org:8443 https://mempool.space https://watcher.example.org; " +
         "frame-ancestors 'none'; base-uri 'none'; form-action 'self'",
     );
+  });
+
+  it("adds the challenge feed's origin, never the bounty link's", () => {
+    const config = loadConfig({
+      ...VALID,
+      MORROW_CHALLENGE_URL: "https://challenge.example.org:8443/feed",
+      MORROW_BOUNTY_URL: "https://bounty.example.org",
+    });
+    expect(connectSources(config)).toEqual([
+      "'self'",
+      "https://rpc.testnet.fastnear.com",
+      "https://mempool.space",
+      "https://watcher.example.org",
+      "https://challenge.example.org:8443",
+    ]);
+    expect(contentSecurityPolicy(config)).not.toContain("bounty.example.org");
   });
 
   it("drops unset services and repeated origins", () => {

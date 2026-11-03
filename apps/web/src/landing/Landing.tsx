@@ -1,4 +1,5 @@
 import { useCallback, useRef, type MouseEvent } from "react";
+import { downloadKeys } from "@/app/challenge";
 import { useAppData } from "@/app/data";
 import { useRouter } from "@/app/router";
 import { HOME_PATH } from "@/app/routes";
@@ -32,6 +33,12 @@ export function Landing() {
   // A live round is never simulated on: its actions lead to the real Challenge screen.
   const openChallenge = useCallback(() => navigate(HOME_PATH), [navigate]);
   const onTry = demo.illustration ? demo.run : openChallenge;
+  // A live round's keys download here too; the illustration has none and opens the product.
+  const keys = challenge?.keys ?? null;
+  const onDownload = useCallback(
+    () => (keys ? downloadKeys(keys) : openChallenge()),
+    [keys, openChallenge],
+  );
   const scrollRef = useRef<HTMLDivElement>(null);
   const navRef = useRef<HTMLElement>(null);
   const crispTry = useRef<HTMLButtonElement>(null);
@@ -121,7 +128,7 @@ export function Landing() {
         <HeroDive
           demo={demo}
           onTry={onTry}
-          onDownload={openChallenge}
+          onDownload={onDownload}
           onRob={rob}
           reduced={reduced}
           scrollRef={scrollRef}

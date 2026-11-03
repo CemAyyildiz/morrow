@@ -30,8 +30,50 @@ function noFixturesInBuild(): Plugin {
   };
 }
 
+/** Node-only or heavy packages the browser must never load (core-ts `./browser` is pure). */
+export const FORBIDDEN_PACKAGES = ["near-api-js", "libsodium", "bitcoinjs-lib"] as const;
+
+/** The forbidden package a module id belongs to, if any (`libsodium` covers its variants). */
+export function forbiddenPackage(id: string): string | null {
+  const path = normalizePath(id);
+  for (const name of FORBIDDEN_PACKAGES) {
+    const pattern =
+      name === "libsodium"
+        ? /\/node_modules\/libsodium[^/]*\//
+        : new RegExp(`/node_modules/${name}/`);
+    if (pattern.test(path)) return name;
+  }
+  return null;
+}
+
+/**
+ * Fails `vite build` when near-api-js, libsodium or bitcoinjs-lib reaches the bundle: the web
+ * imports only `@morrow/core-ts/browser`, whose modules are pure.
+ */
+function noNodePackagesInBuild(): Plugin {
+  return {
+    name: "morrow:no-node-packages-in-build",
+    apply: "build",
+    generateBundle(_options, bundle) {
+      const leaked = new Set<string>();
+      for (const output of Object.values(bundle)) {
+        if (output.type !== "chunk") continue;
+        for (const id of output.moduleIds) {
+          const name = forbiddenPackage(id);
+          if (name !== null) leaked.add(name);
+        }
+      }
+      if (leaked.size > 0) {
+        this.error(
+          `${[...leaked].join(", ")} must not be in the production bundle. Import @morrow/core-ts/browser, never @morrow/core-ts, from apps/web.`,
+        );
+      }
+    },
+  };
+}
+
 export default defineConfig({
-  plugins: [react(), tailwindcss(), noFixturesInBuild()],
+  plugins: [react(), tailwindcss(), noFixturesInBuild(), noNodePackagesInBuild()],
   resolve: {
     alias: { "@": fileURLToPath(new URL("./src", import.meta.url)) },
   },

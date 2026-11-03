@@ -33,6 +33,18 @@ export function p2wshAddress(seed: number): string {
   return address;
 }
 
+/** A real unsigned transaction standing in for the mock's `mock-tx-<op_id>` text. */
+export function unsignedTxHex(opId: string): string {
+  const tx = new Transaction();
+  tx.version = 2;
+  tx.addInput(Buffer.from(txid(5000 + Number(opId)), "hex").reverse(), 0, 0xfffffffd);
+  tx.addOutput(
+    payments.p2wsh({ redeem: { output: Uint8Array.of(0x51) } }).output as Uint8Array,
+    90_000n,
+  );
+  return tx.toHex();
+}
+
 export class FakeBackend implements BitcoinBackend {
   readonly utxos = new Map<string, Utxo[]>();
   readonly txs = new Map<string, TxStatus>();
@@ -152,6 +164,8 @@ export function mockRunNear(mock: MockContractClient) {
   /** Fields laid over the mock's Vault views, e.g. a low `storage_balance`. */
   const vaultPatches = new Map<string, Partial<Vault>>();
   const failures: Partial<Record<keyof RunNear, Error>> = base.failures;
+  const eventsCalls: string[] = [];
+  const getOpCalls: string[] = [];
   const near: RunNear = {
     ...base.near,
     async addFunctionCallKey(accountId, secretKey, publicKey) {
@@ -188,6 +202,19 @@ export function mockRunNear(mock: MockContractClient) {
       if (!keys.delete(keyId(accountId, publicKey))) throw new Error("no such key");
       deleted.push(publicKey);
     },
+    async eventsSince(cursor, limit) {
+      if (failures.eventsSince) throw failures.eventsSince;
+      eventsCalls.push(cursor);
+      return mock.eventsSince(cursor, limit);
+    },
+    async getOp(opId) {
+      if (failures.getOp) throw failures.getOp;
+      getOpCalls.push(opId);
+      const op = await mock.getOp(opId);
+      return op.unsigned_tx_hex?.startsWith("mock-tx-")
+        ? { ...op, unsigned_tx_hex: unsignedTxHex(op.op_id) }
+        : op;
+    },
   };
   const setAllowance = (accountId: string, publicKey: string, yocto: bigint | null) => {
     if (yocto === null) keys.delete(keyId(accountId, publicKey));
@@ -204,6 +231,8 @@ export function mockRunNear(mock: MockContractClient) {
     vaultPatches,
     balances,
     transfers,
+    eventsCalls,
+    getOpCalls,
   };
 }
 
@@ -237,6 +266,8 @@ export interface FakeTx {
   blockTimestampNs: string;
   /** Undefined: success. A string: the contract panic text. An object: a raw NEAR Failure. */
   failure?: string | Record<string, unknown>;
+  /** Logs of the Vault Contract receipt, e.g. `EVENT_JSON:` lines. */
+  logs?: string[];
 }
 
 function fakeTxStatus(tx: FakeTx): RpcTxStatus {
@@ -280,7 +311,7 @@ function fakeTxStatus(tx: FakeTx): RpcTxStatus {
       {
         id: `${tx.hash}-r`,
         block_hash: `${tx.hash}-block`,
-        outcome: { executor_id: tx.receiver, logs: [], receipt_ids: [], status },
+        outcome: { executor_id: tx.receiver, logs: tx.logs ?? [], receipt_ids: [], status },
       },
     ],
   };

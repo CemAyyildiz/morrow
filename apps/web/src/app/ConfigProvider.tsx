@@ -2,43 +2,15 @@ import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { Card, CardDescription, CardTitle } from "@/components/ui/card";
 import { copy } from "@/copy";
 import { AppDataContext, type AppData, type ContractState, type HeartbeatState } from "./data";
-import {
-  fetchConfig,
-  fetchContractState,
-  fetchHeartbeat,
-  HEARTBEAT_POLL_MS,
-  type BaseConfig,
-} from "./live";
+import { fetchConfig, fetchContractState, fetchHeartbeat, poll, type BaseConfig } from "./live";
+import { useChallengeFeed } from "./useChallengeFeed";
 
 type Load = { kind: "loading" } | { kind: "failed" } | { kind: "ready"; config: BaseConfig };
 
-/**
- * Runs `check` now and every `HEARTBEAT_POLL_MS`, handing each answer to `apply`. A tick is
- * skipped while the previous check is still pending (each request times out after 10 s), so
- * checks never stack and an older answer never overwrites a newer one. Returns the cleanup.
- */
-function poll<T>(check: (signal: AbortSignal) => Promise<T>, apply: (value: T) => void) {
-  const abort = new AbortController();
-  let inFlight = false;
-  const tick = () => {
-    if (inFlight) return;
-    inFlight = true;
-    void check(abort.signal).then((value) => {
-      inFlight = false;
-      if (!abort.signal.aborted) apply(value);
-    });
-  };
-  tick();
-  const timer = setInterval(tick, HEARTBEAT_POLL_MS);
-  return () => {
-    clearInterval(timer);
-    abort.abort();
-  };
-}
-
 // The production data provider. Reads `/config.json` once, then checks the contract's lock
-// state over NEAR RPC and the watcher heartbeat every 30 s for the system card. No
-// Challenge round data exists yet (stories 7.1 and 7.2), so `challenge` is null.
+// state over NEAR RPC and the watcher heartbeat every 30 s for the system card, and follows
+// the challenge feed (`MORROW_CHALLENGE_URL`) for `challenge`: null without a feed or an open
+// round.
 export function ConfigProvider({ children }: { children: ReactNode }) {
   const [load, setLoad] = useState<Load>({ kind: "loading" });
   const [contract, setContract] = useState<ContractState>("checking");
@@ -78,9 +50,12 @@ export function ConfigProvider({ children }: { children: ReactNode }) {
     return poll((signal) => fetchHeartbeat(watcherUrl, signal), setHeartbeat);
   }, [ready, watcherUrl]);
 
+  const { challenge, status: challengeStatus } = useChallengeFeed(config);
+
   const data = useMemo<AppData | null>(
-    () => (config ? { config: { ...config, contract, heartbeat }, challenge: null } : null),
-    [config, contract, heartbeat],
+    () =>
+      config ? { config: { ...config, contract, heartbeat }, challenge, challengeStatus } : null,
+    [config, contract, heartbeat, challenge, challengeStatus],
   );
 
   if (load.kind === "failed") return <ConfigFailed />;

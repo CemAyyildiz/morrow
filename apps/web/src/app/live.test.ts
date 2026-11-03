@@ -8,6 +8,8 @@ const CONFIG = {
   btc_network: "signet",
   btc_backend_url: "https://mempool.space/signet/api",
   watcher_url: "https://watcher.example.org",
+  challenge_url: "https://challenge.example.org",
+  bounty_url: null,
 };
 
 const fullAccess = { public_key: "ed25519:a", access_key: { nonce: 1, permission: "FullAccess" } };
@@ -30,6 +32,8 @@ describe("parseConfig", () => {
       nearRpcUrl: "https://rpc.testnet.near.org",
       btcBackendUrl: "https://mempool.space/signet/api",
       watcherUrl: "https://watcher.example.org",
+      challengeUrl: "https://challenge.example.org",
+      bountyUrl: null,
       coSigner: "v1.signer-prod.testnet",
     });
     expect(parseConfig({ ...CONFIG, near_network: "mainnet" })?.coSigner).toBe("v1.signer");
@@ -37,6 +41,14 @@ describe("parseConfig", () => {
       "mock-signer",
     );
     expect(parseConfig({ ...CONFIG, watcher_url: null })?.watcherUrl).toBeNull();
+    expect(parseConfig({ ...CONFIG, bounty_url: "https://bounty.example.org" })?.bountyUrl).toBe(
+      "https://bounty.example.org",
+    );
+    // A server from before the challenge feed: both read as unset.
+    const older: Record<string, unknown> = { ...CONFIG };
+    delete older.challenge_url;
+    delete older.bounty_url;
+    expect(parseConfig(older)).toMatchObject({ challengeUrl: null, bountyUrl: null });
   });
 
   it.each([
@@ -49,6 +61,8 @@ describe("parseConfig", () => {
     { ...CONFIG, btc_backend_url: null },
     { ...CONFIG, near_rpc_url: "not a url" },
     { ...CONFIG, watcher_url: 7 },
+    { ...CONFIG, challenge_url: "not a url" },
+    { ...CONFIG, bounty_url: "javascript:alert(1)" },
   ])("rejects %j", (body) => {
     expect(parseConfig(body)).toBeNull();
   });

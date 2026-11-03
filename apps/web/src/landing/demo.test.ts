@@ -44,8 +44,8 @@ describe('"Try with these keys" simulation', () => {
     // Announced as an illustration, never as a live outcome.
     expect(state.announcement).toBe("Illustration: attempt #14 clawed back · 0 sats out");
     const view = demoView(null, state);
-    expect(view.data.attempts.count).toBe(14);
-    expect(view.data.attempts.satsOut).toBe(0);
+    expect(view.data.attempts?.count).toBe(14);
+    expect(view.data.attempts?.satsOut).toBe(0);
     expect(view.data.satsTaken).toBe(0);
   });
 
@@ -53,10 +53,10 @@ describe('"Try with these keys" simulation', () => {
     let state = IDLE;
     for (let n = 14; n <= 20; n += 1) state = run(state, n);
     const view = demoView(null, state);
-    expect(view.data.attempts.count).toBe(13 + 7);
+    expect(view.data.attempts?.count).toBe(13 + 7);
     expect(view.rows).toHaveLength(LOG_ROWS);
-    expect(view.rows.map((row) => row.n)).toEqual([20, 19, 18, 17, 16]);
-    expect(view.rows.filter((row) => row.fresh).map((row) => row.n)).toEqual([20]);
+    expect(view.rows?.map((row) => row.n)).toEqual([20, 19, 18, 17, 16]);
+    expect(view.rows?.filter((row) => row.fresh).map((row) => row.n)).toEqual([20]);
   });
 });
 
@@ -65,33 +65,51 @@ describe("what the laptop shows", () => {
     const view = demoView(null, IDLE);
     expect(view.illustration).toBe(true);
     expect(view.data).toEqual(illustrationChallenge);
-    expect(view.rows.map((row) => row.n)).toEqual([13, 12, 11, 10, 9]);
+    expect(view.rows?.map((row) => row.n)).toEqual([13, 12, 11, 10, 9]);
     expect(view.steps.map((step) => step.state)).toEqual(["done", "refused", "ok", "ok"]);
   });
 
-  it("with a live round: its values, an empty log and X-Ray steps that wait", () => {
+  it("with a live round: its values, the log waiting for the feed and X-Ray steps that wait", () => {
     const live: ChallengeData = {
       ...illustrationChallenge,
       round: 2,
-      attempts: { ...illustrationChallenge.attempts, count: 3, lastAt: "09:41" },
+      attempts: { ...illustrationChallenge.attempts!, count: 3, lastAt: "09:41" },
     };
     const view = demoView(live, IDLE);
     expect(view.illustration).toBe(false);
     expect(view.data.round).toBe(2);
-    expect(view.data.attempts.count).toBe(3);
-    expect(view.rows).toEqual([]);
+    expect(view.data.attempts?.count).toBe(3);
+    expect(view.rows).toBeNull();
     expect(view.steps.every((step) => step.state === "pending")).toBe(true);
+  });
+
+  it("with a live round: the feed's newest five rows, without their explorer links", () => {
+    const rows = Array.from({ length: 7 }, (_, i) => ({
+      key: `2-${7 - i}`,
+      n: 7 - i,
+      at: "09:41",
+      action: "Withdrawal Request",
+      outcome: { tone: "ok" as const, text: "Clawed back in 41 s" },
+      links: {
+        near: { href: "https://testnet.nearblocks.io/txns/H", text: "NEAR", label: "x" },
+        bitcoin: null,
+      },
+    }));
+    const view = demoView({ ...illustrationChallenge, log: rows }, IDLE);
+    expect(view.rows?.map((row) => row.n)).toEqual([7, 6, 5, 4, 3]);
+    expect(view.rows?.every((row) => row.links === undefined)).toBe(true);
   });
 
   it("with a live round: simulated runs never touch live data", () => {
     const live: ChallengeData = {
       ...illustrationChallenge,
       round: 2,
-      attempts: { ...illustrationChallenge.attempts, count: 3, lastAt: "09:41" },
+      attempts: { ...illustrationChallenge.attempts!, count: 3, lastAt: "09:41" },
+      log: [],
     };
     const after = demoView(live, run(run(IDLE, 4), 5));
     expect(after.data).toBe(live);
-    expect(after.data.attempts.count).toBe(3);
+    expect(after.data.attempts?.count).toBe(3);
     expect(after.rows).toEqual([]);
     expect(after.steps.every((step) => step.state === "pending")).toBe(true);
     expect(after.announcement).toBe("");

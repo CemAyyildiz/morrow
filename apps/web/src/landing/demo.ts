@@ -4,8 +4,7 @@
 // sats out never moves. With a live round nothing is simulated: the landing sends the visitor
 // to the real Challenge screen, and live data is shown untouched.
 import { useCallback, useEffect, useReducer, useRef } from "react";
-import type { ChallengeData } from "@/app/data";
-import type { AttemptRow } from "@/components/AttemptLog";
+import type { AttemptRow, ChallengeData } from "@/app/data";
 import type { XRayState, XRayStep } from "@/components/XRaySteps";
 import { landingCopy } from "./copy";
 import { illustrationChallenge, illustrationLog, xrayScript } from "./illustration";
@@ -77,23 +76,31 @@ export interface DemoView {
   data: ChallengeData;
   /** True when `data` is the mockup illustration, not a live round. */
   illustration: boolean;
-  rows: readonly AttemptRow[];
+  /** Null while the live feed has not answered: the log shows skeleton lines. */
+  rows: readonly AttemptRow[] | null;
   steps: readonly XRayStep[];
   running: boolean;
   announcement: string;
 }
 
+function withoutLinks(row: AttemptRow): AttemptRow {
+  const copy = { ...row };
+  delete copy.links;
+  return copy;
+}
+
 /**
  * What the laptop shows. A live round (`challenge` non-null) is shown as it is: simulated runs
- * never touch it, the log is empty and the X-Ray steps wait (no feed before story 7.2).
- * Without one, the illustration plus the runs in `state`.
+ * never touch it, the log shows the newest rows of the feed (without their explorer links: the
+ * laptop copy keeps the mockup's row height) and the X-Ray steps wait (story 7.2b). Without
+ * one, the illustration plus the runs in `state`.
  */
 export function demoView(challenge: ChallengeData | null, state: DemoState): DemoView {
   if (challenge !== null) {
     return {
       data: challenge,
       illustration: false,
-      rows: [],
+      rows: challenge.log === null ? null : challenge.log.slice(0, LOG_ROWS).map(withoutLinks),
       steps: xrayScript.map((step) => ({ ...step, state: "pending" })),
       running: false,
       announcement: "",
@@ -104,7 +111,10 @@ export function demoView(challenge: ChallengeData | null, state: DemoState): Dem
   return {
     data: {
       ...base,
-      attempts: { ...base.attempts, count: base.attempts.count + state.runs },
+      attempts: base.attempts && {
+        ...base.attempts,
+        count: base.attempts.count + state.runs,
+      },
     },
     illustration: true,
     rows: [...state.added, ...illustrationLog].slice(0, LOG_ROWS),
@@ -124,8 +134,8 @@ export function useAttemptDemo(challenge: ChallengeData | null) {
   const view = demoView(challenge, state);
   const timers = useRef<number[]>([]);
   const running = useRef(false);
-  const count = useRef(view.data.attempts.count);
-  count.current = view.data.attempts.count;
+  const count = useRef(view.data.attempts?.count ?? 0);
+  count.current = view.data.attempts?.count ?? 0;
 
   useEffect(
     () => () => {

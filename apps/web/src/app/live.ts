@@ -1,6 +1,7 @@
 // Live deployment data for the shell: `/config.json`, the contract's lock state over NEAR
-// JSON-RPC and the watcher heartbeat. Plain `fetch`, no NEAR SDK, so the bundle stays small
-// and pulls in no Node-only modules. Every request goes to an origin the CSP allows.
+// JSON-RPC and the watcher heartbeat, plus the polling helper the challenge feed shares.
+// Plain `fetch`, no NEAR SDK, so the bundle stays small and pulls in no Node-only modules.
+// Every request goes to an origin the CSP allows.
 import type { AppConfig, BtcNetwork, ContractState, HeartbeatState, NearNetwork } from "./data";
 
 const NEAR_NETWORKS: readonly NearNetwork[] = ["mainnet", "testnet", "mock"];
@@ -39,16 +40,26 @@ function isUrl(value: unknown): value is string {
 
 const isUrlOrNull = (value: unknown): value is string | null => value === null || isUrl(value);
 
+/** Only `http:` and `https:` links are followed (a `javascript:` URL parses too). */
+function isWebUrl(value: unknown): value is string {
+  return isUrl(value) && /^https?:$/.test(new URL(value).protocol);
+}
+
 /** Reads the `/config.json` body; null when it does not have the shape the server writes. */
 export function parseConfig(body: unknown): BaseConfig | null {
   if (!isRecord(body)) return null;
   const { near_network, vault_contract, near_rpc_url, btc_network, btc_backend_url, watcher_url } =
     body;
+  // Older servers did not write the challenge feed or the bounty link: missing reads as unset.
+  const challenge_url = body.challenge_url ?? null;
+  const bounty_url = body.bounty_url ?? null;
   if (!NEAR_NETWORKS.includes(near_network as NearNetwork)) return null;
   if (!BTC_NETWORKS.includes(btc_network as BtcNetwork)) return null;
   if (typeof vault_contract !== "string" || vault_contract === "") return null;
   if (!isUrl(btc_backend_url)) return null;
   if (!isUrlOrNull(near_rpc_url) || !isUrlOrNull(watcher_url)) return null;
+  if (!isUrlOrNull(challenge_url)) return null;
+  if (bounty_url !== null && !isWebUrl(bounty_url)) return null;
   const near = near_network as NearNetwork;
   return {
     network: { btc: btc_network as BtcNetwork, near },
@@ -56,7 +67,38 @@ export function parseConfig(body: unknown): BaseConfig | null {
     nearRpcUrl: near_rpc_url,
     btcBackendUrl: btc_backend_url,
     watcherUrl: watcher_url,
+    challengeUrl: challenge_url,
+    bountyUrl: bounty_url,
     coSigner: CO_SIGNERS[near],
+  };
+}
+
+/**
+ * Runs `check` now and every `intervalMs`, handing each answer to `apply`. A tick is skipped
+ * while the previous check is still pending (each request times out after 10 s), so checks
+ * never stack and an older answer never overwrites a newer one. Returns the cleanup, which
+ * aborts the request in flight.
+ */
+export function poll<T>(
+  check: (signal: AbortSignal) => Promise<T>,
+  apply: (value: T) => void,
+  intervalMs = HEARTBEAT_POLL_MS,
+): () => void {
+  const abort = new AbortController();
+  let inFlight = false;
+  const tick = () => {
+    if (inFlight) return;
+    inFlight = true;
+    void check(abort.signal).then((value) => {
+      inFlight = false;
+      if (!abort.signal.aborted) apply(value);
+    });
+  };
+  tick();
+  const timer = setInterval(tick, intervalMs);
+  return () => {
+    clearInterval(timer);
+    abort.abort();
   };
 }
 

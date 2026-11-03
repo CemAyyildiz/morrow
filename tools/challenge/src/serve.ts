@@ -6,8 +6,10 @@ import { publicRound, type RoundStore } from "./store.js";
  * Public data for the challenge page (Story 7.2), with CORS:
  * - `GET /round`: the current open round's published keys and addresses once its funding has
  *   confirmed, 404 before that. Only `publicRound` fields are served.
- * - `GET /attempts` (when an attempt store is given): `{ entries }`, newest first: rejected calls
- *   (they emit no contract event) and published-key rotations.
+ * - `GET /attempts` (when an attempt store is given): `{ entries, summary }`. Entries, newest
+ *   first and at most 500: attempts derived from `events_since` (Withdrawal Requests and Policy
+ *   Changes with their outcome), rejected calls (they emit no contract event) and published-key
+ *   rotations. `summary` holds the persisted counters for the current round and in total.
  */
 export function createRoundServer(store: RoundStore, attempts?: AttemptStore): Server {
   return createServer((request, response) => {
@@ -44,10 +46,16 @@ export function createRoundServer(store: RoundStore, attempts?: AttemptStore): S
       return;
     }
     if (request.method === "GET" && path === "/attempts" && attempts) {
-      attempts.entries().then(
-        (entries) => json(200, { entries }),
-        () => json(503, { error: "unavailable" }),
-      );
+      const log = attempts;
+      Promise.all([log.entries(), store.current()])
+        .then(async ([entries, round]) => ({
+          entries,
+          summary: await log.summary(round?.round ?? null),
+        }))
+        .then(
+          (body) => json(200, body),
+          () => json(503, { error: "unavailable" }),
+        );
       return;
     }
     json(404, { error: "not found" });

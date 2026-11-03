@@ -80,13 +80,16 @@ describe("web server", () => {
     expectSecurityHeaders(reply.headers);
     expect(JSON.parse(reply.body)).toEqual(config);
     expect(Object.keys(JSON.parse(reply.body)).sort()).toEqual([
+      "bounty_url",
       "btc_backend_url",
       "btc_network",
+      "challenge_url",
       "near_network",
       "near_rpc_url",
       "vault_contract",
       "watcher_url",
     ]);
+    expect(JSON.parse(reply.body)).toMatchObject({ challenge_url: null, bounty_url: null });
   });
 
   it.each(["/", "/challenge", "/g/42", "/g/42/clawback", "/index.html", "/challenge?x=1"])(

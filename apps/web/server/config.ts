@@ -16,6 +16,10 @@ export interface PublicConfig {
   btc_network: BtcNetwork;
   btc_backend_url: string;
   watcher_url: string | null;
+  /** `tools/challenge run`: `GET /round` and `GET /attempts`. In `connect-src`. */
+  challenge_url: string | null;
+  /** The Mainnet Bounty page, once it is open. A link only: never fetched, not in `connect-src`. */
+  bounty_url: string | null;
 }
 
 /** NEAR RPC used when `MORROW_NEAR_RPC_URL` is unset (FastNEAR: the deprecated rpc.*.near.org endpoints rate-limit with 429). The mock contract has none. */
@@ -107,12 +111,31 @@ export function loadConfig(env: Env): PublicConfig {
   );
   const near_rpc_url = optionalUrl(env, "MORROW_NEAR_RPC_URL") ?? DEFAULT_NEAR_RPC[near_network];
   const watcher_url = optionalUrl(env, "MORROW_WATCHER_URL");
-  return { near_network, vault_contract, near_rpc_url, btc_network, btc_backend_url, watcher_url };
+  const challenge_url = optionalUrl(env, "MORROW_CHALLENGE_URL");
+  const bounty_url = optionalUrl(env, "MORROW_BOUNTY_URL");
+  return {
+    near_network,
+    vault_contract,
+    near_rpc_url,
+    btc_network,
+    btc_backend_url,
+    watcher_url,
+    challenge_url,
+    bounty_url,
+  };
 }
 
-/** `'self'` plus the origins of the NEAR RPC, the Bitcoin backend and the watcher. */
+/**
+ * `'self'` plus the origins of the NEAR RPC, the Bitcoin backend, the watcher and the challenge
+ * feed. The bounty URL is only linked to, so it is not here.
+ */
 export function connectSources(config: PublicConfig): string[] {
-  const origins = [config.near_rpc_url, config.btc_backend_url, config.watcher_url]
+  const origins = [
+    config.near_rpc_url,
+    config.btc_backend_url,
+    config.watcher_url,
+    config.challenge_url,
+  ]
     .filter((url): url is string => url !== null)
     .map((url) => new URL(url).origin);
   return ["'self'", ...new Set(origins)];

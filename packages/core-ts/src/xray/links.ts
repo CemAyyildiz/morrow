@@ -8,6 +8,12 @@ export function nearTxUrl(network: NearNetwork, hash: string): string {
   return `https://${host}/txns/${hash}`;
 }
 
+/** NearBlocks account page. */
+export function nearAccountUrl(network: NearNetwork, accountId: string): string {
+  const host = network === "mainnet" ? "nearblocks.io" : "testnet.nearblocks.io";
+  return `https://${host}/address/${accountId}`;
+}
+
 const MEMPOOL_PREFIX: Record<BtcNetwork, string | null> = {
   bitcoin: "https://mempool.space",
   signet: "https://mempool.space/signet",

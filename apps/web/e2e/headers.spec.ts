@@ -52,6 +52,8 @@ test.describe("security headers", () => {
       btc_network: "signet",
       btc_backend_url: BACKEND_URL,
       watcher_url: WATCHER_URL,
+      challenge_url: null,
+      bounty_url: null,
     });
   });
 

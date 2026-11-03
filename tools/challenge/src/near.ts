@@ -145,5 +145,7 @@ export function nearRound(options: NearRoundOptions): RunNear {
     async deleteKey(accountId, secretKey, publicKey) {
       await account(accountId, secretKey).deleteKey(publicKey);
     },
+    eventsSince: (cursor, limit) => viewer.eventsSince(cursor, limit),
+    getOp: (opId) => viewer.getOp(opId),
   };
 }

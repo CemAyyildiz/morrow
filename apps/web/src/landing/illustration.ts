@@ -1,10 +1,9 @@
 // ILLUSTRATION ONLY. The approved mockup's values for the product drawn inside the hero
-// laptop, shown only while no live round exists (`useAppData().challenge` is null, before
-// stories 7.1 and 7.2). They never appear outside the laptop screen, and a live round
-// replaces them. Kept out of src/fixtures on purpose: the production build ships them, as
+// laptop, shown only while no live round exists (`useAppData().challenge` is null: no
+// challenge feed configured, or no round open). They never appear outside the laptop
+// screen, and a live round replaces them. Kept out of src/fixtures on purpose: the production build ships them, as
 // the picture on the laptop screen.
-import type { ChallengeData } from "@/app/data";
-import type { AttemptRow } from "@/components/AttemptLog";
+import type { AttemptRow, ChallengeData } from "@/app/data";
 import type { XRayStep } from "@/components/XRaySteps";
 
 export const illustrationChallenge: ChallengeData = {
@@ -19,6 +18,7 @@ export const illustrationChallenge: ChallengeData = {
   },
   attempts: {
     count: 13,
+    total: 13,
     satsOut: 0,
     hourly: [0, 0, 1, 0, 0, 2, 1, 0, 0, 0, 1, 0, 0, 3, 1, 0, 0, 1, 0, 2, 0, 0, 1, 0],
     lastAt: "03:11",
@@ -26,6 +26,12 @@ export const illustrationChallenge: ChallengeData = {
   vault: { amount: "0.01000000", unit: "sBTC", delay: "24 h" },
   satsTaken: 0,
   coSigner: { threshold: 11, total: 16 },
+  rotation: { height: 291_744, at: "13 Nov 06:12" },
+  coins: "Signet test coins · not real bitcoin",
+  bountyUrl: null,
+  keys: null,
+  log: null,
+  pending: null,
 };
 
 export const illustrationLog: readonly AttemptRow[] = [

@@ -20,6 +20,7 @@
     "@fontsource/funnel-display": "5.3.0",
     "@fontsource/funnel-sans": "5.3.0",
     "@fontsource/geist-mono": "5.3.0",
+    "@morrow/core-ts": "workspace:*",
     "@radix-ui/react-slot": "1.5.0",
     "class-variance-authority": "0.7.1",
     "clsx": "2.1.1",
