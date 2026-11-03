@@ -1,6 +1,7 @@
 //! Bitcoin transactions the contract builds itself, their fees and their BIP143 sighashes.
 //! Pure: no `env`.
 
+use super::address::p2wsh_script_pubkey;
 use super::errors::{CoreResult, ErrorCode, Rejection};
 use super::spend::Outpoint;
 use omni_transaction::bitcoin::types::{
@@ -193,6 +194,7 @@ pub fn build_payment(plan: &PaymentPlan) -> CoreResult<BuiltTx> {
 }
 
 /// Sweeps every input to a single output (the Recovery Address); the fee is taken from the amount.
+/// Sized for the Clawback Path witness.
 pub fn build_sweep(
     inputs: &[Outpoint],
     to: &[u8],
@@ -200,13 +202,49 @@ pub fn build_sweep(
     fee_cap_sats: u64,
     witness_script: &[u8],
 ) -> CoreResult<BuiltTx> {
+    sweep(
+        inputs,
+        to,
+        fee_rate_sat_vb,
+        fee_cap_sats,
+        witness_script,
+        clawback_witness_size(witness_script.len()),
+    )
+}
+
+/// A Refresh: sweeps every input back to the P2WSH address of `vault_script` itself, sized for
+/// the Withdrawal Path witness, with a fee of at most `withdrawal_fee_cap` of the input total.
+/// It takes no destination, so its only output is the Vault Address by construction.
+pub fn build_refresh(
+    inputs: &[Outpoint],
+    fee_rate_sat_vb: u32,
+    policy_fee_cap_sats: u64,
+    vault_script: &[u8],
+) -> CoreResult<BuiltTx> {
+    let total: u64 = inputs.iter().map(|u| u.value_sats.0).sum();
+    sweep(
+        inputs,
+        &p2wsh_script_pubkey(vault_script),
+        fee_rate_sat_vb,
+        withdrawal_fee_cap(policy_fee_cap_sats, total),
+        vault_script,
+        withdrawal_witness_size(vault_script.len()),
+    )
+}
+
+/// Every input to one output; the fee, sized with `witness_per_input`, comes out of the amount.
+fn sweep(
+    inputs: &[Outpoint],
+    to: &[u8],
+    fee_rate_sat_vb: u32,
+    fee_cap_sats: u64,
+    witness_script: &[u8],
+    witness_per_input: u64,
+) -> CoreResult<BuiltTx> {
     let total: u64 = inputs.iter().map(|u| u.value_sats.0).sum();
     let probe = build(inputs, &[(to.to_vec(), total)])?;
-    let fee = vsize(
-        probe.serialize().len(),
-        inputs.len(),
-        clawback_witness_size(witness_script.len()),
-    ) * u64::from(fee_rate_sat_vb);
+    let fee = vsize(probe.serialize().len(), inputs.len(), witness_per_input)
+        * u64::from(fee_rate_sat_vb);
     if fee > fee_cap_sats {
         return Err(Rejection::with(
             ErrorCode::FeeTooHigh,
@@ -389,5 +427,119 @@ mod tests {
             ErrorCode::InsufficientFunds
         );
         assert!(clawback_witness_size(188) > withdrawal_witness_size(188));
+    }
+
+    /// The outputs of an unsigned (non-witness) serialization: (value, scriptPubKey).
+    fn outputs(unsigned: &[u8]) -> Vec<(u64, Vec<u8>)> {
+        // Every count and script length here is below 0xfd, so each varint is one byte.
+        let mut at = 4;
+        let input_count = unsigned[at] as usize;
+        at += 1;
+        for _ in 0..input_count {
+            at += 36;
+            at += 1 + unsigned[at] as usize + 4;
+        }
+        let output_count = unsigned[at] as usize;
+        at += 1;
+        let mut found = Vec::new();
+        for _ in 0..output_count {
+            let value = u64::from_le_bytes(unsigned[at..at + 8].try_into().unwrap());
+            let len = unsigned[at + 8] as usize;
+            found.push((value, unsigned[at + 9..at + 9 + len].to_vec()));
+            at += 9 + len;
+        }
+        assert_eq!(at + 4, unsigned.len(), "only the lock time is left");
+        found
+    }
+
+    fn coins(count: u8, value: u64) -> Vec<Outpoint> {
+        (1..=count)
+            .map(|n| Outpoint {
+                txid: format!("{n:02x}").repeat(32),
+                vout: u32::from(n),
+                value_sats: U64(value),
+            })
+            .collect()
+    }
+
+    #[test]
+    fn a_refresh_has_exactly_one_output_the_vault_address() {
+        let script = script();
+        let vault = p2wsh(&script);
+        for count in 1..=5u8 {
+            for rate in [1, 2, 10, 25] {
+                let inputs = coins(count, 150_000);
+                let total = 150_000 * u64::from(count);
+                let built = build_refresh(&inputs, rate, 100_000, &script).unwrap();
+                assert_eq!(
+                    outputs(&built.unsigned),
+                    vec![(total - built.fee_sats, vault.clone())],
+                    "{count} inputs at {rate} sat/vB"
+                );
+                assert_eq!(built.change_sats, 0);
+                assert_eq!(built.sighashes.len(), inputs.len());
+                assert!(built.fee_sats <= withdrawal_fee_cap(100_000, total));
+                let size = vsize(
+                    built.unsigned.len(),
+                    inputs.len(),
+                    withdrawal_witness_size(script.len()),
+                );
+                assert_eq!(built.fee_sats, size * u64::from(rate));
+                assert_eq!(built.sighashes, sighashes_of(&inputs, &built, &script));
+            }
+        }
+    }
+
+    fn sighashes_of(inputs: &[Outpoint], built: &BuiltTx, script: &[u8]) -> Vec<[u8; 32]> {
+        let tx = build(
+            inputs,
+            &outputs(&built.unsigned)
+                .into_iter()
+                .map(|(value, script_pubkey)| (script_pubkey, value))
+                .collect::<Vec<_>>(),
+        )
+        .unwrap();
+        sighashes(&tx, inputs, script)
+    }
+
+    #[test]
+    fn a_refresh_is_sized_with_the_withdrawal_witness() {
+        let (inputs, script) = (inputs(), script());
+        let refresh = build_refresh(&inputs, 3, 100_000, &script).unwrap();
+        // The same sweep sized for the Clawback witness: same shape, a larger fee.
+        let clawback = build_sweep(&inputs, &p2wsh(&script), 3, 100_000, &script).unwrap();
+        assert_eq!(refresh.unsigned.len(), clawback.unsigned.len());
+        assert!(refresh.fee_sats < clawback.fee_sats);
+    }
+
+    #[test]
+    fn a_refresh_respects_the_fee_cap_and_dust() {
+        let script = script();
+        // 5 % of 210,000 is 10,500; 100 sat/vB on two inputs is far more.
+        assert_eq!(
+            build_refresh(&inputs(), 100, 100_000, &script)
+                .unwrap_err()
+                .code,
+            ErrorCode::FeeTooHigh
+        );
+        // The Policy Fee Cap binds when it is below 5 %.
+        assert_eq!(
+            build_refresh(&inputs(), 2, 300, &script).unwrap_err().code,
+            ErrorCode::FeeTooHigh
+        );
+        // At any positive rate a tiny coin trips the 5 % cap first; at 0 sat/vB the output itself
+        // is dust.
+        assert_eq!(
+            build_refresh(&coins(1, 500), 0, 100_000, &script)
+                .unwrap_err()
+                .code,
+            ErrorCode::InsufficientFunds
+        );
+        assert_eq!(
+            build_refresh(&coins(1, 600), 1, 100_000, &script)
+                .unwrap_err()
+                .code,
+            ErrorCode::FeeTooHigh
+        );
     }
 }

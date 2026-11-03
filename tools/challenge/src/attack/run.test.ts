@@ -576,17 +576,42 @@ describe("Bitcoin Owner-Key-only spends", () => {
 });
 
 describe("not deployed (live mix)", () => {
-  it("lists refresh, spend_allowance, policy_change and sends none of them", async () => {
+  it("lists spend_allowance, policy_change and sends neither of them", async () => {
     const report = await new AttackRun(handPorts(), {
       ...HAND,
       n: 20,
       dryRun: false,
     }).execute();
-    expect(report.summary.not_deployed).toEqual(["refresh", "spend_allowance", "policy_change"]);
+    expect(report.summary.not_deployed).toEqual(["spend_allowance", "policy_change"]);
+    expect(report.summary.not_deployed_note).toContain("Story 5.2");
+    expect(report.summary.not_deployed_note).toContain("Story 5.1");
     const methods = new Set(report.attempts.map((a) => a.method));
-    for (const m of ["refresh", "spend_allowance", "propose_policy_change"]) {
+    for (const m of ["spend_allowance", "propose_policy_change"]) {
       expect(methods.has(m)).toBe(false);
     }
+  });
+
+  it("sends the over-cap Refresh live (Story 4.1), on a decoy coin", async () => {
+    const plans: CallPlan[] = [];
+    const near = minimalNear({
+      call: async (_key, plan): Promise<CallResult> => {
+        plans.push(plan);
+        const code = plan.method === "refresh" ? "ERR_FEE_TOO_HIGH" : "ERR_CLAWED_BACK";
+        return { kind: "refused", hash: "1".repeat(64), code, failure: "x" };
+      },
+    });
+    const report = await new AttackRun(handPorts({ near }), {
+      ...HAND,
+      n: 20,
+      dryRun: false,
+    }).execute();
+    const refresh = report.attempts.find((a) => a.method === "refresh");
+    expect(refresh?.category).toBe("refresh");
+    expect(refresh?.expected).toEqual(["ERR_FEE_TOO_HIGH"]);
+    expect(refresh?.actual).toBe("ERR_FEE_TOO_HIGH");
+    expect(refresh?.unexpected).toBe(false);
+    const sent = plans.find((p) => p.method === "refresh")?.args as { utxos: { txid: string }[] };
+    expect(sent.utxos.map((u) => u.txid)).toEqual(["ef".repeat(32)]);
   });
 });
 

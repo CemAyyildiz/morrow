@@ -39,7 +39,8 @@ export interface EventData {
   };
   withdrawal_cancelled: { op_id: U64; by: AccountId };
   fast_approved: { op_id: U64; by: AccountId; executable_at: U64 };
-  op_frozen: { op_id: U64; kind: SpendOpKind; envelope: string | null };
+  /** `fee_sats`: the fee the frozen transaction pays, as the contract built it. */
+  op_frozen: { op_id: U64; kind: SpendOpKind; envelope: string | null; fee_sats: U64 };
   input_signed: { op_id: U64; input_index: number };
   op_signed: { op_id: U64 };
   op_voided: { op_id: U64; by_op_id: U64 };

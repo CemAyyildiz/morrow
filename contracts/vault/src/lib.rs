@@ -16,7 +16,7 @@ use crate::core::spend::{
     SpendSource,
 };
 use crate::core::tx::{
-    build_payment, build_sweep, clawback_fee_cap, withdrawal_fee_cap, PaymentPlan,
+    build_payment, build_refresh, build_sweep, clawback_fee_cap, withdrawal_fee_cap, PaymentPlan,
 };
 use crate::events::{record, EventView, StoredEvent, EVENTS_SINCE_MAX_LIMIT};
 use near_sdk::json_types::{U128, U64};
@@ -446,6 +446,70 @@ impl VaultContract {
         );
         self.flush_and_charge(op.vault_id.0, storage_before);
         frozen
+    }
+
+    /// Re-locks up to 5 Vault coins: sweeps them back to the Vault Address, the only output, so
+    /// their Escape Timelock starts again. No Delay: the op is frozen at once and the Owner signs
+    /// it through `sign_input`. Fee ≤ min(Fee Cap, 5% of the input total).
+    pub fn refresh(
+        &mut self,
+        vault_id: U64,
+        utxos: Vec<Outpoint>,
+        fee_rate_sat_vb: u32,
+        envelope: String,
+    ) -> SpendOp {
+        let storage_before = env::storage_usage();
+        let vault = self.owner_action(vault_id.0, Some(&envelope)).clone();
+        let total = check_inputs(&utxos).unwrap_or_else(|r| reject(&r));
+        self.check_unreserved(&utxos);
+
+        let (vault_script, _) = vault_scripts(&vault).unwrap_or_else(|| fail(ErrorCode::BadKey));
+        let vault_address = vault
+            .addresses
+            .as_ref()
+            .map(|a| a.vault.clone())
+            .unwrap_or_else(|| fail(ErrorCode::VaultNotActive));
+        let built = build_refresh(
+            &utxos,
+            fee_rate_sat_vb,
+            vault.policy.fee_cap_sats.0,
+            &vault_script,
+        )
+        .unwrap_or_else(|r| reject(&r));
+
+        let op_id = self.next_op_id;
+        self.next_op_id += 1;
+        for utxo in &utxos {
+            self.reservations.insert(utxo.key(), op_id);
+        }
+        let op = SpendOp {
+            op_id: U64(op_id),
+            vault_id,
+            kind: SpendOpKind::Refresh,
+            source: SpendSource::Vault,
+            state: SpendOpState::Frozen,
+            amount_sats: U64(total - built.fee_sats),
+            destination: vault_address,
+            fee_rate_sat_vb,
+            utxos,
+            created_at: U64(env::block_timestamp()),
+            executable_at: None,
+            unsigned_tx_hex: Some(hex(&built.unsigned)),
+            sighashes: built.sighashes.iter().map(|s| hex(s)).collect(),
+            signatures: vec![None; built.sighashes.len()],
+            witness_template: witness_templates()
+                .into_iter()
+                .find(|t| t.path == "withdrawal"),
+        };
+        self.ops.insert(op_id, op.clone());
+        self.emit(
+            vault_id.0,
+            "op_frozen",
+            json!({ "op_id": U64(op_id), "kind": "refresh", "envelope": envelope, "fee_sats": U64(built.fee_sats) }),
+        );
+        self.index_op(vault_id.0, op_id);
+        self.flush_and_charge(vault_id.0, storage_before);
+        op
     }
 
     /// Asks the NEAR MPC network to co-sign one input of a frozen op. Only the sighash the

@@ -106,6 +106,9 @@ function estimateVsize(inputs: number, outputs: number): bigint {
 /** Deep copy of plain JSON data (every contract value is JSON). */
 const clone = <T>(value: T): T => JSON.parse(JSON.stringify(value)) as T;
 
+/** Outputs below this are non-standard (the contract's `DUST_LIMIT_SATS`). */
+const DUST_LIMIT_SATS = 546n;
+
 const TERMINAL_STATES = new Set<SpendOp["state"]>(["signed", "cancelled", "voided"]);
 
 /**
@@ -263,7 +266,14 @@ export class MockContractClient implements ContractClient {
     const total = args.utxos.reduce((sum, u) => sum + BigInt(u.value_sats), 0n);
     const destination = vault.addresses?.vault ?? "";
     const op = this.newOp(vault, "refresh", "pending", total.toString(), destination, args);
-    this.freeze(vault, op, args.envelope);
+    try {
+      this.freeze(vault, op, args.envelope);
+    } catch (error) {
+      // The contract reverts a refused call: no op, no reservation, no op id spent.
+      this.ops.delete(op.op_id);
+      this.nextOpId--;
+      throw error;
+    }
     return clone(op);
   }
 
@@ -573,6 +583,7 @@ export class MockContractClient implements ContractClient {
     ) {
       this.fail("ERR_INSUFFICIENT_FUNDS");
     }
+    if (op.kind === "refresh" && total - fee < DUST_LIMIT_SATS) this.fail("ERR_INSUFFICIENT_FUNDS");
     if (op.kind === "refresh" || op.kind === "clawback") op.amount_sats = (total - fee).toString();
 
     op.unsigned_tx_hex = `mock-tx-${op.op_id}`;
@@ -582,6 +593,11 @@ export class MockContractClient implements ContractClient {
       WITNESS_TEMPLATES[op.kind === "clawback" ? "clawback" : "withdrawal"],
     );
     op.state = "frozen";
-    this.emit(vault.vault_id, "op_frozen", { op_id: op.op_id, kind: op.kind, envelope });
+    this.emit(vault.vault_id, "op_frozen", {
+      op_id: op.op_id,
+      kind: op.kind,
+      envelope,
+      fee_sats: fee.toString(),
+    });
   }
 }

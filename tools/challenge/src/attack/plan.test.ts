@@ -72,7 +72,8 @@ describe("buildPlan", () => {
       const method = CATEGORIES[c].method;
       if (method !== null) expect(LIVE_METHODS).toContain(method);
     }
-    expect(undeployedMethods).toContain("refresh");
+    expect(undeployedMethods).not.toContain("refresh");
+    expect(used.has("refresh")).toBe(true);
   });
 
   it("the dry-run plan covers all five Attempt Log action categories", () => {
@@ -93,16 +94,25 @@ describe("buildPlan", () => {
   });
 });
 
+describe("CATEGORIES", () => {
+  it("names the story that deploys each Epic 4/5 method", () => {
+    expect(CATEGORIES.refresh.story).toBe("4.1");
+    expect(CATEGORIES.spend_allowance.story).toBe("5.2");
+    expect(CATEGORIES.policy_change.story).toBe("5.1");
+  });
+});
+
 describe("notDeployed", () => {
-  it("lists refresh, spend_allowance, policy_change for the live mix, in report order", () => {
-    expect(notDeployed(live)).toEqual(["refresh", "spend_allowance", "policy_change"]);
+  it("lists spend_allowance, policy_change for the live mix, in report order", () => {
+    expect(LIVE_METHODS).toContain("refresh");
+    expect(notDeployed(live)).toEqual(["spend_allowance", "policy_change"]);
     expect(notDeployed(all)).toEqual([]);
   });
   it("writes a plain-words note naming the methods and stories", () => {
     const note = notDeployedNote(live);
-    expect(note).toContain("refresh");
-    expect(note).toContain("Story 5.1");
-    expect(note).toContain("propose_policy_change");
+    expect(note).toContain("Allowance spend (spend_allowance, Story 5.2)");
+    expect(note).toContain("Policy Change (propose_policy_change, Story 5.1)");
+    expect(note).not.toContain("refresh");
     expect(notDeployedNote(all)).toBeNull();
   });
 });

@@ -645,7 +645,7 @@ export class AttackRun {
       case "allowance_after_clawback":
         return call("spend_allowance", smallSpend());
       case "refresh_over_fee_cap":
-        // A decoy outpoint: the mock keeps a failed op's reservation, the real contract reverts.
+        // A decoy outpoint: even a Refresh the Fee Cap let through would never hold the real coin.
         return call("refresh", {
           vault_id: ctx.vaultId,
           fee_rate_sat_vb: OVER_CAP_FEE_RATE,

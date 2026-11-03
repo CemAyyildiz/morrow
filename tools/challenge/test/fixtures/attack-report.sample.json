@@ -1,6 +1,6 @@
 {
   "header": {
-    "tool_commit": "1224e6d75171f355f8bbd9ac19b48201468c47d9",
+    "tool_commit": "397aabf4940dc5bb9ca6286e2c713779ce3c7bd9",
     "tool_dirty": true,
     "seed": 7,
     "network": "mock",
@@ -26,9 +26,9 @@
       "balance_before_sats": 100000,
       "balance_after_sats": 100000,
       "request_tx_hash": "0000000000000000000000000000000000000000000000000000000000000006",
-      "request_op_id": "2",
+      "request_op_id": "1",
       "clawback_seen": true,
-      "clawback_op_id": "3",
+      "clawback_op_id": "2",
       "clawback_txid": null,
       "clawback_broadcast": false
     },
@@ -41,9 +41,9 @@
       "balance_before_sats": 100000,
       "balance_after_sats": 100000,
       "request_tx_hash": "0000000000000000000000000000000000000000000000000000000000000026",
-      "request_op_id": "5",
+      "request_op_id": "3",
       "clawback_seen": true,
-      "clawback_op_id": "6",
+      "clawback_op_id": "4",
       "clawback_txid": null,
       "clawback_broadcast": false
     },
@@ -56,9 +56,9 @@
       "balance_before_sats": 100000,
       "balance_after_sats": 100000,
       "request_tx_hash": "0000000000000000000000000000000000000000000000000000000000000045",
-      "request_op_id": "8",
+      "request_op_id": "5",
       "clawback_seen": true,
-      "clawback_op_id": "9",
+      "clawback_op_id": "6",
       "clawback_txid": null,
       "clawback_broadcast": false
     }
@@ -146,9 +146,9 @@
             "value_sats": "100000"
           }
         ],
-        "envelope": "0a4f44f19cb1a833a58e29cb92c95c4bebeffb4c29f240fa5b6c70b6e95db438652cd58c3b987f79ffc7298bfce20a65e6d2d3e26f343d06df2289e035f9680507c106e37485b1b0f20e271e213d2fcc"
+        "envelope": "89ba24db51acbbecf1f20ac66b9dafc1165a68b87b01fc09c2c5f4a204d64511cc43caeb13b4cf2269395b09eb608e262ded9a1bf61a62f59ee7a8409ea91e8e7eda9a9657f9d5506b5e7c27968f1ffd"
       },
-      "args_sha256": "9d03af6db2f48c973acd033e3bb5dd32ca1b6ad502cdf99ed7ed19d6c3ce5941",
+      "args_sha256": "121442947ad689dfe4b1176e6fcd1f38fe8539a888f754c13086aa5eade72001",
       "expected": ["ERR_ALLOWANCE_LIMIT"],
       "actual": "ERR_ALLOWANCE_LIMIT",
       "actual_class": "refused",
@@ -178,9 +178,9 @@
             "value_sats": "100000"
           }
         ],
-        "envelope": "e6de79bdb78806ca52c53647390a0657b9f391fa29aff61db2ec5cf09f65ad1deff03a294f293bc09bdd6a072a540b6048fc669cffa348c34b166d1d4c3bab2aa5f7db14f788e22d37baa006979c94fe"
+        "envelope": "23de867d4ff82d17eb3a7256c28d20c97c8e96718f8041c6d1d2c4e8e957b036cfcecfb9006f5b0eded7e482e4e51d3f8ae3da8547ab331c9c28148a92753666faab76016b19b4622d1f3ef169a1ec0e"
       },
-      "args_sha256": "c7608a8eab8c0a2cc17b0f155574eac50bc8ae8dd6406c7cdc26fe78949d39b2",
+      "args_sha256": "bae2fb38f4f307d9c31f070bd00d148fb491d987c5232ec3e0371b881e9428cb",
       "expected": ["ERR_FEE_TOO_HIGH"],
       "actual": "ERR_FEE_TOO_HIGH",
       "actual_class": "refused",
@@ -205,9 +205,9 @@
         "changes": {
           "escape_timelock_blocks": 1
         },
-        "envelope": "e11f4b43f5a4c4eeb9dbe1cb113811e688861539d1941cfeb3a748cd3e7b2c41ca86bd1917ce0d961641d9dfe60c59c5a10277ae93885d7b220e250aa7e6172699c500a3312d2c96827e844f30629274"
+        "envelope": "bbb52691f88fe04f5f0d3cfcf5a30186b38923f4fc089b3a4947b51421e6542d78fa072609bf61d032506ceb55d9016b6457905b8ceb5433bb62900f8e5f33cf0f7fac6a789e97f713ef313f16e82712"
       },
-      "args_sha256": "c338369a26b4c8388b22b9bdc5a490738b425440e08bd789fe270fc30f09cd53",
+      "args_sha256": "ae0d14cce337e026b63bfc00a7d5d3ec5f570e180bb91bcb4243582026475519",
       "expected": ["ERR_SCRIPT_BOUND"],
       "actual": "ERR_SCRIPT_BOUND",
       "actual_class": "refused",
@@ -281,9 +281,9 @@
             "value_sats": "100000"
           }
         ],
-        "envelope": "5b601cc13f620e9bf9aec16d55b0012389e3da5c3077ce52429e5643c996092343f4f05af92aba8e329093f73d9b188c4589b7fd2730415b398655fe9c0c7b76bf03f255ebee51740556c1ab6c8590c8"
+        "envelope": "5e5f315e648db3e62b8e6b8167df3cae33fe743e8b96639caf3fad0e97a8974d6247516dddb8220554b042cd8414dd41459a5e9efecfbaa9e035694195461b10fab702c1b1dccb2a04a8d60823d11d41"
       },
-      "args_sha256": "4746ae8b6b65a19e1552fa45a220bc2135cdd8f461dfa27da2a82328643c55f5",
+      "args_sha256": "e274c7ca0eb53ff6e9e16a89ff13176ebb1d2499a4596fabb8fc4fe2b4a8bcad",
       "expected": ["accepted", "ERR_OUTPOINT_RESERVED", "ERR_CLAWED_BACK", "ERR_STORAGE_BUDGET"],
       "actual": "accepted",
       "actual_class": "accepted",
@@ -292,7 +292,7 @@
       "window_result": null,
       "tx_hash": "0000000000000000000000000000000000000000000000000000000000000006",
       "explorer": null,
-      "op_id": "2",
+      "op_id": "1",
       "vault_id": "1",
       "log_entry": 6,
       "off_log": null,
@@ -304,10 +304,10 @@
       "category": "early_execute",
       "method": "begin_execute",
       "args": {
-        "op_id": "2",
-        "envelope": "7e75a668ae635f5e2dd334930133b2a5e2ccdebfa8fc91f0dc55b6b0dc2f3c0fb07e9bd2c2b046f2e4b3f3c3bbf06e10ca1e2de5bb082fd646b0ef8cf3d7858acbbf93e7c6dda5d35d02e4dba480453e"
+        "op_id": "1",
+        "envelope": "68e37d1c2dae08379958538284df641d3be54bcb2d972bcbd48280ae9745b146a683e64f52c8e3d8f88c9b77062a164316fabe3d4e004b9a585d5f0528537bfed58d72a49c518545c9c50e52a6ed764f"
       },
-      "args_sha256": "dcc44212644a11cb79ff4b83d6efa32223d4098e22c91d9135635e79b3879b06",
+      "args_sha256": "b29256ab82a6465e353c68a48766ed0ae60a9563d21af468fe900561def81805",
       "expected": ["ERR_NOT_EXECUTABLE", "ERR_CLAWED_BACK"],
       "actual": "ERR_NOT_EXECUTABLE",
       "actual_class": "refused",
@@ -328,10 +328,10 @@
       "category": "co_sign",
       "method": "sign_input",
       "args": {
-        "op_id": "2",
+        "op_id": "1",
         "input_index": 0
       },
-      "args_sha256": "d09f6a6c35218db927c5d6392dc41fbcff65b343989392497cf368af171cdd93",
+      "args_sha256": "05405531ea6e1857ddafc4bb6c7824096e2b9051bad9a808d7992c24f4b2087d",
       "expected": ["ERR_BAD_OP_STATE", "ERR_CLAWED_BACK"],
       "actual": "ERR_BAD_OP_STATE",
       "actual_class": "refused",
@@ -363,9 +363,9 @@
             "value_sats": "100000"
           }
         ],
-        "envelope": "d1762fcec127c1125bf60aa184ac468a70a227bb0a115c354f80fd2af6cab27ddb9450963fbcba2f4685a52b2601de863f16a44897e5e8d6087e3ff5ccb879ad0735e0a3f62362e82d0675164e1cf04a"
+        "envelope": "13a82907d2df1912122438e9638fab26ced8dee863b5dd73153fddeb2d3e2318f004cdc7adedb2dd1cca560a4f469ee5c87025a6cf4b4609d019f3c934d6be13744e8be61faa6bf889a123554bd90f2a"
       },
-      "args_sha256": "038333a4ed369024d7074e12b143f974944704a1233877b041ba0110182f3545",
+      "args_sha256": "31e98cd80446eb1f28dc30b56314b273de9a5a3810ab55ed06a92ef59d955210",
       "expected": ["ERR_OUTPOINT_RESERVED", "ERR_CLAWED_BACK"],
       "actual": "ERR_OUTPOINT_RESERVED",
       "actual_class": "refused",
@@ -397,9 +397,9 @@
             "value_sats": "100000"
           }
         ],
-        "envelope": "01c6b8ecac6cfd73bb06dcabedc2df706d771af0e7d4d136cbb95364e0b5476ca241a2922c7ea16a4a67e34ce0bed84505cb0d361fb952b15ce7cd568dc50e7420dd50fd0b20ceadd50d568079af45a6"
+        "envelope": "aa4847a8aee80394f4aa1452da1068f8a6d59696b9e1f4ba4deabe6d1d6cb00c10367d163d597a20e86891a6d166c093a09579cb14953bbf6185bfa86cf08e3174a8e2e9d3e07c239ee673fd1ee07784"
       },
-      "args_sha256": "41820725ad7e75295dffa3cd2e274cd5b057940f831ed3704fa0d64b932638c6",
+      "args_sha256": "1a785175d56320686583aefe10b81c9602c9d65fd900ce20a0932daee0bfe2f7",
       "expected": ["ERR_CLAWED_BACK", "ERR_VAULT_NOT_ACTIVE"],
       "actual": "ERR_CLAWED_BACK",
       "actual_class": "refused",
@@ -431,9 +431,9 @@
             "value_sats": "100000"
           }
         ],
-        "envelope": "5a7263c97f614d58462c00e1894a2a8b04f30a96f8b0be3a68ada1b15d8e1c6a81ac57b5a2fb746366cb92736c65bdfab47434042b112dfcac0c8ab5193c1ad7d6902ab4e901563f4c50ef2a1b6ab1ac"
+        "envelope": "8948f35fbeb6918d9e9722fd893da7b02e920e08da46775cdcd02aef3bfe7c71b6cdb87427c1d499ddbbca9fc1bb6939ad1b329fab399cea5610b04ecac0647d8058581bac2f46aa364f4654bae99fd2"
       },
-      "args_sha256": "2db89bd186bad6a41932f8c4314b4ff37e45a3291199c608ef15796b003c3a91",
+      "args_sha256": "dcadab3758602f92f1965ee2750598c6035d232daf0deca7c36c80a44b9ef1db",
       "expected": ["ERR_CLAWED_BACK", "ERR_VAULT_NOT_ACTIVE"],
       "actual": "ERR_CLAWED_BACK",
       "actual_class": "refused",
@@ -488,9 +488,9 @@
             "value_sats": "100000"
           }
         ],
-        "envelope": "1b3bdbbe09b8a347810495de9f3f1e2b6770693f5ff8601b2add836696160a55ec9242330fb3876d6f90b32f247034c43ab828666376589efaede9303064813d6c0bb7c5f1fd979994d2320ab6b37c97"
+        "envelope": "b225d09d661cf9bffa20cbe0a2ac586dec751994ea0d1ecfb3b8cfea9bbb022969890f3d09ef62212647ce98ac81b63a481b08dd5a75bca45aecac4deb1f5803df0ab4d2561d6029734ebebf344712dc"
       },
-      "args_sha256": "41b876b24dc6c5bf5d638a840e2abe9720c82728b5d52e663837515b941285a6",
+      "args_sha256": "418f3338761c0abc95c5bc7a52522264b14e852243e36fce3171d48b8f4a543d",
       "expected": ["ERR_CLAWED_BACK", "ERR_VAULT_NOT_ACTIVE"],
       "actual": "ERR_CLAWED_BACK",
       "actual_class": "refused",
@@ -520,9 +520,9 @@
             "value_sats": "100000"
           }
         ],
-        "envelope": "486846bde07f91eae1406366cf8cd3d5da155d8079e0e057d2a406c8e939450abbd6d65491d756653abdf201b392a6c1caac485e7123b5a597501f3cb4fa4f0a73ed9ff10f1d9c27de340ad64135627d"
+        "envelope": "fec4d75cec9d60cd5a580e51039d8901d74cbdb0bba35cd835499d4ffb83373824f4a9c5b7ea645c0f616a3cf704129d087183be8992a8dea1e7b40f012be50e06d70c55ca499c951526995c1f95444e"
       },
-      "args_sha256": "8342f00aa89a6a43b7c8311de47c9f26700c22966e6b64acf4cdca43df868feb",
+      "args_sha256": "e1742b19b8dcceaea90cdc80ec7075288b0aae93c4578136054248cba063ec9d",
       "expected": ["ERR_CLAWED_BACK", "ERR_VAULT_NOT_ACTIVE"],
       "actual": "ERR_CLAWED_BACK",
       "actual_class": "refused",
@@ -543,10 +543,10 @@
       "category": "co_sign",
       "method": "sign_input",
       "args": {
-        "op_id": "2",
+        "op_id": "1",
         "input_index": 0
       },
-      "args_sha256": "d09f6a6c35218db927c5d6392dc41fbcff65b343989392497cf368af171cdd93",
+      "args_sha256": "05405531ea6e1857ddafc4bb6c7824096e2b9051bad9a808d7992c24f4b2087d",
       "expected": ["ERR_CLAWED_BACK", "ERR_VAULT_NOT_ACTIVE"],
       "actual": "ERR_CLAWED_BACK",
       "actual_class": "refused",
@@ -567,10 +567,10 @@
       "category": "co_sign",
       "method": "sign_input",
       "args": {
-        "op_id": "2",
+        "op_id": "1",
         "input_index": 0
       },
-      "args_sha256": "d09f6a6c35218db927c5d6392dc41fbcff65b343989392497cf368af171cdd93",
+      "args_sha256": "05405531ea6e1857ddafc4bb6c7824096e2b9051bad9a808d7992c24f4b2087d",
       "expected": ["ERR_CLAWED_BACK", "ERR_VAULT_NOT_ACTIVE"],
       "actual": "ERR_CLAWED_BACK",
       "actual_class": "refused",
@@ -591,10 +591,10 @@
       "category": "early_execute",
       "method": "begin_execute",
       "args": {
-        "op_id": "2",
-        "envelope": "f581597f50ab78b7561a199fbcfa8bbaf162a6b36f65d48b0b4b595a9d5c177583fdeb9dcceae2924378fba846e565ae4e96f1a69a340df4aa6f8f1eeaa4f5503d079ad3e4d230822ff019914ddd229f"
+        "op_id": "1",
+        "envelope": "ea23fe83fc4c6deb23f42dade751a3ac7f95821779ef1abccefc477666d3e705a48653e0583ba1ece6c0756a54bc2e12a45c673f0dc08bd620a19b9875972ffc6bd145217b43fee3a0bc5d8ee989cf4a"
       },
-      "args_sha256": "375f2060e5e6986e4723f8e195b93dd2f048481b253f216217d5dc9108ae9445",
+      "args_sha256": "08995390292f4c02aeba73111c9e8bceb310140f75eaa25fac5e0736581bc09c",
       "expected": ["ERR_CLAWED_BACK", "ERR_VAULT_NOT_ACTIVE"],
       "actual": "ERR_CLAWED_BACK",
       "actual_class": "refused",
@@ -624,9 +624,9 @@
             "value_sats": "100000"
           }
         ],
-        "envelope": "09128c23d25fd5fc50bd8dfb5ade939c1740ae356294f575eef9508afbec7b3497b6bdc910ee7ac72ddf6f92b8c4fdc621b798a6bae5641fa16e1c72e88a6602fa09cd8a50f69160f68d3689f93e0b09"
+        "envelope": "311c90ef6de7e4fc8a36c17d4fc0e68c3e2ad13b10aa82e1f4ac5b3e4e98e67162dd1beeb5edd935ddb8b5a6e9a2af2223e695881e642f3a4b34a8463a7adb25f3189345542b27bda7cc29e67bb08084"
       },
-      "args_sha256": "8a8037860951683920eaefdbeb47032f7eff5bd35c7f45f7aa150e9bcdf1bcec",
+      "args_sha256": "f78fba0f8be1cc2fb183b0bf7d690c42154f0c8b26be856bbbe37f041ee9c358",
       "expected": ["ERR_CLAWED_BACK", "ERR_VAULT_NOT_ACTIVE"],
       "actual": "ERR_CLAWED_BACK",
       "actual_class": "refused",
@@ -658,9 +658,9 @@
             "value_sats": "100000"
           }
         ],
-        "envelope": "85c0da352f71c749a8a63b53231f90b0ce2e48da433c52af69c636a3660b324077ab3c5d381ae79fe38c3dc3fdedc0c16c64198825310427a077408425e96b3c73f8d2b39788d23f7da4b4070ce20103"
+        "envelope": "4abda678528cd2b8de88e30ed9d6dc0e8dcd2aec4205c966008d3e0a29af0b10c6710941931918d1a177e658434c51337ab7d6bc484d38b278b193ad727607b2835ebab525f6203d740b00bed5a47818"
       },
-      "args_sha256": "f59f1672eff7af777f73603af3a3319f677ebff37724043580275865380726ba",
+      "args_sha256": "a63fddbcf088f2297dadcec8723cf20f86afa2ecfc9956e41f693cb679e5e007",
       "expected": ["ERR_CLAWED_BACK", "ERR_VAULT_NOT_ACTIVE"],
       "actual": "ERR_CLAWED_BACK",
       "actual_class": "refused",
@@ -681,10 +681,10 @@
       "category": "early_execute",
       "method": "begin_execute",
       "args": {
-        "op_id": "2",
-        "envelope": "6c02948fac6bae28dea1b9e7f10b864170d578b3530c4223fa2477eadf43cb771f6505b49e34b38f689789bcc89b653167f736caf62d046d3ac706d8599d71f8977b78a8f2338772872cdc9d24812ba4"
+        "op_id": "1",
+        "envelope": "633972189608023fc0eeb0ade395e5e8f9ee891b7c31f057ca1e38c062b5ea68dac3bc82fa44c558955febc46a526d124ecbe4afe2b5b3d6e92f95c0b4bf82824f05e004e2c42745596338acc1b058e6"
       },
-      "args_sha256": "a10294a7144715c9934e6d84b278bd6a7a3439e1a07465749a24b7828c134f6a",
+      "args_sha256": "6cec5bfc8c7a518bce037506cd4e27dcb00795e7c111acd11d4db2e96b2fdd48",
       "expected": ["ERR_CLAWED_BACK", "ERR_VAULT_NOT_ACTIVE"],
       "actual": "ERR_CLAWED_BACK",
       "actual_class": "refused",
@@ -716,9 +716,9 @@
             "value_sats": "100000"
           }
         ],
-        "envelope": "7338cb6243aa0740a414b552a6181fec050e939873001096f215d7729fa890018c76ce58aed6121866e73d4afe67aafa7e6650db049bde3f95bcf00f4b49d690a7515e3138741c99fe98aa80b337380a"
+        "envelope": "41b896bbc503f54cc54cc9ad9ca1b2a8d6306a0e9f9ce9ac2711582bc90c6e49a153dc59b5734ed3c1b1d424005dfa10c29fda5f76995935ebfbb62e44c9133316dfeab0a23eb8ab7c7306a4aed60d79"
       },
-      "args_sha256": "00c3bd32289db76f2b84875be595f7d7bfc6c568bab84c6f3c3de53de8589b6d",
+      "args_sha256": "d60c217b00dce80668797a06b3619844ca3391e81d41d748685f71f9bba7e57e",
       "expected": ["ERR_CLAWED_BACK", "ERR_VAULT_NOT_ACTIVE"],
       "actual": "ERR_CLAWED_BACK",
       "actual_class": "refused",
@@ -750,9 +750,9 @@
             "value_sats": "100000"
           }
         ],
-        "envelope": "8ff47d900605d0bc3480c0de4a99cb3df6539e950a65c2ace56b6eadd30d0115a2208e305dfc2b36799846851ae14e7bfbe1aff71bc3433aa81b74b692acb3371b411962e5601b8a1dd056417f89e9a1"
+        "envelope": "467b15491deeb594df841513e788bfb35082c3ce1b44a230956e42176484dc10846ed3a85fbaa7e77ef42470606a793d17d850ca09d804d385c7e4593e42d4e571e4100a882a91d4738c347a3d9c8674"
       },
-      "args_sha256": "c8dd93d3609bfaeeaff177d851d2cc89b71f99a66d810d531741355c6038c3a2",
+      "args_sha256": "138bded7c6a600cca5324222c7eba9ef5b5708fbe1946050c729d70bb5384f7a",
       "expected": ["ERR_CLAWED_BACK", "ERR_VAULT_NOT_ACTIVE"],
       "actual": "ERR_CLAWED_BACK",
       "actual_class": "refused",
@@ -782,9 +782,9 @@
             "value_sats": "100000"
           }
         ],
-        "envelope": "485d8d83a10703e4445b5250cdeb7ae12e22562cdd305f89db4626942a6aff35a03204df90e806bdcb766b5e0e75124c9f7b3be3f63864de8c8279a8ee708c117ed433a1b747e438d20759c7690ef7f3"
+        "envelope": "71c0aec7ed575baca2f56cf39f1c4a536fb904eeaf520000f7f2fe25dfb65b0111e7f4e6b2ac4bca49e742e64e0c5c7f917c011ec071dc34e3b24a77f210d36f1ab4f63ced324a7e04f161c1917746cf"
       },
-      "args_sha256": "b3d4bae2587986a4cbfe028c5e0d7a774c3fef5c6c3cf26b0f7dec48fb351604",
+      "args_sha256": "670fe91915b9dc0182c9a6516da2a2e8cdf0054f411fb4ed122a97c32e97f952",
       "expected": ["ERR_CLAWED_BACK", "ERR_VAULT_NOT_ACTIVE"],
       "actual": "ERR_CLAWED_BACK",
       "actual_class": "refused",
@@ -805,10 +805,10 @@
       "category": "early_execute",
       "method": "begin_execute",
       "args": {
-        "op_id": "2",
-        "envelope": "74ed43a6ff28ba89d7a703629394d62b829d9fd9c38dcd069537fd9a686e245436b56c95666964805600e85c32f2685ab460983f3d71780407f6664518f9a8c355246a03b72f876713e50e8d642c0e2b"
+        "op_id": "1",
+        "envelope": "cbd151a559e3ac0dc7acdc4f3f0f49576d56245b00776090856bd071b826d6233212e39b1cbd2d2c98dd79ce23658a2a545e43e62c5abe8c88dffe403990be56e8777dc4dec0d41aa1da15e11003c0aa"
       },
-      "args_sha256": "0157c8953def763878e4ee86775eec81e66044943e5d7bafa110f9f547870e18",
+      "args_sha256": "0707aea2e6dcc21dd719076977f0cd576d230502296c49a8eb39be249b70a117",
       "expected": ["ERR_CLAWED_BACK", "ERR_VAULT_NOT_ACTIVE"],
       "actual": "ERR_CLAWED_BACK",
       "actual_class": "refused",
@@ -829,10 +829,10 @@
       "category": "co_sign",
       "method": "sign_input",
       "args": {
-        "op_id": "2",
+        "op_id": "1",
         "input_index": 0
       },
-      "args_sha256": "d09f6a6c35218db927c5d6392dc41fbcff65b343989392497cf368af171cdd93",
+      "args_sha256": "05405531ea6e1857ddafc4bb6c7824096e2b9051bad9a808d7992c24f4b2087d",
       "expected": ["ERR_CLAWED_BACK", "ERR_VAULT_NOT_ACTIVE"],
       "actual": "ERR_CLAWED_BACK",
       "actual_class": "refused",
@@ -853,10 +853,10 @@
       "category": "early_execute",
       "method": "begin_execute",
       "args": {
-        "op_id": "2",
-        "envelope": "293b84b58b221ed3999ccbfcf4117842b9f2a1b7511775e54dbe514fd809ec4f2ebc69cd9830357076089c9e798a94f768f5943cee7fc6096b168550f02675d29fa38107c1e0a7c99ae6c5622804198b"
+        "op_id": "1",
+        "envelope": "6663a5fcb41bb619e09051bd84a012701b0eaeb0013196180a9c7e13faf7c50604ab4c88b754b75adcea69545c2732601dca35ed18e7c56de9479b096de85aa6d115d5af855c2a582d75f713e3f2f7cf"
       },
-      "args_sha256": "cf3af3f93dee2b24435562fb99146477449d1c17790b3c974487fddf3c07f681",
+      "args_sha256": "f611c256b375679fdee34e7f2a87c274a225bd3882cc12dabe15678627597fc1",
       "expected": ["ERR_CLAWED_BACK", "ERR_VAULT_NOT_ACTIVE"],
       "actual": "ERR_CLAWED_BACK",
       "actual_class": "refused",
@@ -886,9 +886,9 @@
             "value_sats": "100000"
           }
         ],
-        "envelope": "0c38296d95c91408725b29adfe5a91ec4f6644246b51a0a3b816cd578f10107680631beb8ca5984fb5bd6adf6a7d7efb1138ed6b3ce49a029a911c5ec684c53066139a1f7272c8e1634fae1338e8cee7"
+        "envelope": "85c0a234b1fe0ed02512bb549b3dcfc38a9f37dd46ee25fa867c2ee5853b62656f8f8d3eb1c635c49e53c53e75cedcfef21b44cbca4f151b10793bca507d3f6dbddfeca302231a6fcfd5040465780655"
       },
-      "args_sha256": "28e896ccb1c7039c7c808179eccf9882618bac9786127ed80e9a8f1522c2cde0",
+      "args_sha256": "b65683a915846f44522c185448dea457b007c60efb31e34d6f6b264746d0fea2",
       "expected": ["ERR_CLAWED_BACK", "ERR_VAULT_NOT_ACTIVE"],
       "actual": "ERR_CLAWED_BACK",
       "actual_class": "refused",
@@ -909,10 +909,10 @@
       "category": "early_execute",
       "method": "begin_execute",
       "args": {
-        "op_id": "2",
-        "envelope": "4786da40a48a73f51d81f216e5bb9702387b1cb187e72cc499e41990f9462b213c8e138e06b22c9b9ec1b32b908332720bc874ccafaee4898091d344311990b4beb6adcfc370b9b2d5be472a00d33d2f"
+        "op_id": "1",
+        "envelope": "5192c9e20740451c2e1f3ad1f34af3e154a6bebd683dcd8b40924c2be100332e2dcdbaa8a670fcb032bbd40ec4268339de87e7e0b56881a6656b3f419d2c9280c87bd8eaa547e3824d612947b8eb2fa9"
       },
-      "args_sha256": "33f56c3da13b1702bdfc01a039427f9ed95addf446cff28b7c0a88224f1201dd",
+      "args_sha256": "5db128de9820f05ec4eff447320965f62d3af3169a2b7ad1b4fe35a4c49ebd31",
       "expected": ["ERR_CLAWED_BACK", "ERR_VAULT_NOT_ACTIVE"],
       "actual": "ERR_CLAWED_BACK",
       "actual_class": "refused",
@@ -956,10 +956,10 @@
       "category": "early_execute",
       "method": "begin_execute",
       "args": {
-        "op_id": "2",
-        "envelope": "efbf8b02429635044a52ded61cde28607f89aba6bed6a9f3b37324d0c9f8587c5cfa976bb996855657c6fea84337ec76dab8f102ac7371acfd44069f43347fa50af7ee32dd30d7929e9774687f553d55"
+        "op_id": "1",
+        "envelope": "c457d2cc7bad9c42a38f60d05650fc1e5d281309a0b119b8de9264499ef616430206507fd137f9c41121cf1a5c7e4b6d1f149daa4de0e31cf3d32dcd47f2e36ca1bc2078d20328c757458f5e611a04b1"
       },
-      "args_sha256": "cb2bb70f0217ced1778693418e7beb4a2f0b2e26ceaa050e8ed09b8159a85aaf",
+      "args_sha256": "2199e78bc10ae033b193edf34e327376a6fcd0d439422f06b6338fd35aef3614",
       "expected": ["ERR_CLAWED_BACK", "ERR_VAULT_NOT_ACTIVE"],
       "actual": "ERR_CLAWED_BACK",
       "actual_class": "refused",
@@ -984,9 +984,9 @@
         "changes": {
           "fee_cap_sats": "20000"
         },
-        "envelope": "a1437f3b9010186cc1f74ed34ef17469669001d26434e206458809eab38c0043d9354b3d218374def1c21dbda8722a95a61983d6e88a12478d3a4dac84aca05e09867edb9ca09023663f16d0b8e6d8eb"
+        "envelope": "1737d55137cf1440179338ea7a5b735ff0031bc16aba1a5855858d6336a6f32475d4a753d0f767f5edd5a183b589f4018261c71ee2fce83f0261159b50ae40c8ed6dde1bead03727fdea2aaf201ce6bf"
       },
-      "args_sha256": "67939ddc2d68884de42e0b62c43631315d5bb793fb7175d65c816ea5a86a7de6",
+      "args_sha256": "be744be14918741a30dfbfe82f19fe5808a2349016c48b24ab0bd478a362a803",
       "expected": ["ERR_CLAWED_BACK", "ERR_VAULT_NOT_ACTIVE"],
       "actual": "ERR_CLAWED_BACK",
       "actual_class": "refused",
@@ -1007,10 +1007,10 @@
       "category": "early_execute",
       "method": "begin_execute",
       "args": {
-        "op_id": "2",
-        "envelope": "1099d61be55c2d2b408452267115f345b335f804ccd8c3d7b124bdc5cd53813bfb0a613ddf26619fb2c6d072493b22a281af302a5e596c0038609aa017f94f2753cded2755e7198ff441ef423fc116fb"
+        "op_id": "1",
+        "envelope": "baec3e016717523b65c38975e181ac455cb7f50570a8958ddf985d75ec83185c6480bc261b110a67c704bad2731a4ef61c301918b8f50a8cf1456835010d33fdd9f3ee21a1b760921e6e77dc75699e73"
       },
-      "args_sha256": "8ab2aa05007d315a417895d1f328edf40eef701c2c2ecf6113f5b350d2b4791d",
+      "args_sha256": "2e093282e6db9d6133a92990f57da58514d1168a76b9187a6a7405399aa9643c",
       "expected": ["ERR_CLAWED_BACK", "ERR_VAULT_NOT_ACTIVE"],
       "actual": "ERR_CLAWED_BACK",
       "actual_class": "refused",
@@ -1107,9 +1107,9 @@
             "value_sats": "100000"
           }
         ],
-        "envelope": "031170736090e2893325a779aeb2a11ed4ae506e02b28333abb3d1350a949d30dc480fc8411ad1cf8dbb959d5a99269a70ea61dc263ba68de84682c420a7beeb860e32bc14ad0a78f380d1619bd34f76"
+        "envelope": "d7670649cf85a524dc78a252f0682e79cbea89c07066e0d3ab15401fa693a76314f3d426ead6b8c9b2cea594104a5cce12e37928599492b4b7c00f259a3999f7c1190d9db02dfa715d44192d094fe737"
       },
-      "args_sha256": "52a7af40b3b054fd9c05914b93b9ca9045afbaa37a5bfaf4b991d9d9fe71cbe0",
+      "args_sha256": "796af1bfc5198d9be9350b9fdd6208d09ca24568a1a294c768fd7f2528b8b9e3",
       "expected": ["ERR_ALLOWANCE_LIMIT"],
       "actual": "ERR_ALLOWANCE_LIMIT",
       "actual_class": "refused",
@@ -1139,9 +1139,9 @@
             "value_sats": "100000"
           }
         ],
-        "envelope": "64ec0515e2eed37ffa39bc50ca90ec87c6b2f01527392623d20da46ff7b84e516c43b434ec17631aca5bbe4e53d290a724c9994821437a9d6be9fa6af20d764ae4751cbb56bbfc025b94ead083e94e95"
+        "envelope": "facc30fa3609de575ed198a296bf58c49da4cd7f8533658b5eead6b4d4562b0e9275bfc700f1e64fee96db3edc27a8b0ab30da0971b8b0b16bf3a548f308c2ef875284fe4f4781289170a4f54ee0ae6c"
       },
-      "args_sha256": "71c3d041741ac92acee9075dfa478bcd27afc600342eb3a14550e7fc63cd6d3d",
+      "args_sha256": "2a13f06cb02283ecf2ab2e4321e5f357cddc6eb0e67b1be6798979b9a6ca086f",
       "expected": ["ERR_FEE_TOO_HIGH"],
       "actual": "ERR_FEE_TOO_HIGH",
       "actual_class": "refused",
@@ -1166,9 +1166,9 @@
         "changes": {
           "escape_timelock_blocks": 1
         },
-        "envelope": "377029be6977846a4a9a719c5fb4ba38dd42ae58495b58fffbbfaee22d4c8106562577eccf8ce6712ab0025e8c2c4cece6a00bb5d84a478f3bb5c019c9c5f3e8734680a1872f8683d91b0d4af915bf01"
+        "envelope": "b0d289de44691e48cd1619e0b4b7f5d03dd91b7489f2726327f33e6541286c363cbf78f77ad03d8342ed0b97ce426369c951c0e83bfb716c9b53343a94fdc7dfb44cdca2184ddb33449dfc0a1c0cf272"
       },
-      "args_sha256": "93818b2a036e35d79bbbd5ce23e949f96edcec72e26b56299f526baad2b86399",
+      "args_sha256": "d0eac6b3ed5fadce18ebc3a257a27a4849e775c43b42d5b49417da4dc5950ff1",
       "expected": ["ERR_SCRIPT_BOUND"],
       "actual": "ERR_SCRIPT_BOUND",
       "actual_class": "refused",
@@ -1242,9 +1242,9 @@
             "value_sats": "100000"
           }
         ],
-        "envelope": "9207551ef24b783c27e0fac96a2cc1998b38abab22de524b8d7d8a1a020553647e1d840e20d52e34d56fe561ae70b90eedf032a0fce07be5c8d302fc43bb3b1a23b12806a9bda1f35751b7c7d89372f7"
+        "envelope": "f460b40d66986c3eced4f67381300530e7d3ca63038724566fa4ef9846995829cc7670364dfc856d26117f4b18a2bc1cbbc489145c81e2329b978455d9dec6233f5b36aec8a3977f0b12f53770a92b75"
       },
-      "args_sha256": "16ae4639d2bf03cbfa22a85c8a29841ac1c6c8cffb1bb2cdf1dca862a554fc6d",
+      "args_sha256": "920da0e2cf2c93bc8cc4da8a6e1dd94d5a5d0dbc7a866b97418d4634d88e5cb8",
       "expected": ["accepted", "ERR_OUTPOINT_RESERVED", "ERR_CLAWED_BACK", "ERR_STORAGE_BUDGET"],
       "actual": "accepted",
       "actual_class": "accepted",
@@ -1253,7 +1253,7 @@
       "window_result": null,
       "tx_hash": "0000000000000000000000000000000000000000000000000000000000000026",
       "explorer": null,
-      "op_id": "5",
+      "op_id": "3",
       "vault_id": "2",
       "log_entry": 36,
       "off_log": null,
@@ -1265,10 +1265,10 @@
       "category": "early_execute",
       "method": "begin_execute",
       "args": {
-        "op_id": "5",
-        "envelope": "7313fbb0bbdcd7dbfc404744e1c440ffd6cb7005732020802933729d772eae6d63fc475fb81abc123192538a5fc03915baedca8e5c9f3ad27a5b467743fd60ff0212caf70019b0f50745f5bbf20d02c6"
+        "op_id": "3",
+        "envelope": "20f199cc7f9f82c487e3f17ed157caf486e569077390e8ea0e82d983e913de467143f02fe863553be779e37390d3982ba2c83c371c7c12a22650e90ca7d612bad381705ef1f2da83674e5b37cdc17201"
       },
-      "args_sha256": "5492c1093b907b3f0d6dd2ba86fd5e214bd6e7b65e6ac0b404540f730a3d48b0",
+      "args_sha256": "a2e97ddba06915c9d5f64377cdd64b9766b7d18496cf93db5cd2ac7d29d38efb",
       "expected": ["ERR_NOT_EXECUTABLE", "ERR_CLAWED_BACK"],
       "actual": "ERR_NOT_EXECUTABLE",
       "actual_class": "refused",
@@ -1289,10 +1289,10 @@
       "category": "co_sign",
       "method": "sign_input",
       "args": {
-        "op_id": "5",
+        "op_id": "3",
         "input_index": 0
       },
-      "args_sha256": "8161c7820a6eab311e26655d67beca795e97c62c191f569a0251e3e8ed2d0882",
+      "args_sha256": "f20c82429a0885af63db052ee19f56b3cb78b788d784cb8a80362f26b56a8c4a",
       "expected": ["ERR_BAD_OP_STATE", "ERR_CLAWED_BACK"],
       "actual": "ERR_BAD_OP_STATE",
       "actual_class": "refused",
@@ -1324,9 +1324,9 @@
             "value_sats": "100000"
           }
         ],
-        "envelope": "99b4e2a423d4c60eb5ccc8d9c00666375baf3afa714812343ce4d5ff59f0eb2177effbd11a86c6cd944a7c3916c1602ddec5c0be59a151ecfa517c9a38e3dbe4aa9497b8f229295fd08ca86bdf974f34"
+        "envelope": "787c2b99e1126990a98caae4dae69b735b6fe42ea107519d461f9f3ac2fafc1896221b38116b95635ed781e45231843a6c55a26fcff905fc528fd04a2027b85523f419aec0ed688d6abe1104d4415f5a"
       },
-      "args_sha256": "1a987f44dc5b1c662beb336689b710cd6d836aed648c5dd29a0f7bc557cb8d0a",
+      "args_sha256": "1d7d748b4eac1d4780f946b137661dfbdc2360c1c531d5987f70dc4508eeb2d4",
       "expected": ["ERR_OUTPOINT_RESERVED", "ERR_CLAWED_BACK"],
       "actual": "ERR_OUTPOINT_RESERVED",
       "actual_class": "refused",
@@ -1356,9 +1356,9 @@
             "value_sats": "100000"
           }
         ],
-        "envelope": "fdc8dfc2d77ebe36dd5be74c04764b9dc31bae2b7cafd58cc29a42153ba73a3e77d1422351f9bff7493d10c323a03f2587f57b9dd9d20bf07a96a55fdb19a877f7a057e381d147ef01bcb6f63b33e565"
+        "envelope": "80bee3e93c7aa53c6f9df678b6448a6941a4229cec407fb9dc3ff7349fd2372a813a99cb75b5b0da59f0a5f46211837eb8cd9ab0c382f78362e81128dd1ac946262890e63106873aa528ba12efb83ff1"
       },
-      "args_sha256": "d0645890656f860c2622437b5021aaf066c956a0783be0d63fabe8901bc8ab32",
+      "args_sha256": "311b7e2177f675b5a45a55ebbf03913b15ae93dce62e4b7766773ebe14c0bf38",
       "expected": ["ERR_CLAWED_BACK", "ERR_VAULT_NOT_ACTIVE"],
       "actual": "ERR_CLAWED_BACK",
       "actual_class": "refused",
@@ -1383,9 +1383,9 @@
         "changes": {
           "fee_cap_sats": "20000"
         },
-        "envelope": "ea9ea099a75defbf8209158e289aa8150105743eea9d43420604c6245d78f702dbe88821d2858ac8575955b2794b9556570fb609562e362d11977df101072fb365f81070e39446eaf26a681f1046ca0e"
+        "envelope": "13fb53b219522439c0fa2f91e995ceafe9847736a17f947a55792e6c7883cf6935b6e716670c64c41a13fb50a0e88267b5fcebfff7851e8e0bd03e0f2310d7c1b55d77e0b3a9b132b06b27795667f0f4"
       },
-      "args_sha256": "5886073865cc0663a7303ca4fee6fd795f99844a4e40a3c37d88fefbfe0c8221",
+      "args_sha256": "6cfb22219313e94fc06c8691cb67e2a40cd128742b34f8e3973641dd0384a221",
       "expected": ["ERR_CLAWED_BACK", "ERR_VAULT_NOT_ACTIVE"],
       "actual": "ERR_CLAWED_BACK",
       "actual_class": "refused",
@@ -1410,9 +1410,9 @@
         "changes": {
           "fee_cap_sats": "20000"
         },
-        "envelope": "ff35843aa7faf146b21c1d069ea2ee8ccd99919affeeb818d0f1ec62cb6cd46615aac81e547428cc79491660aff71c5ab0f82b65d30051587d4acfda51ac740cdff8bcd4179e2167077bfae9738c94be"
+        "envelope": "28d4f6617d67c8f2ea00fcd849ff2d07763e7b7a19e8b4503d60d12a9725f607332f17d4d4e812f707317fd6ebc974c256c95bae73399dadddf0ad7ffea295116f8f85619d695e7a9c21a8841ff81e34"
       },
-      "args_sha256": "a3efe249d0508b4ccabb9da99270257cb324748672e30cee94e5c8c99d365fb4",
+      "args_sha256": "83e488a780812aaf1c90317e4a32583e96855016505c0f3515421193c4cde61a",
       "expected": ["ERR_CLAWED_BACK", "ERR_VAULT_NOT_ACTIVE"],
       "actual": "ERR_CLAWED_BACK",
       "actual_class": "refused",
@@ -1444,9 +1444,9 @@
             "value_sats": "100000"
           }
         ],
-        "envelope": "2e5b623d36bcde4f33b02cd99b6b9a893ee068f6b774c5dd8e3d9b2237f058294cb87a28a839d5af0641e395bdd1921ee9c75232b37dfaa87d96afdb04646fcc1f579dc44a8cf062363709bd0b0064a3"
+        "envelope": "e508467e872d00b3d35a2d58dd9f773cdee1ed5a11e86c2513ff288d24f04745277be496045df28905891628d11f1c5ec658646d61501172006fd88c5126e69ca9e2bc2e964ccf3b240fbea017c94e2f"
       },
-      "args_sha256": "0c65279c14f7572fc4096348078120babed3d6495a7a735bfcc54a0dd9baa844",
+      "args_sha256": "61572316a4a76c386534221d00c251a0ed1a705abd9c0a7721e51b4e5e8ff172",
       "expected": ["ERR_CLAWED_BACK", "ERR_VAULT_NOT_ACTIVE"],
       "actual": "ERR_CLAWED_BACK",
       "actual_class": "refused",
@@ -1467,10 +1467,10 @@
       "category": "early_execute",
       "method": "begin_execute",
       "args": {
-        "op_id": "5",
-        "envelope": "a02f8956d392ce633f66c44fd285b0c2bc761e652207ffd1cee2ab8b5517d02ecf39eda8cefe70e929a5feedea88cd8078114524252099c324218dcb95f847cec3537b4c77f75b5bd6f40294ccc77de6"
+        "op_id": "3",
+        "envelope": "917c110888c6e8fbb12a3811ad1f1537f6dcd13a0d4930f31c588a4291a3802fa127bda896f61b567a859cc8f8f6c2671fbe75be46ede90a177d6c5b6ae4132fb5dde9e0bb7d3e8337f2585c7fc853d7"
       },
-      "args_sha256": "f9f79d549a50eb9a288d29722c7827309d08feead398e5cc8a3932a333240481",
+      "args_sha256": "5758071246dc4fb1bb93332688d8c173f37c2468db7c7948b9a25237b66af596",
       "expected": ["ERR_CLAWED_BACK", "ERR_VAULT_NOT_ACTIVE"],
       "actual": "ERR_CLAWED_BACK",
       "actual_class": "refused",
@@ -1491,10 +1491,10 @@
       "category": "co_sign",
       "method": "sign_input",
       "args": {
-        "op_id": "5",
+        "op_id": "3",
         "input_index": 0
       },
-      "args_sha256": "8161c7820a6eab311e26655d67beca795e97c62c191f569a0251e3e8ed2d0882",
+      "args_sha256": "f20c82429a0885af63db052ee19f56b3cb78b788d784cb8a80362f26b56a8c4a",
       "expected": ["ERR_CLAWED_BACK", "ERR_VAULT_NOT_ACTIVE"],
       "actual": "ERR_CLAWED_BACK",
       "actual_class": "refused",
@@ -1515,10 +1515,10 @@
       "category": "co_sign",
       "method": "sign_input",
       "args": {
-        "op_id": "5",
+        "op_id": "3",
         "input_index": 0
       },
-      "args_sha256": "8161c7820a6eab311e26655d67beca795e97c62c191f569a0251e3e8ed2d0882",
+      "args_sha256": "f20c82429a0885af63db052ee19f56b3cb78b788d784cb8a80362f26b56a8c4a",
       "expected": ["ERR_CLAWED_BACK", "ERR_VAULT_NOT_ACTIVE"],
       "actual": "ERR_CLAWED_BACK",
       "actual_class": "refused",
@@ -1550,9 +1550,9 @@
             "value_sats": "100000"
           }
         ],
-        "envelope": "8221db1f21ce7e5e199738ac530b59b327e90310b00f5657d4aba37bec36f859c329667328878448033efd3efceb10aade8e9a17ca6cf9b0197d61461c63231fbdcc04a5b5fc34cea6cbcdd4b0310b7b"
+        "envelope": "67bffd1cbd033c31bce8e6d6ade34ed35b699a67222e7897a485a7eac612d871ba43c2ea96fadc918a256021d4d7991565952cbe331319967c946a1c84676b2dc728f2e3b124d1601595c4b95b3832ff"
       },
-      "args_sha256": "d4ece4402fea63510af309bf5d6d22192208e92f9b229cb299c0e0a2aac0caa5",
+      "args_sha256": "12f608d9de49b706b80446c71d7fc89607220d8d0aef8a1ecca958cc1e5e4d74",
       "expected": ["ERR_CLAWED_BACK", "ERR_VAULT_NOT_ACTIVE"],
       "actual": "ERR_CLAWED_BACK",
       "actual_class": "refused",
@@ -1584,9 +1584,9 @@
             "value_sats": "100000"
           }
         ],
-        "envelope": "bf5e48313cecf1c3bb0983ede08a7e61311b34c15cd3a5db693a545aeec5df43c299651808fe2ab9a896ef5a5ef9999aca1fba76f7ce273231278e03f0a6e0152ce533541897f20858e5ee7e32f0ff1b"
+        "envelope": "7659fbbd73ac5b6000d39c76692a96218c916533705f97d613ddf3eaa38e07758d3a4b1e93d16e805b91b179f892fe5fdca3e9a3cc9c4a7fc6203046dcf9b1c2bb0656cf595d27ec104b628a4bbc0894"
       },
-      "args_sha256": "304712296d973da42fe8b70417dae60c0e041f9de79577479fcefe5301d7fdbb",
+      "args_sha256": "6bf88a5b1f29b92d249edf1422c7a614fe2ce075d63878072128843de3db761a",
       "expected": ["ERR_CLAWED_BACK", "ERR_VAULT_NOT_ACTIVE"],
       "actual": "ERR_CLAWED_BACK",
       "actual_class": "refused",
@@ -1618,9 +1618,9 @@
             "value_sats": "100000"
           }
         ],
-        "envelope": "8341301ee60e5e559a066a9bf81af60343ab6bf72b43a5565c34662693613712654fe516d8b59172672593ffbea89ab42f4b47ba29567982889d54f769d5cc0870e27f91d071f6bd67ea8bb80586d9b8"
+        "envelope": "b0f19ad337f8052a8e4cc6510242236e2c85f9e961d1c0a27cbfe08daa53c33fd9cd9ad75a74f82e3f94bade349e328dae31edc619e97a0689f03a6ed2dc18cacd7be35836aee86ba71533aa228fdf09"
       },
-      "args_sha256": "31979aa634304e610640e77e729b9157ea56f8a1b930d15dccd5ed42b597160b",
+      "args_sha256": "bf1a5854d7c8f89cd4fe1b34b16e80e60bcff5ec2cf8e2f9065322d77441fcee",
       "expected": ["ERR_CLAWED_BACK", "ERR_VAULT_NOT_ACTIVE"],
       "actual": "ERR_CLAWED_BACK",
       "actual_class": "refused",
@@ -1641,10 +1641,10 @@
       "category": "co_sign",
       "method": "sign_input",
       "args": {
-        "op_id": "5",
+        "op_id": "3",
         "input_index": 0
       },
-      "args_sha256": "8161c7820a6eab311e26655d67beca795e97c62c191f569a0251e3e8ed2d0882",
+      "args_sha256": "f20c82429a0885af63db052ee19f56b3cb78b788d784cb8a80362f26b56a8c4a",
       "expected": ["ERR_CLAWED_BACK", "ERR_VAULT_NOT_ACTIVE"],
       "actual": "ERR_CLAWED_BACK",
       "actual_class": "refused",
@@ -1665,10 +1665,10 @@
       "category": "co_sign",
       "method": "sign_input",
       "args": {
-        "op_id": "5",
+        "op_id": "3",
         "input_index": 0
       },
-      "args_sha256": "8161c7820a6eab311e26655d67beca795e97c62c191f569a0251e3e8ed2d0882",
+      "args_sha256": "f20c82429a0885af63db052ee19f56b3cb78b788d784cb8a80362f26b56a8c4a",
       "expected": ["ERR_CLAWED_BACK", "ERR_VAULT_NOT_ACTIVE"],
       "actual": "ERR_CLAWED_BACK",
       "actual_class": "refused",
@@ -1689,10 +1689,10 @@
       "category": "co_sign",
       "method": "sign_input",
       "args": {
-        "op_id": "5",
+        "op_id": "3",
         "input_index": 0
       },
-      "args_sha256": "8161c7820a6eab311e26655d67beca795e97c62c191f569a0251e3e8ed2d0882",
+      "args_sha256": "f20c82429a0885af63db052ee19f56b3cb78b788d784cb8a80362f26b56a8c4a",
       "expected": ["ERR_CLAWED_BACK", "ERR_VAULT_NOT_ACTIVE"],
       "actual": "ERR_CLAWED_BACK",
       "actual_class": "refused",
@@ -1717,9 +1717,9 @@
         "changes": {
           "fee_cap_sats": "20000"
         },
-        "envelope": "3f4104fb57da17778bcb27b0eec011cca3d71e0b104b6c64f41d53a271565f2a42fb450eb151fdc215e69626a5f05edbd4810ec40517547f57f319324313ee21634e96d5cb3be5630488755aa6f991c1"
+        "envelope": "e08d3211f690d6371ca3cb00ed7eed02bcc50935c9a529ccb0cecb64c0b036139e194aced2d000fbaa8c3365c55738c13a9a365a3255ca07fa13f570922885efac7ffa37a11638d16d4ecb75ab3bf6c9"
       },
-      "args_sha256": "7a1acbe56b776b28588349149ccc5479935fdd9da5cbccf3c34002a1bccf2eb8",
+      "args_sha256": "66b9faa2b8258dc650123b6a4698c71e78fddb5608933cd93fc9a06f31da0b8e",
       "expected": ["ERR_CLAWED_BACK", "ERR_VAULT_NOT_ACTIVE"],
       "actual": "ERR_CLAWED_BACK",
       "actual_class": "refused",
@@ -1751,9 +1751,9 @@
             "value_sats": "100000"
           }
         ],
-        "envelope": "60190a13771466f8ff70fad6d7e0592ee743b5803207b57e9cb8f9cf9aa21c51cab2d94fc33314efc65322ada70d4f3881ac1db7687bac4cd8fff7b429122e9b3260eb351877386ae5c23367e4faebf5"
+        "envelope": "77d0f66b7cb6cac7ce6476c0db8a2085f274e2915c146fe5211a500a059c3559bbe306e9561b1ab54fdac2522ad9c41405d32cca6f161fb42d6c6513fe219344efcfd6662fc56b4307f452ed59422b5c"
       },
-      "args_sha256": "3753d4c552ab7df5118d8dff9861dafd2d41a8562d11516292b7966a79971737",
+      "args_sha256": "20f471575f5b4e23a65458cac13f7e4e27de9d129a6347b283166bd22e4bf5e7",
       "expected": ["ERR_CLAWED_BACK", "ERR_VAULT_NOT_ACTIVE"],
       "actual": "ERR_CLAWED_BACK",
       "actual_class": "refused",
@@ -1785,9 +1785,9 @@
             "value_sats": "100000"
           }
         ],
-        "envelope": "daee7524695b00fd5cdb6ac90efe9e62481c9528cb6961430a025a559319fa0c44b0eb2a6b504072e213c06b94f03eaada45b7e5232d09b95d54d967f72817b5212a65adcc1df152f89f50913e072945"
+        "envelope": "b729f7575e285f7593cb8d17ee776ba9a590296e2ac430b390aa9d0ee9b74b292d0ec9127e90ae3e0d559cde68d7a151fcc2215264ef88faa626d649cbd80ec5d64bd6a17cdd702ca6fa1f9bd79fc648"
       },
-      "args_sha256": "afab9c88f988bb08bc4fa09c2f3fdf08ca96a7b85c95c7defb073274118b61ac",
+      "args_sha256": "d1b5849bb17d9c02996190d383e6e45c6d86cea7e0603c212da4e7c55171ea0b",
       "expected": ["ERR_CLAWED_BACK", "ERR_VAULT_NOT_ACTIVE"],
       "actual": "ERR_CLAWED_BACK",
       "actual_class": "refused",
@@ -1808,10 +1808,10 @@
       "category": "co_sign",
       "method": "sign_input",
       "args": {
-        "op_id": "5",
+        "op_id": "3",
         "input_index": 0
       },
-      "args_sha256": "8161c7820a6eab311e26655d67beca795e97c62c191f569a0251e3e8ed2d0882",
+      "args_sha256": "f20c82429a0885af63db052ee19f56b3cb78b788d784cb8a80362f26b56a8c4a",
       "expected": ["ERR_CLAWED_BACK", "ERR_VAULT_NOT_ACTIVE"],
       "actual": "ERR_CLAWED_BACK",
       "actual_class": "refused",
@@ -1832,10 +1832,10 @@
       "category": "co_sign",
       "method": "sign_input",
       "args": {
-        "op_id": "5",
+        "op_id": "3",
         "input_index": 0
       },
-      "args_sha256": "8161c7820a6eab311e26655d67beca795e97c62c191f569a0251e3e8ed2d0882",
+      "args_sha256": "f20c82429a0885af63db052ee19f56b3cb78b788d784cb8a80362f26b56a8c4a",
       "expected": ["ERR_CLAWED_BACK", "ERR_VAULT_NOT_ACTIVE"],
       "actual": "ERR_CLAWED_BACK",
       "actual_class": "refused",
@@ -1867,9 +1867,9 @@
             "value_sats": "100000"
           }
         ],
-        "envelope": "a6e034d968c5e053c3c784bc64c15dcba3a40c175dfc0b825bea12b630e09a258cfac23395e7b60eae300b1b1713ad77dbc7c40c127d4fa1db5a33ca29a5a1656bb1910151ce1e331de2effb577393f2"
+        "envelope": "8482ef25095004deb375c65a94fb1916e28d2619a16a3dab25749dc98f9baf12995ae972c24e455e9b5b4b1f340f0d1b31972280b7e1c1cf3ca11da7077f1659061adb1053589ba14fb0fa5d6ea45998"
       },
-      "args_sha256": "307fae9968e97ee547be01c3ef0c07cc89a91bfd0700c73e671e8b3dc6a2b4af",
+      "args_sha256": "859c4e805159e29b76777a5b320e5123b5e8a1ff36931ae6455e468358e2f03e",
       "expected": ["ERR_CLAWED_BACK", "ERR_VAULT_NOT_ACTIVE"],
       "actual": "ERR_CLAWED_BACK",
       "actual_class": "refused",
@@ -1901,9 +1901,9 @@
             "value_sats": "100000"
           }
         ],
-        "envelope": "6105d4deb75b42a4adc1cdc8aa6cd747f8bb274d55a0b7796bb06ffe559e2b5bc5d70a01df57c5409142b1640ee95cdd3e3f55117c50b18687a0e607af456a2b68194a6110816d2b17e5964bf795cbd4"
+        "envelope": "d97337204039e2d7fda38a3c5b05da7be65e706bf301c1424ceb0644fc951e5d2e2eec6621418c8a5f7fc0eaba71b8a5110aa79f18dfdd5971e64ec9b433e0743a468695e5563b57e7df4bfc9e4c0fe2"
       },
-      "args_sha256": "285768e4b41fbe2046ab85bb3bfe94f13dbe4651ccdf8be0a352d19f30e00530",
+      "args_sha256": "ed2eeb04a60615c52a7edf94cb18fea5888a1867cc93af8385db2937575ca4e3",
       "expected": ["ERR_CLAWED_BACK", "ERR_VAULT_NOT_ACTIVE"],
       "actual": "ERR_CLAWED_BACK",
       "actual_class": "refused",
@@ -1928,9 +1928,9 @@
         "changes": {
           "fee_cap_sats": "20000"
         },
-        "envelope": "71f863e2903663658431f1488a6335a01e7640f6a98edc7e1d8de4839840e76c40614d719b4d36c5ae8119aaf49384e746d8bf37d31c50e322db4cfb950829c4847caee84ea8c68af11a57a948eb7aa4"
+        "envelope": "e94072dee2f2127dc0ce10388f0b9a2a421f35fb5c1cec7a40eb5618dbf8a967d33cfd9e705277bfa07c3edfa8b4b46eb8289f95c34fa2dc4c789d7b258173c99179e306a8c80cbafdec806650507d62"
       },
-      "args_sha256": "41fff14be9ff253874bfb5321ebc6361d13675a26079ea92e6c141c1afb299a8",
+      "args_sha256": "c2eea052e574dee987e640536de7ed4b7c20c5405071bdb25cf7ef6a79ea1ecf",
       "expected": ["ERR_CLAWED_BACK", "ERR_VAULT_NOT_ACTIVE"],
       "actual": "ERR_CLAWED_BACK",
       "actual_class": "refused",
@@ -1951,10 +1951,10 @@
       "category": "co_sign",
       "method": "sign_input",
       "args": {
-        "op_id": "5",
+        "op_id": "3",
         "input_index": 0
       },
-      "args_sha256": "8161c7820a6eab311e26655d67beca795e97c62c191f569a0251e3e8ed2d0882",
+      "args_sha256": "f20c82429a0885af63db052ee19f56b3cb78b788d784cb8a80362f26b56a8c4a",
       "expected": ["ERR_CLAWED_BACK", "ERR_VAULT_NOT_ACTIVE"],
       "actual": "ERR_CLAWED_BACK",
       "actual_class": "refused",
@@ -2051,9 +2051,9 @@
             "value_sats": "100000"
           }
         ],
-        "envelope": "e61a5f3e010fe0ddc71459426330da76d66b94afbd028babd5a60721c89cc676e0744ffd83d223f000c693379cd371b2946b0d138544c4d9c375c18be590c03370ddb0d8ed4aa83c789526990ac8a468"
+        "envelope": "5d2479ed8be37df341fca59f265612f368266684d79690b4d5cb37907b0e237ba85eca7fde5814612d2e7428e9b7adb96fbed1459b4735ab9e3e6142678d59f9e81ba920c49e2585387a70116f5c9707"
       },
-      "args_sha256": "60dffccd4f5b950f53414dd99d45426234dfa94ffea3506ad3e42bb42fab72ca",
+      "args_sha256": "fac5163df1d48364aef2dbb7bbf5ce6d66afb3cf7f586ce091b554fdcc51b081",
       "expected": ["ERR_ALLOWANCE_LIMIT"],
       "actual": "ERR_ALLOWANCE_LIMIT",
       "actual_class": "refused",
@@ -2083,9 +2083,9 @@
             "value_sats": "100000"
           }
         ],
-        "envelope": "1246621c2924be173f9141a905fd89230c800602fb9324dbd595b5f179494b19aca2652c5d3979ec2d66bce20394329ee35fefd73749949fb0d55d0843137ccb0ee33c50c7ba6cbdc2a32cea08692e33"
+        "envelope": "007de45340bc609fde03dcd739f18f073ebbd2b3a03252f2b2424c5a0326894c83a3e3458859f0c20624b90a122f4cf506f6fd0fa110bd5929d462d4d9f93fe5261214dcc0ff8634c1d8aad088ba3693"
       },
-      "args_sha256": "94976bf0602d1f4a9b9d626d75797ba7b40470b40a16bd1443c744559ef384f0",
+      "args_sha256": "c28d2c388332403858de9b5847ef48618045b317f554981115a9b3e988e17250",
       "expected": ["ERR_FEE_TOO_HIGH"],
       "actual": "ERR_FEE_TOO_HIGH",
       "actual_class": "refused",
@@ -2110,9 +2110,9 @@
         "changes": {
           "escape_timelock_blocks": 1
         },
-        "envelope": "f2c547cbca0f2832886c08468bbc3bae326103c61228562941897e7ae24e43158ba3fffb41aa913102a86137c51bbc38bfca8828ba9db581b9ab21b030080a6dfa7bb3836fc40026c68d7406d603a396"
+        "envelope": "6b8f5a68f0e6a1beeed35ae8992ce36f8fd5b88193710987dc105901f18ad53163f73d967d666256a44366b2cdc228189bedf2f6bb5e81be0ff48b98ea3468ea5535c06c4f29c113052ba735997b9d6f"
       },
-      "args_sha256": "551e708760413d76408bea4c073fde133e12fb36dc3d3883cfc53cbb7b08c65e",
+      "args_sha256": "6f738ff0f43d5764f08be888f861d82b8f12e4317a10a0e87aee8690c36c2609",
       "expected": ["ERR_SCRIPT_BOUND"],
       "actual": "ERR_SCRIPT_BOUND",
       "actual_class": "refused",
@@ -2186,9 +2186,9 @@
             "value_sats": "100000"
           }
         ],
-        "envelope": "8c3e0dbbfd0a33ff65a3254ea95c0fd1c283c18f322e7bc867a138111e15bd699b1afc507bc2252d90e871f84d9f3f94300e7b374c3254ebf5b43ea34179e38fc948eaa4ec9f3476e33aac5dd08439f8"
+        "envelope": "4ebca6da87f4d2012c659a80d6082a221e8ae1ab9aec4e61415aedc37a39c1133f651eca5ba1d673453e6e40fb0b23e4a1b3c005cc8e34450ca78d341e504e4c68d2caa10f22810a0d1b2948cd44daab"
       },
-      "args_sha256": "010813b48367d313a48070acb5a71f687e4ceb2974709d1010f704c6b1471d6a",
+      "args_sha256": "25f7c56009e23c5deb102ce95548035fa45f7f38859c2438329dbaec42c618b0",
       "expected": ["accepted", "ERR_OUTPOINT_RESERVED", "ERR_CLAWED_BACK", "ERR_STORAGE_BUDGET"],
       "actual": "accepted",
       "actual_class": "accepted",
@@ -2197,7 +2197,7 @@
       "window_result": null,
       "tx_hash": "0000000000000000000000000000000000000000000000000000000000000045",
       "explorer": null,
-      "op_id": "8",
+      "op_id": "5",
       "vault_id": "3",
       "log_entry": 67,
       "off_log": null,
@@ -2209,10 +2209,10 @@
       "category": "early_execute",
       "method": "begin_execute",
       "args": {
-        "op_id": "8",
-        "envelope": "840b9cf8960346dc738690a061e9c0263b1e1b82c4fe2e65ece917d10e85fc42e788cb195cdd8360554bd0e8306b1fb8df6c7627bd715eebf852eba091e8c76cb396e7e993da082214aad71d60d2a389"
+        "op_id": "5",
+        "envelope": "5a15fe455e449c13450a64e1a210003641c53afb92cbb8125e6aba62d4a2895fcd169a6230fe00b858940e95084c52558174ea0a6e43cd92c8cd6af6d088ece9ebfd6dee6daab18ef3cf2d7c1ed1effc"
       },
-      "args_sha256": "f5b478e7545907b50915fe2b3b5042ada9883bcf39b36d9a86d2cc6adcfcd9d3",
+      "args_sha256": "0a9a9e900b526d8e8684e36411f0ad9eaab6d757142f994dd31186d55497d1ac",
       "expected": ["ERR_NOT_EXECUTABLE", "ERR_CLAWED_BACK"],
       "actual": "ERR_NOT_EXECUTABLE",
       "actual_class": "refused",
@@ -2233,10 +2233,10 @@
       "category": "co_sign",
       "method": "sign_input",
       "args": {
-        "op_id": "8",
+        "op_id": "5",
         "input_index": 0
       },
-      "args_sha256": "597a3e2a6f4a86b569ef74a5b5c6fa818c09df94619d3e264f0bf7f019f9e506",
+      "args_sha256": "8161c7820a6eab311e26655d67beca795e97c62c191f569a0251e3e8ed2d0882",
       "expected": ["ERR_BAD_OP_STATE", "ERR_CLAWED_BACK"],
       "actual": "ERR_BAD_OP_STATE",
       "actual_class": "refused",
@@ -2268,9 +2268,9 @@
             "value_sats": "100000"
           }
         ],
-        "envelope": "88c5772658f856b6c4f25ac219f81c3a67d8d67c31e4857ea5d4433e4deddb16563b33b29625b2a9d16d098010d3f0f915fc7cca48df92c7055560a13444aa15a352b1080ad3a702443487d28198004f"
+        "envelope": "c43544183b02604e70ea20de692e4d9ed9410cf914abff1aab92cce1e7a7653659c57eaa89f82e303ff4b1cb07940f815f2224c39ac3a042286287bdc66235962dbeb4348d35f2bee847c65135707bdd"
       },
-      "args_sha256": "457d6a906e28bcc702ec0dc1fd7d859c49d1d12d47da0395f8b8762520a0ae37",
+      "args_sha256": "7d74e387dc2afad9747e27c1766a52623bc75015d10e7d5cd80ae6b72bd88213",
       "expected": ["ERR_OUTPOINT_RESERVED", "ERR_CLAWED_BACK"],
       "actual": "ERR_OUTPOINT_RESERVED",
       "actual_class": "refused",
@@ -2300,9 +2300,9 @@
             "value_sats": "100000"
           }
         ],
-        "envelope": "59b05e8b943d34a1dd30b12c7448c810e346a2682f91a0f83fa7acf59ec6ec2fef2b2fbb2050c07f1cea447642c211a7ae83e5f4603da7d2b2d591570a09d685c4ee306d49d13a67a80ff828e83ba1df"
+        "envelope": "cba6964fbb0c707a04395dd4f9d37ca984f378f01df59e84bfd3cfb8a63c165faae79d796afa04d26de2f68980c7305834800e5e1794df3470cb7270022b382e6b79e69aa7c3d758d9ab4597e48a0197"
       },
-      "args_sha256": "d6de4c1ab62046d39f088c2461f7419d3e195ec25c1898905d0853c491ea0537",
+      "args_sha256": "4289ba22a69a9d96c68cf6ca9b00ff8c379a7e6249ba21b3d6d5876dcbb5140d",
       "expected": ["ERR_CLAWED_BACK", "ERR_VAULT_NOT_ACTIVE"],
       "actual": "ERR_CLAWED_BACK",
       "actual_class": "refused",
@@ -2334,9 +2334,9 @@
             "value_sats": "100000"
           }
         ],
-        "envelope": "e02a200d8a3282523f6acd7c11327860f612c7d4f76b5cb36f3784d2fe820c20008e93d36ccc84994661f0151648f1e5068bbe3e591a08c3b4ef2ea015313cf10434b0fd116d49d55869cc75e5b44b6c"
+        "envelope": "3a8342cbf57f88c740dcc08436aed4ed925f5215321b6db22490e010e3d86d3730836686bb2086320b847c07323000aef91119968644d491a2bf4b81e433b6e2d891d3b0a559a36ea763c9b3b7e3707a"
       },
-      "args_sha256": "922baf994f2dc68047f7b983a9bc9165408940560a355020e74f59fc09cb38b8",
+      "args_sha256": "268318fb3103e47d6e8e649c3728ca68ddb5bc6c6d39bbb22554be7a32e7a73e",
       "expected": ["ERR_CLAWED_BACK", "ERR_VAULT_NOT_ACTIVE"],
       "actual": "ERR_CLAWED_BACK",
       "actual_class": "refused",
@@ -2361,9 +2361,9 @@
         "changes": {
           "fee_cap_sats": "20000"
         },
-        "envelope": "09b1737c243e87ec333a0f146a16b311a11e3737bcc73f35c15e365d2b258a76170fda067af18a83d7c2cc125716584988750dd32de5e83b8e39fbb1a4b58e15d279e4b9a87f151a06eaa7ecf6a704bf"
+        "envelope": "bc38c1715dbc5f27bd161acf4c75f167bcd140f8dd4f18554dfb32f63590244bace70358d2a3f29e7cc19c6a50a2d3df910befa72d5eb526f41e2aec592921f210278a669b06bb64f740977d05dcf65a"
       },
-      "args_sha256": "c2150c85bab427b967d9fbd0088f34450de4e4de9f3e5fb25c6046f805b8561a",
+      "args_sha256": "68f84612d398659a54a1c289cd849d3d1ad367723810427b935278a8f8a76818",
       "expected": ["ERR_CLAWED_BACK", "ERR_VAULT_NOT_ACTIVE"],
       "actual": "ERR_CLAWED_BACK",
       "actual_class": "refused",
@@ -2411,9 +2411,9 @@
         "changes": {
           "fee_cap_sats": "20000"
         },
-        "envelope": "5af9330a6c7593ce7ae16c915afadb5ed31db9b52e93b0664875cf3bfa23877ecfbc512caee9b767e7c81102033decf4bd36c2c8876fc67d702127d928c7082481930d815e7fffd93f22797812140ee7"
+        "envelope": "7de0f26853cfb0e51ad8375376aed01e76e726393fa1478a99b34083dba3b4398010d8a706ff2579dc1d5063e741c78bc260cb00e92ef57e581347d96b4d7b5be669c1ff01588a9309f88d273a2a6823"
       },
-      "args_sha256": "dc2f8d8779868bd2b22a37b8cad46f9357cafac4d93d166425f301639e71edfc",
+      "args_sha256": "75283f959193747aae545a09355d79e249a60047d30073053f339db022209317",
       "expected": ["ERR_CLAWED_BACK", "ERR_VAULT_NOT_ACTIVE"],
       "actual": "ERR_CLAWED_BACK",
       "actual_class": "refused",
@@ -2443,9 +2443,9 @@
             "value_sats": "100000"
           }
         ],
-        "envelope": "3cb3bb9035659a3378238ec566e17a0ee74755e940485587d03da18de0f66f15f8200712b53d9db3110c1cc9d612e4105c6a6f5f4af86202b0a5f93ef237f6cd77d9823fedeea49cbb533b83ddbd81dd"
+        "envelope": "e19d89221149284c399591c3b81de1deb6fc3c926687aaf0f6fb82ba704e933af93c8907e280e5a934b1e300eddcc4db68c23f9e8638f84171cacbffb33261a41d46879bc51cd5bbc32c8c5102949f81"
       },
-      "args_sha256": "c2141821c0b5ef9719a090e9cf50a28c210d33376e264e48401fa6032205dde2",
+      "args_sha256": "a1dc4daf3e23d790ffb4612e22cdc90e0486e412c0870eba2f60d06bcf2e44b9",
       "expected": ["ERR_CLAWED_BACK", "ERR_VAULT_NOT_ACTIVE"],
       "actual": "ERR_CLAWED_BACK",
       "actual_class": "refused",
@@ -2521,9 +2521,9 @@
             "value_sats": "100000"
           }
         ],
-        "envelope": "2504c63c36f68a303cde1b47e0f1662713e97a71038100899a9abb3a32d9a24f5f1713e74949bb05a3e78800f5270dc4054f64f4f4a656eecd603a2899ace86968ea6c6279527468786dc6ea192d60c9"
+        "envelope": "f50eab71e4ab8849ed08846151398865372d6db73e99c817a68cebcf2151f43972efd78ce187305582576a5c8824c9e14490480c109f0aa593b2cc727aeeb5b68deca24e32cc660abb6d355e57b99341"
       },
-      "args_sha256": "bafd8aee3ad43d8ea3aa72bb325f39972e3e539bd3d324b487185c1bc107e198",
+      "args_sha256": "568157fd81540c2209d371a1e8d38d9e96383c678867021cd78644c4c7b75cdd",
       "expected": ["ERR_CLAWED_BACK", "ERR_VAULT_NOT_ACTIVE"],
       "actual": "ERR_CLAWED_BACK",
       "actual_class": "refused",
@@ -2548,9 +2548,9 @@
         "changes": {
           "fee_cap_sats": "20000"
         },
-        "envelope": "9fecd1779c26099c6d2e860253e43f20d2ee5755325dffc5efd0e12c5384f41cd45d3d86b433b02a2d3aff205e23de7bdbca65393caf3eb61dd5c57e39ff92657276c901017cb71e8f12692b8db48b9b"
+        "envelope": "512db1c6cf506be1700de20829879d59b59f73fb979ab04aa6600e1e589c6022d72e2d5bd210792b520626eebff9240d7348f92f65dfbe40d0e8830d36578d9fc7f4c42ceaa796bef1deed1b1f9acb66"
       },
-      "args_sha256": "9d9d5e324a1897cb9187fd8adf76228e45a5a8f6e33cd165b2dd871e54691427",
+      "args_sha256": "808cc01ee7bf1106954cceb57db4c3570ce05773e8e9451bf8396c8ce4d054b9",
       "expected": ["ERR_CLAWED_BACK", "ERR_VAULT_NOT_ACTIVE"],
       "actual": "ERR_CLAWED_BACK",
       "actual_class": "refused",
@@ -2582,9 +2582,9 @@
             "value_sats": "100000"
           }
         ],
-        "envelope": "c91843ba49d4eac5c6b3c2e1a24e2ff895ced30a249af504570213b12ce95a5b9ec2f7ac313874ed5118e92009a605d1e59ca09824dd6a6b132ab2c3c9ef8ee893c62129104784ff084d90f58e89faed"
+        "envelope": "c1de827712ad6faf5c3ddcd67e3304a6404982dd24b766c337e8ce6d4c4dda4bf1f552675cf04dc607de9c8c9a19003cbac88069c865de4e7cb9c8730f6f208a29a3c784f58a19a85a81c9f8d3925c37"
       },
-      "args_sha256": "eb90f9e0a40f54cacfd45fd5541c953024324715a7f61760cc006603009e48aa",
+      "args_sha256": "c594e3df0b426212879f686cccd1b0c1740955dd5b922b9b5ec4b22e3cb9da13",
       "expected": ["ERR_CLAWED_BACK", "ERR_VAULT_NOT_ACTIVE"],
       "actual": "ERR_CLAWED_BACK",
       "actual_class": "refused",
@@ -2614,9 +2614,9 @@
             "value_sats": "100000"
           }
         ],
-        "envelope": "fb32f81441d79208b9256cb90cf84a58136ededcefe5d896ffc1134e9a547306cb04648beb1edba67f3a0925e5a8df2dbfa9379fab09c07b69db6d7130c2b70fa65588c47fc7296e07267502c04cde69"
+        "envelope": "3710b9999ad64c1c660679f21b0b13ac0f992d93651e83a64162e96d2963db25230e7965fc5917e39d2ee6045d4af298eb21f1e8f61cc848f90f3f602f83e6f4e19ab9c74a1bf25b4bdf323380d3942b"
       },
-      "args_sha256": "d9cc7d5b714b1073b966ddd92c7d5e7576c7b371cb65533dccf85fca921c7f45",
+      "args_sha256": "86839d4c905e2254943efe9e5cc0dd06fc2ed59e74a97e4e192336b08bf28223",
       "expected": ["ERR_CLAWED_BACK", "ERR_VAULT_NOT_ACTIVE"],
       "actual": "ERR_CLAWED_BACK",
       "actual_class": "refused",
@@ -2637,10 +2637,10 @@
       "category": "co_sign",
       "method": "sign_input",
       "args": {
-        "op_id": "8",
+        "op_id": "5",
         "input_index": 0
       },
-      "args_sha256": "597a3e2a6f4a86b569ef74a5b5c6fa818c09df94619d3e264f0bf7f019f9e506",
+      "args_sha256": "8161c7820a6eab311e26655d67beca795e97c62c191f569a0251e3e8ed2d0882",
       "expected": ["ERR_CLAWED_BACK", "ERR_VAULT_NOT_ACTIVE"],
       "actual": "ERR_CLAWED_BACK",
       "actual_class": "refused",
@@ -2672,9 +2672,9 @@
             "value_sats": "100000"
           }
         ],
-        "envelope": "74b3e53dcc04b4be6f847bf129b2443451e132b7ddaaf624bfccb58bd348397697c22006d15b83c40eba9321ea8db2eb87c6c7a3fc869182e99313553438bff3cad98b5dfc72cc44c37eb762c6168011"
+        "envelope": "9941650ab6f22689397bd0fefdeacd23e5e1f1f129f139edeed4f85c773d182fbd4d12616b607f201f5e5d5d04a3ed1c27fc307a20cb2d0bd587bb805c0fdb68852cb8c179f72f2a614734ed17376abf"
       },
-      "args_sha256": "73031548f8acc6a230f991c7a7e690abad65911204e2c41f9e29675b617ac43a",
+      "args_sha256": "a04dd00e12b3685fbca26c39de242e5d927e4e530908b338277d2ea4678df643",
       "expected": ["ERR_CLAWED_BACK", "ERR_VAULT_NOT_ACTIVE"],
       "actual": "ERR_CLAWED_BACK",
       "actual_class": "refused",
@@ -2704,9 +2704,9 @@
             "value_sats": "100000"
           }
         ],
-        "envelope": "f02e0cb0cec71fe1a93a0de1f5b02caa97c8a7e58249aa91123d018995feb116298968fc1ff73da13e9da02bad758dcd3867ed81836696e7f88fa9f36a98c78a66878e93cb9ce2896a35fabe4d3c8366"
+        "envelope": "b2c01f2952825f9df4bb363ffff2d5d800f24d7d7fd0c3546e07d579b8919c1dfbedfefcd9b59651febe1413bdca88033ccf73375955fb50182f0d5a19163fbec9298be6dd61e3001b346616eb438cd6"
       },
-      "args_sha256": "1a0b7bb1e939c9a1f628f41807e36cec6b0be951af70c83577bc49069576530c",
+      "args_sha256": "600dc9ddae69d534ed4d7066af5da42f7bf6fd3ded7ad2f600533b1ec1ae2c9a",
       "expected": ["ERR_CLAWED_BACK", "ERR_VAULT_NOT_ACTIVE"],
       "actual": "ERR_CLAWED_BACK",
       "actual_class": "refused",
@@ -2738,9 +2738,9 @@
             "value_sats": "100000"
           }
         ],
-        "envelope": "2232fe78ba645235a4eb766084eecd184555c0abd12d77a0bfeab3abb77ba23a105304a73152411bb274c8829079c3f2cd54d6dad82fec1597993db947d64527990af2921d0c30582a51eb04de70da25"
+        "envelope": "87083d2c7f5bb60131413e24fcff324357d947a6b33a30174bf7a673e85c9c1e3081248a1cbb64ea4bda5c6eeade7f6360d27a889dd9c4a5990737eeb10e272ba45223a6ea8c98f99898e954994fc132"
       },
-      "args_sha256": "b807522cc3b5a71d5933576b6f20f74c1acd2865a89cc453a63758124f46c6e0",
+      "args_sha256": "1cedcc56d095007b3337c7d4f7e6e4a5dfc63f2e2e82dfbd857fcee54924e693",
       "expected": ["ERR_CLAWED_BACK", "ERR_VAULT_NOT_ACTIVE"],
       "actual": "ERR_CLAWED_BACK",
       "actual_class": "refused",
@@ -2793,9 +2793,9 @@
             "value_sats": "100000"
           }
         ],
-        "envelope": "dd6cb1a9f8bde1dd02a8e857854c69f34054c3e50ba4ab5544a0514a81aca7421db4112d86179c68e7aa0085bd30444acb260636df090e31b2138997ba3db70ec3cb8da07b5a07b99609e6d44874346f"
+        "envelope": "daaca6f5cd67cc65f633af4b1e742554336d0f14448c973bf46bfbbb86753652831f8d6106a7bf676fedfc6bf4b691183efe1cfa7e810e79fc6300cb1af930306a875307fd0546b67ac7a03e9fd092d6"
       },
-      "args_sha256": "f40cc13d593691986cf98d87662b415781ac55cc1a429d2be1c82097948f09f9",
+      "args_sha256": "88608f4017f3e1b37b88d5ad6875662177c55243f3f4e3ec2d40b0ad77ef7874",
       "expected": ["ERR_CLAWED_BACK", "ERR_VAULT_NOT_ACTIVE"],
       "actual": "ERR_CLAWED_BACK",
       "actual_class": "refused",
@@ -2820,9 +2820,9 @@
         "changes": {
           "fee_cap_sats": "20000"
         },
-        "envelope": "4a395a81126037a3e4b3809eb31831761df7c9af4cf53e96e3d95aa60369206dd186ef71546fbb6e9f68b0cf8976f72ee9ffddbb93d031e24efa4b3a1e847891bd3575cf47c8ed396ad43e4786c8df8f"
+        "envelope": "964e46c11c76f63847783cabe8920528a606eb2bc503a96a83053b1034c5947e514ddf57449473a705a33e10770eefd03069011d3d4b121e1e3ec115c015bf1b0a9b1f5f53beb850e4d218ef96af42bb"
       },
-      "args_sha256": "70a92370cc3c7a2c74be733c320de64bb2b87ad77ea3325d29f84facbce8c6af",
+      "args_sha256": "9c3b76fb88059288990dd77d1777c1f57a30266c35830185dfbe3f1aef8b86a2",
       "expected": ["ERR_CLAWED_BACK", "ERR_VAULT_NOT_ACTIVE"],
       "actual": "ERR_CLAWED_BACK",
       "actual_class": "refused",
@@ -2843,10 +2843,10 @@
       "category": "co_sign",
       "method": "sign_input",
       "args": {
-        "op_id": "8",
+        "op_id": "5",
         "input_index": 0
       },
-      "args_sha256": "597a3e2a6f4a86b569ef74a5b5c6fa818c09df94619d3e264f0bf7f019f9e506",
+      "args_sha256": "8161c7820a6eab311e26655d67beca795e97c62c191f569a0251e3e8ed2d0882",
       "expected": ["ERR_CLAWED_BACK", "ERR_VAULT_NOT_ACTIVE"],
       "actual": "ERR_CLAWED_BACK",
       "actual_class": "refused",
@@ -2878,9 +2878,9 @@
             "value_sats": "100000"
           }
         ],
-        "envelope": "1d4516a55777a8f1fc23747d60b530f25d8e271d571e857ff60b13c27dfd234ecccd73a594449ae26493e9e37a350e7fd4b90a1f6972f62fb6dd1d6da4bb775e60d2ca9b5bff47e509b52dfec9e7d65d"
+        "envelope": "bb85c695a33eab98253ce6000beb088f85843231de1e91f3f29a4b31f031cb35e9abf594dd6bdca33627f0579885cae3f84e29c898cab77318adfb5a51a6dad449edf8ef6deea04daa179b5fe95e2872"
       },
-      "args_sha256": "845a3c04ae3ecc75d4e0f8abd3ee32e30467a6af3252eccafaeeba9b27c0a9e5",
+      "args_sha256": "ba70c3371ce6f92a531db2c94686ccd526fb3b6d8583c9e83fc1a15ffc198915",
       "expected": ["ERR_CLAWED_BACK", "ERR_VAULT_NOT_ACTIVE"],
       "actual": "ERR_CLAWED_BACK",
       "actual_class": "refused",
@@ -2912,9 +2912,9 @@
             "value_sats": "100000"
           }
         ],
-        "envelope": "1e5a2cdf028b86185fba365c76c881ea68d200d2a642429967700fb2f47d585527e6ac59153c8ef01919b290dd354a9d32271be497c066b8ee9e20b8260e17a018bb7c1c685afffce41dd0878f4c5c3f"
+        "envelope": "6671bedd79077773c6a5f7f833253965ffeeafc49bad8b5f4681d5f78fd16916097139599b172d7270a2b5460fb8d468a496a7d070862ee701237f6827a4e02e52083372b0fd6d05cac0f3f4ee9d767c"
       },
-      "args_sha256": "2e42f0489c1481aa3c70ac3b6ed9f7ddcf32738cba5edacfcdbd283d2d058422",
+      "args_sha256": "980a547f4235395bc7ec96139a1a5b894e772c7b63657e0e5a185436449f4859",
       "expected": ["ERR_CLAWED_BACK", "ERR_VAULT_NOT_ACTIVE"],
       "actual": "ERR_CLAWED_BACK",
       "actual_class": "refused",

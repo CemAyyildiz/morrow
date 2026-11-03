@@ -35,16 +35,16 @@ export interface CategoryInfo {
   story?: string;
 }
 
-/** In report order: the not-deployed ones come out as refresh, spend_allowance, policy_change. */
+/** In report order: the not-deployed ones come out as spend_allowance, policy_change. */
 export const CATEGORIES: Record<Category, CategoryInfo> = {
   withdrawal_request: { method: "request_withdrawal", label: "Withdrawal Request" },
   early_execute: { method: "begin_execute", label: "Execute before the Delay" },
   co_sign: { method: "sign_input", label: "Co-signature before the freeze" },
   clawback: { method: "begin_clawback", label: "Clawback as the Owner" },
   storage: { method: "top_up_storage", label: "Storage top-up with no deposit" },
-  refresh: { method: "refresh", label: "Refresh", story: "5.1" },
-  spend_allowance: { method: "spend_allowance", label: "Allowance spend", story: "4.1" },
-  policy_change: { method: "propose_policy_change", label: "Policy Change", story: "5.2" },
+  refresh: { method: "refresh", label: "Refresh", story: "4.1" },
+  spend_allowance: { method: "spend_allowance", label: "Allowance spend", story: "5.2" },
+  policy_change: { method: "propose_policy_change", label: "Policy Change", story: "5.1" },
   bitcoin_escape: {
     method: null,
     label: "Escape spend before the Escape Timelock, Owner Key only",
@@ -76,6 +76,7 @@ export const LIVE_METHODS: readonly string[] = [
   "sign_input",
   "begin_clawback",
   "top_up_storage",
+  "refresh",
 ];
 
 /** Categories the live mix may send: Bitcoin spends always, contract calls when deployed. */
@@ -152,12 +153,14 @@ const AFTER_CLAWBACK = ["ERR_CLAWED_BACK", "ERR_VAULT_NOT_ACTIVE"] as const;
 export const MOVES: Record<Move, MoveInfo> = {
   clawback_as_owner: { category: "clawback", phase: "pre", expected: ["ERR_UNAUTHORIZED"] },
   bad_envelope: { category: "withdrawal_request", phase: "pre", expected: ["ERR_BAD_ENVELOPE"] },
+  // Allowance and Policy Change are not deployed live yet: in the dry run the mock contract
+  // gives their Policy-level codes.
   allowance_over_limit: {
     category: "spend_allowance",
     phase: "pre",
     expected: ["ERR_ALLOWANCE_LIMIT"],
   },
-  // Not deployed live yet: in the dry run the mock contract gives these Policy-level codes.
+  // Refused by the Fee Cap on the live contract (Story 4.1) and in the dry run's mock alike.
   refresh_over_fee_cap: { category: "refresh", phase: "pre", expected: ["ERR_FEE_TOO_HIGH"] },
   policy_change_script_bound: {
     category: "policy_change",

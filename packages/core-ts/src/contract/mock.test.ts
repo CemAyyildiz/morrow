@@ -237,6 +237,36 @@ describe("MockContractClient: lifecycles", () => {
       envelope: ENVELOPE,
     });
     expect(op.destination).toBe((await mock.getVault(vaultId)).addresses?.vault);
+    expect(op.state).toBe("frozen");
+    expect(op.executable_at).toBeNull();
+    const frozen = (await mock.eventsSince("0", 100)).pop();
+    expect(frozen?.kind).toBe("op_frozen");
+    if (frozen?.kind !== "op_frozen") throw new Error("expected op_frozen");
+    expect(frozen.data.kind).toBe("refresh");
+    expect(frozen.data.envelope).toBe(ENVELOPE);
+    expect(BigInt(op.amount_sats) + BigInt(frozen.data.fee_sats)).toBe(1_000_000n);
+  });
+
+  it("refuses a dust Refresh with ERR_INSUFFICIENT_FUNDS, as the contract does", async () => {
+    const { mock, vaultId } = await setup();
+    await expectCode(
+      mock.refresh({
+        vault_id: vaultId,
+        fee_rate_sat_vb: 0,
+        utxos: [utxo(1, 500)],
+        envelope: ENVELOPE,
+      }),
+      "ERR_INSUFFICIENT_FUNDS",
+    );
+  });
+
+  it("a refused Refresh leaves no op and no reservation behind", async () => {
+    const { mock, vaultId } = await setup();
+    const args = { vault_id: vaultId, utxos: [utxo(1)], envelope: ENVELOPE };
+    await expectCode(mock.refresh({ ...args, fee_rate_sat_vb: 1000 }), "ERR_FEE_TOO_HIGH");
+    await expectCode(mock.getOp("1"), "ERR_OP_NOT_FOUND");
+    const op = await mock.refresh({ ...args, fee_rate_sat_vb: 1 });
+    expect(op.op_id).toBe("1");
   });
 
   it("enforces the creator allowlist", async () => {
