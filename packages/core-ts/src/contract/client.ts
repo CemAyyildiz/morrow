@@ -34,7 +34,10 @@ export interface ContractClient {
   /** `propose_policy_change`. Owner, envelope required. Returns the change id. */
   proposePolicyChange(args: ProposePolicyChangeArgs): Promise<U64>;
 
-  /** `cancel`. Owner (envelope required) or any Guardian; pending withdrawals only. */
+  /**
+   * `cancel`. A pending withdrawal: Owner (envelope required) or any Guardian. A Frozen Refresh
+   * with an unsigned input: Owner only, envelope required.
+   */
   cancel(opId: U64, envelope?: Hex): Promise<void>;
   /** `begin_clawback`. Any Guardian. Returns the clawback op id. */
   beginClawback(args: BeginClawbackArgs): Promise<U64>;

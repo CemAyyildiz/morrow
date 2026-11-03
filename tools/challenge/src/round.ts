@@ -59,7 +59,14 @@ export interface RoundPolicyInputs {
 }
 
 /**
- * The Standard signet preset with allowance 0 and the watcher as the only Guardian. Throws
+ * Fee Cap of every round: the lowest the bounds allow. The published key can freeze a Refresh
+ * once per Delay, so this caps what it can burn to miners at min(10,000 sats, 5 %) per Delay.
+ */
+export const ROUND_FEE_CAP_SATS = "10000";
+
+/**
+ * The Standard signet preset with allowance 0, the lowest Fee Cap and the watcher as the only
+ * Guardian. Throws
  * `UNSAFE_POLICY` when the overrides touch a locked field (Guardians, Recovery Address, …).
  */
 export function buildRoundPolicy(inputs: RoundPolicyInputs): Policy {
@@ -81,6 +88,7 @@ export function buildRoundPolicy(inputs: RoundPolicyInputs): Policy {
     }),
     allowance_limit_sats: "0",
     fast_approval: false,
+    fee_cap_sats: ROUND_FEE_CAP_SATS,
     ...inputs.overrides,
   };
 }

@@ -27,6 +27,7 @@ pub enum ErrorCode {
     FeeTooHigh,
     InputIndex,
     SignerFailed,
+    RefreshTooSoon,
 }
 
 impl ErrorCode {
@@ -57,6 +58,7 @@ impl ErrorCode {
             Self::FeeTooHigh => "ERR_FEE_TOO_HIGH",
             Self::InputIndex => "ERR_INPUT_INDEX",
             Self::SignerFailed => "ERR_SIGNER_FAILED",
+            Self::RefreshTooSoon => "ERR_REFRESH_TOO_SOON",
         }
     }
 }

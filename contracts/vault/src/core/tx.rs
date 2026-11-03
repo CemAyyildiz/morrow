@@ -273,8 +273,36 @@ pub fn withdrawal_fee_cap(policy_fee_cap: u64, amount_sats: u64) -> u64 {
     policy_fee_cap.min(amount_sats / 20)
 }
 
+/// Test helpers shared with the contract tests.
+#[cfg(test)]
+pub(crate) mod test_support {
+    /// The outputs of an unsigned (non-witness) serialization: (value, scriptPubKey).
+    pub(crate) fn outputs(unsigned: &[u8]) -> Vec<(u64, Vec<u8>)> {
+        // Every count and script length here is below 0xfd, so each varint is one byte.
+        let mut at = 4;
+        let input_count = unsigned[at] as usize;
+        at += 1;
+        for _ in 0..input_count {
+            at += 36;
+            at += 1 + unsigned[at] as usize + 4;
+        }
+        let output_count = unsigned[at] as usize;
+        at += 1;
+        let mut found = Vec::new();
+        for _ in 0..output_count {
+            let value = u64::from_le_bytes(unsigned[at..at + 8].try_into().unwrap());
+            let len = unsigned[at + 8] as usize;
+            found.push((value, unsigned[at + 9..at + 9 + len].to_vec()));
+            at += 9 + len;
+        }
+        assert_eq!(at + 4, unsigned.len(), "only the lock time is left");
+        found
+    }
+}
+
 #[cfg(test)]
 mod tests {
+    use super::test_support::outputs;
     use super::*;
     use crate::core::script::{build_vault_script, from_hex, hex};
     use near_sdk::json_types::U64;
@@ -429,29 +457,6 @@ mod tests {
         assert!(clawback_witness_size(188) > withdrawal_witness_size(188));
     }
 
-    /// The outputs of an unsigned (non-witness) serialization: (value, scriptPubKey).
-    fn outputs(unsigned: &[u8]) -> Vec<(u64, Vec<u8>)> {
-        // Every count and script length here is below 0xfd, so each varint is one byte.
-        let mut at = 4;
-        let input_count = unsigned[at] as usize;
-        at += 1;
-        for _ in 0..input_count {
-            at += 36;
-            at += 1 + unsigned[at] as usize + 4;
-        }
-        let output_count = unsigned[at] as usize;
-        at += 1;
-        let mut found = Vec::new();
-        for _ in 0..output_count {
-            let value = u64::from_le_bytes(unsigned[at..at + 8].try_into().unwrap());
-            let len = unsigned[at + 8] as usize;
-            found.push((value, unsigned[at + 9..at + 9 + len].to_vec()));
-            at += 9 + len;
-        }
-        assert_eq!(at + 4, unsigned.len(), "only the lock time is left");
-        found
-    }
-
     fn coins(count: u8, value: u64) -> Vec<Outpoint> {
         (1..=count)
             .map(|n| Outpoint {
@@ -537,6 +542,65 @@ mod tests {
         );
         assert_eq!(
             build_refresh(&coins(1, 600), 1, 100_000, &script)
+                .unwrap_err()
+                .code,
+            ErrorCode::FeeTooHigh
+        );
+    }
+
+    /// The refresh fee of two inputs at 1 sat/vB, i.e. its vsize.
+    fn refresh_vsize(inputs: &[Outpoint], script: &[u8]) -> u64 {
+        build_refresh(inputs, 1, u64::MAX, script).unwrap().fee_sats
+    }
+
+    #[test]
+    fn a_refresh_uses_the_withdrawal_cap_not_the_clawback_cap() {
+        let (inputs, script) = (inputs(), script());
+        let vsize = refresh_vsize(&inputs, &script);
+
+        // Fee Cap side: a fee above the Fee Cap but within 2 × Fee Cap is refused.
+        let rate = 20;
+        let fee = vsize * u64::from(rate);
+        assert!(fee <= clawback_fee_cap(fee - 1, 210_000));
+        assert_eq!(
+            build_refresh(&inputs, rate, fee - 1, &script)
+                .unwrap_err()
+                .code,
+            ErrorCode::FeeTooHigh
+        );
+        assert_eq!(
+            build_refresh(&inputs, rate, fee, &script).unwrap().fee_sats,
+            fee
+        );
+
+        // 5 % side: a fee above 5 % of the inputs (10,500) but within 10 % (21,000) is refused.
+        let rate = u32::try_from(10_500 / vsize + 1).unwrap();
+        let fee = vsize * u64::from(rate);
+        assert!(fee > 10_500 && fee <= clawback_fee_cap(100_000, 210_000));
+        assert_eq!(
+            build_refresh(&inputs, rate, 100_000, &script)
+                .unwrap_err()
+                .code,
+            ErrorCode::FeeTooHigh
+        );
+    }
+
+    #[test]
+    fn a_refresh_fee_may_equal_five_percent_but_not_one_sat_more() {
+        let script = script();
+        let vsize = refresh_vsize(&inputs(), &script);
+        let fee = vsize * 10;
+        // Two coins worth exactly 20 × fee: 5 % is the fee itself.
+        let at_cap = |total: u64| {
+            let mut coins = inputs();
+            coins[0].value_sats = U64(total / 2);
+            coins[1].value_sats = U64(total - total / 2);
+            coins
+        };
+        let built = build_refresh(&at_cap(20 * fee), 10, u64::MAX, &script).unwrap();
+        assert_eq!(built.fee_sats, fee);
+        assert_eq!(
+            build_refresh(&at_cap(20 * fee - 20), 10, u64::MAX, &script)
                 .unwrap_err()
                 .code,
             ErrorCode::FeeTooHigh

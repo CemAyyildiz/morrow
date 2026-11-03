@@ -269,6 +269,52 @@ describe("MockContractClient: lifecycles", () => {
     expect(op.op_id).toBe("1");
   });
 
+  it("allows one Refresh per Delay, from the newest one's creation, whatever became of it", async () => {
+    const { mock, vaultId } = await setup();
+    const refresh = (n: number) =>
+      mock.refresh({ vault_id: vaultId, fee_rate_sat_vb: 1, utxos: [utxo(n)], envelope: ENVELOPE });
+    const delay = BigInt((await mock.getVault(vaultId)).policy.delay_ns);
+    const first = await refresh(1);
+    await mock.cancel(first.op_id, ENVELOPE);
+    await expectCode(refresh(2), "ERR_REFRESH_TOO_SOON");
+    mock.advance(delay - 1n);
+    await expectCode(refresh(2), "ERR_REFRESH_TOO_SOON");
+    mock.advance(1n);
+    const second = await refresh(2);
+    await mock.signInput(second.op_id, 0);
+    expect((await mock.getOp(second.op_id)).state).toBe("signed");
+    mock.advance(delay - 1n);
+    await expectCode(refresh(3), "ERR_REFRESH_TOO_SOON");
+    mock.advance(1n);
+    expect((await refresh(3)).state).toBe("frozen");
+  });
+
+  it("the Owner cancels a Frozen Refresh until every input is signed", async () => {
+    const { mock, vaultId } = await setup();
+    const args = { vault_id: vaultId, fee_rate_sat_vb: 1, envelope: ENVELOPE };
+    const op = await mock.refresh({ ...args, utxos: [utxo(1), utxo(2)] });
+    await mock.signInput(op.op_id, 0);
+    await expectCode(mock.asCaller(EMMA).cancel(op.op_id), "ERR_UNAUTHORIZED");
+    await expectCode(mock.asCaller(STRANGER).cancel(op.op_id, ENVELOPE), "ERR_UNAUTHORIZED");
+    await expectCode(mock.asCaller(OWNER).cancel(op.op_id), "ERR_BAD_ENVELOPE");
+    await mock.cancel(op.op_id, ENVELOPE);
+    expect((await mock.getOp(op.op_id)).state).toBe("cancelled");
+    const event = (await mock.eventsSince("0", 100)).pop();
+    expect(event?.kind).toBe("refresh_cancelled");
+    expect(event?.data).toEqual({ op_id: op.op_id, by: OWNER });
+    // Its coins are free again.
+    await mock.requestWithdrawal({ ...withdrawal(vaultId), utxos: [utxo(1), utxo(2)] });
+
+    const later = await setup();
+    const signed = await later.mock.refresh({
+      ...args,
+      vault_id: later.vaultId,
+      utxos: [utxo(1)],
+    });
+    await later.mock.signInput(signed.op_id, 0);
+    await expectCode(later.mock.cancel(signed.op_id, ENVELOPE), "ERR_BAD_OP_STATE");
+  });
+
   it("enforces the creator allowlist", async () => {
     const mock = new MockContractClient({
       allowedNetworks: ["signet"],

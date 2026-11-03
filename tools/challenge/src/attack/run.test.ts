@@ -12,6 +12,7 @@ import { DRY_RUN_FUNCTION_CALL_KEY, FakeBitcoin, dryRunPorts } from "./dry-run.j
 import type { CallPlan, CallResult, NearPort } from "./near.js";
 import {
   AttackRun,
+  DECOY_COIN,
   canonicalJson,
   runAttack,
   type AttackParams,
@@ -95,6 +96,8 @@ describe("dry run", () => {
       b.attempts.map((x) => [x.category, x.actual]),
     );
     expect(a.summary.attacker_addresses).toEqual(b.summary.attacker_addresses);
+    // Envelopes are sealed from the seed too, so even the args hash the same.
+    expect(a.attempts.map((x) => x.args_sha256)).toEqual(b.attempts.map((x) => x.args_sha256));
   });
 
   it("stores each call's args and hashes them canonically", async () => {
@@ -610,8 +613,24 @@ describe("not deployed (live mix)", () => {
     expect(refresh?.expected).toEqual(["ERR_FEE_TOO_HIGH"]);
     expect(refresh?.actual).toBe("ERR_FEE_TOO_HIGH");
     expect(refresh?.unexpected).toBe(false);
-    const sent = plans.find((p) => p.method === "refresh")?.args as { utxos: { txid: string }[] };
-    expect(sent.utxos.map((u) => u.txid)).toEqual(["ef".repeat(32)]);
+    const sent = plans.find((p) => p.method === "refresh")?.args as { utxos: unknown[] };
+    expect(sent.utxos).toEqual([DECOY_COIN]);
+  });
+
+  it("sends the after-Clawback Refresh on the round's real coins, expecting the closed Vault", async () => {
+    const { report } = await runAttack(await dryRunPorts(), DRY);
+    const fill = report.attempts.filter(
+      (a) => a.method === "refresh" && !a.expected.includes("ERR_FEE_TOO_HIGH"),
+    );
+    expect(fill.length).toBeGreaterThan(0);
+    for (const attempt of fill) {
+      expect(attempt.expected).toEqual(["ERR_CLAWED_BACK", "ERR_VAULT_NOT_ACTIVE"]);
+      expect(attempt.expected).toContain(attempt.actual);
+      const round = report.rounds.find((r) => r.round === attempt.round);
+      const utxos = (attempt.args as { utxos: { txid: string }[] }).utxos;
+      expect(utxos).not.toContainEqual(DECOY_COIN);
+      expect(utxos.map((u) => u.txid)).toEqual([round?.funding_txid]);
+    }
   });
 });
 

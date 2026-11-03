@@ -1,6 +1,6 @@
-import type { Policy } from "@morrow/core-ts";
+import { boundsFor, validatePolicy, type Policy } from "@morrow/core-ts";
 import { describe, expect, it } from "vitest";
-import { buildRoundPolicy } from "./round.js";
+import { ROUND_FEE_CAP_SATS, buildRoundPolicy } from "./round.js";
 import { LOCKED_OVERRIDE_FIELDS, checkPolicyOverrides, checkRoundPolicy } from "./safety.js";
 import { GUARDIAN, GUARDIAN_KEY, X25519 } from "./test-helpers.js";
 
@@ -79,6 +79,13 @@ describe("policy overrides", () => {
     expect(() => buildRoundPolicy(inputs({ [field]: "x" } as Partial<Policy>))).toThrow(
       `UNSAFE_POLICY: ${field}`,
     );
+  });
+
+  it("opens rounds at the lowest Fee Cap the bounds allow", () => {
+    const policy = buildRoundPolicy(inputs());
+    expect(policy.fee_cap_sats).toBe(ROUND_FEE_CAP_SATS);
+    expect(BigInt(policy.fee_cap_sats)).toBe(boundsFor("signet").fee_cap_sats[0]);
+    expect(() => validatePolicy(policy, ["signet"])).not.toThrow();
   });
 
   it("allows adjustable fields", () => {

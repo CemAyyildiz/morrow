@@ -874,28 +874,9 @@ mod refresh {
         contract.refresh(id, utxos, rate, envelope())
     }
 
-    /// The outputs of an unsigned (non-witness) transaction: (value, scriptPubKey).
+    /// The outputs of an unsigned transaction in hex: (value, scriptPubKey).
     fn outputs(unsigned_hex: &str) -> Vec<(u64, Vec<u8>)> {
-        let tx = from_hex(unsigned_hex).unwrap();
-        // Counts and script lengths stay below 0xfd here: every varint is one byte.
-        let mut at = 4;
-        let inputs = tx[at] as usize;
-        at += 1;
-        for _ in 0..inputs {
-            at += 36;
-            at += 1 + tx[at] as usize + 4;
-        }
-        let count = tx[at] as usize;
-        at += 1;
-        let mut found = Vec::new();
-        for _ in 0..count {
-            let value = u64::from_le_bytes(tx[at..at + 8].try_into().unwrap());
-            let len = tx[at + 8] as usize;
-            found.push((value, tx[at + 9..at + 9 + len].to_vec()));
-            at += 9 + len;
-        }
-        assert_eq!(at + 4, tx.len(), "only the lock time is left");
-        found
+        crate::core::tx::test_support::outputs(&from_hex(unsigned_hex).unwrap())
     }
 
     fn vault_script_pubkey(contract: &VaultContract, id: U64) -> Vec<u8> {
@@ -997,12 +978,21 @@ mod refresh {
             .collect();
         assert_eq!(paths, vec![format!("morrow/v1/{}/vault", id.0); 2]);
 
-        // While frozen, its coins are reserved.
-        expect_panic("ERR_OUTPOINT_RESERVED", || {
-            let (mut contract, id) = active_vault();
-            refresh(&mut contract, id, vec![utxo(1, 150_000)], 2);
-            request(&mut contract, id, vec![utxo(1, 150_000)], 100_000);
-        });
+        // While frozen, its own coins are reserved against another refresh or a withdrawal.
+        for coins in [
+            vec![utxo(1, 150_000)],
+            vec![utxo(3, 90_000), utxo(2, 60_000)],
+        ] {
+            let again = coins.clone();
+            let message = panic_message(std::panic::AssertUnwindSafe(|| {
+                refresh(&mut contract, id, again, 2);
+            }));
+            assert!(message.contains("ERR_OUTPOINT_RESERVED"), "{message}");
+            let message = panic_message(std::panic::AssertUnwindSafe(|| {
+                request(&mut contract, id, coins, 50_000);
+            }));
+            assert!(message.contains("ERR_OUTPOINT_RESERVED"), "{message}");
+        }
 
         contract.on_signed(op.op_id, 0, Ok(signing_mpc(0x11)));
         contract.on_signed(op.op_id, 1, Ok(signing_mpc(0x22)));
@@ -1136,6 +1126,173 @@ mod refresh {
         expect_panic("ERR_OUTPOINT_RESERVED", || {
             let (mut contract, id) = active_vault();
             refresh(&mut contract, id, vec![utxo(1, 50_000), utxo(1, 50_000)], 2);
+        });
+    }
+
+    #[test]
+    fn only_the_owner_signs_a_refresh() {
+        for caller in ["emma.testnet", "stranger.testnet"] {
+            expect_panic("ERR_UNAUTHORIZED", move || {
+                let (mut contract, id) = active_vault();
+                let op = refresh(&mut contract, id, vec![utxo(1, 150_000)], 2);
+                as_caller(caller);
+                let _ = contract.sign_input(op.op_id, 0);
+            });
+        }
+    }
+
+    fn delay(contract: &VaultContract, id: U64) -> u64 {
+        contract.get_vault(id).policy.delay_ns.0
+    }
+
+    fn refresh_at(contract: &mut VaultContract, id: U64, utxos: Vec<Outpoint>, at: u64) -> SpendOp {
+        at_time("owner.testnet", at);
+        contract.refresh(id, utxos, 2, envelope())
+    }
+
+    /// The newest refresh's fate does not matter: the next one waits one Delay from its creation.
+    fn waits_one_delay_after(settle: impl Fn(&mut VaultContract, &SpendOp)) {
+        let (mut contract, id) = active_vault();
+        let first = refresh(
+            &mut contract,
+            id,
+            vec![utxo(1, 150_000), utxo(2, 60_000)],
+            2,
+        );
+        settle(&mut contract, &first);
+        let delay = delay(&contract, id);
+        for at in [NOW, NOW + delay - 1] {
+            let message = panic_message(std::panic::AssertUnwindSafe(|| {
+                refresh_at(&mut contract, id, vec![utxo(3, 150_000)], at);
+            }));
+            assert!(message.contains("ERR_REFRESH_TOO_SOON"), "{message}");
+        }
+        let next = refresh_at(&mut contract, id, vec![utxo(3, 150_000)], NOW + delay);
+        assert_eq!(next.state, SpendOpState::Frozen);
+        assert_eq!(next.created_at, U64(NOW + delay));
+        // The clock now runs from the newest refresh.
+        let message = panic_message(std::panic::AssertUnwindSafe(|| {
+            refresh_at(
+                &mut contract,
+                id,
+                vec![utxo(4, 150_000)],
+                NOW + 2 * delay - 1,
+            );
+        }));
+        assert!(message.contains("ERR_REFRESH_TOO_SOON"), "{message}");
+    }
+
+    #[test]
+    fn one_refresh_per_delay_after_a_frozen_one() {
+        waits_one_delay_after(|_, _| {});
+    }
+
+    #[test]
+    fn one_refresh_per_delay_after_a_signed_one() {
+        waits_one_delay_after(|contract, op| {
+            contract.on_signed(op.op_id, 0, Ok(signing_mpc(0x11)));
+            contract.on_signed(op.op_id, 1, Ok(signing_mpc(0x22)));
+            assert_eq!(contract.get_op(op.op_id).state, SpendOpState::Signed);
+        });
+    }
+
+    #[test]
+    fn one_refresh_per_delay_after_a_cancelled_one() {
+        waits_one_delay_after(|contract, op| {
+            as_caller("owner.testnet");
+            contract.cancel(op.op_id, Some(envelope()));
+            assert_eq!(contract.get_op(op.op_id).state, SpendOpState::Cancelled);
+        });
+    }
+
+    #[test]
+    fn one_refresh_per_delay_after_a_voided_one() {
+        // Only a Clawback voids an op, and it closes the Vault; set the state directly to show
+        // the rate limit ignores what became of the newest refresh.
+        waits_one_delay_after(|contract, op| {
+            contract.ops.get_mut(&op.op_id.0).unwrap().state = SpendOpState::Voided;
+        });
+    }
+
+    #[test]
+    fn other_ops_do_not_hide_the_newest_refresh() {
+        let (mut contract, id) = active_vault();
+        refresh(&mut contract, id, vec![utxo(1, 150_000)], 2);
+        request(&mut contract, id, vec![utxo(2, 150_000)], 100_000);
+        expect_panic("ERR_REFRESH_TOO_SOON", move || {
+            refresh(&mut contract, id, vec![utxo(3, 150_000)], 2);
+        });
+    }
+
+    #[test]
+    fn the_owner_cancels_a_refresh_that_is_not_fully_signed() {
+        for signed in [0, 1] {
+            let (mut contract, id) = active_vault();
+            let coins = vec![utxo(1, 150_000), utxo(2, 60_000)];
+            let op = refresh(&mut contract, id, coins.clone(), 2);
+            for index in 0..signed {
+                contract.on_signed(op.op_id, index, Ok(signing_mpc(0x11)));
+            }
+            as_caller("owner.testnet");
+            contract.cancel(op.op_id, Some(envelope()));
+            assert_eq!(contract.get_op(op.op_id).state, SpendOpState::Cancelled);
+            let event = contract.events_since(U64(0), 100).pop().unwrap();
+            assert_eq!(event.kind, "refresh_cancelled");
+            assert_eq!(event.data["op_id"], op.op_id.0.to_string());
+            assert_eq!(event.data["by"], "owner.testnet");
+            // Its coins are free again.
+            let next = request(&mut contract, id, coins, 100_000);
+            assert_eq!(contract.get_op(next).state, SpendOpState::Pending);
+        }
+    }
+
+    #[test]
+    fn a_fully_signed_refresh_cannot_be_cancelled() {
+        expect_panic("ERR_BAD_OP_STATE", || {
+            let (mut contract, id) = active_vault();
+            let op = refresh(
+                &mut contract,
+                id,
+                vec![utxo(1, 150_000), utxo(2, 60_000)],
+                2,
+            );
+            contract.on_signed(op.op_id, 0, Ok(signing_mpc(0x11)));
+            contract.on_signed(op.op_id, 1, Ok(signing_mpc(0x22)));
+            contract.cancel(op.op_id, Some(envelope()));
+        });
+    }
+
+    #[test]
+    fn only_the_owner_with_an_envelope_cancels_a_refresh() {
+        for caller in ["emma.testnet", "stranger.testnet"] {
+            expect_panic("ERR_UNAUTHORIZED", move || {
+                let (mut contract, id) = active_vault();
+                let op = refresh(&mut contract, id, vec![utxo(1, 150_000)], 2);
+                as_caller(caller);
+                contract.cancel(op.op_id, None);
+            });
+        }
+        expect_panic("ERR_BAD_ENVELOPE", || {
+            let (mut contract, id) = active_vault();
+            let op = refresh(&mut contract, id, vec![utxo(1, 150_000)], 2);
+            contract.cancel(op.op_id, None);
+        });
+    }
+
+    #[test]
+    fn refuses_a_vault_address_that_is_not_its_script() {
+        expect_panic("ERR_BAD_KEY", || {
+            let (mut contract, id) = active_vault();
+            let other = contract.get_vault(id).policy.recovery_address;
+            contract
+                .vaults
+                .get_mut(&id.0)
+                .unwrap()
+                .addresses
+                .as_mut()
+                .unwrap()
+                .vault = other;
+            refresh(&mut contract, id, vec![utxo(1, 150_000)], 2);
         });
     }
 }

@@ -19,6 +19,7 @@ import {
   type Vault,
   type VaultKit,
 } from "@morrow/core-ts";
+import { boxSeal } from "@morrow/core-ts/envelope";
 import type { AttemptEntry } from "../attempts.js";
 import type { PublicRound } from "../store.js";
 import { buildOwnerSpend, p2wpkhAddress, type OwnerSpendPath } from "./bitcoin.js";
@@ -291,6 +292,25 @@ export class AttackRun {
   }
   private get clawbackWaitMs() {
     return this.params.clawbackWaitMs ?? DEFAULT_CLAWBACK_WAIT_MS;
+  }
+
+  private sealedEnvelopes = 0;
+
+  /**
+   * A normal Watcher Envelope. The dry run seals deterministically from the seed (ephemeral key
+   * and plaintext), so the same seed gives the same args and `args_sha256`; live runs seal fresh.
+   */
+  private envelope(watcherPk: string): string {
+    if (!this.params.dryRun) return sealWatcherEnvelope("normal", watcherPk);
+    const n = this.sealedEnvelopes++;
+    const draw = (label: string) =>
+      new Uint8Array(
+        createHash("sha256").update(`dry-run envelope ${this.params.seed} ${n} ${label}`).digest(),
+      );
+    const plaintext = draw("plaintext");
+    plaintext[0] = 0x00; // the "normal" flag
+    const publicKey = Uint8Array.from(Buffer.from(watcherPk, "hex"));
+    return Buffer.from(boxSeal(plaintext, publicKey, draw("ephemeral"))).toString("hex");
   }
 
   private stop(reason: string, kind: StopKind = "other"): void {
@@ -617,7 +637,7 @@ export class AttackRun {
 
   private planMove(move: Move, ctx: RoundContext): { plan: CallPlan; harmless: boolean } | null {
     const base = { signerId: ctx.ownerAccount, receiverId: ctx.vaultContract };
-    const envelope = () => sealWatcherEnvelope("normal", ctx.watcherPk);
+    const envelope = () => this.envelope(ctx.watcherPk);
     const coins = ctx.coins.length > 0 ? ctx.coins : [DECOY_COIN];
     const destination = () => this.attackerAddress(ctx.btc);
     const call = (method: string, args: object, harmless = false) => ({
@@ -1008,7 +1028,7 @@ export class AttackRun {
 }
 
 /** A coin that is not the Vault's, for refusals whose inputs do not matter. */
-const DECOY_COIN: Outpoint = { txid: "ef".repeat(32), vout: 7, value_sats: "100000" };
+export const DECOY_COIN: Outpoint = { txid: "ef".repeat(32), vout: 7, value_sats: "100000" };
 
 /** A refused contract call or an accepted request must appear in the Attempt Log. */
 function needsLog(attempt: AttemptRecord): boolean {

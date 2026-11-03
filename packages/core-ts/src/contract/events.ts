@@ -20,6 +20,7 @@ export const EVENT_KINDS = [
   "policy_change_vetoed",
   "policy_change_withdrawn",
   "policy_change_applied",
+  "refresh_cancelled",
 ] as const;
 
 export type EventKind = (typeof EVENT_KINDS)[number];
@@ -54,6 +55,8 @@ export interface EventData {
   policy_change_vetoed: { change_id: U64; by: AccountId };
   policy_change_withdrawn: { change_id: U64 };
   policy_change_applied: { change_id: U64 };
+  /** The Owner cancelled a Frozen Refresh before every input was signed. */
+  refresh_cancelled: { op_id: U64; by: AccountId };
 }
 
 export type MorrowEvent = {

@@ -462,6 +462,7 @@ impl VaultContract {
         let vault = self.owner_action(vault_id.0, Some(&envelope)).clone();
         let total = check_inputs(&utxos).unwrap_or_else(|r| reject(&r));
         self.check_unreserved(&utxos);
+        self.check_refresh_rate(&vault);
 
         let (vault_script, _) = vault_scripts(&vault).unwrap_or_else(|| fail(ErrorCode::BadKey));
         let vault_address = vault
@@ -469,6 +470,11 @@ impl VaultContract {
             .as_ref()
             .map(|a| a.vault.clone())
             .unwrap_or_else(|| fail(ErrorCode::VaultNotActive));
+        // The stored Vault Address must be the very output the builder pays.
+        let stored = script_pubkey(&vault_address, vault.policy.btc_network).ok();
+        if stored != Some(p2wsh_script_pubkey(&vault_script)) {
+            fail(ErrorCode::BadKey);
+        }
         let built = build_refresh(
             &utxos,
             fee_rate_sat_vb,
@@ -741,7 +747,9 @@ impl VaultContract {
         U64(op_id)
     }
 
-    /// Cancels a pending withdrawal. The Owner needs an envelope; any Guardian may cancel.
+    /// Cancels a pending withdrawal (the Owner with an envelope, or any Guardian), or a Frozen
+    /// Refresh that still has an unsigned input (the Owner only, with an envelope). Cancelling a
+    /// Refresh does not reset the Refresh rate limit.
     pub fn cancel(&mut self, op_id: U64, envelope: Option<String>) {
         let storage_before = env::storage_usage();
         let op = self
@@ -751,17 +759,26 @@ impl VaultContract {
             .unwrap_or_else(|| fail(ErrorCode::OpNotFound));
         let vault = self.active_vault(op.vault_id.0).clone();
         let caller = env::predecessor_account_id();
+        let is_refresh = op.kind == SpendOpKind::Refresh;
         if caller == vault.owner_account {
             check_envelope(envelope.as_deref()).unwrap_or_else(|r| reject(&r));
-        } else if !vault
-            .policy
-            .guardians
-            .iter()
-            .any(|g| g.guardian_account == caller)
+        } else if is_refresh
+            || !vault
+                .policy
+                .guardians
+                .iter()
+                .any(|g| g.guardian_account == caller)
         {
             fail(ErrorCode::Unauthorized);
         }
-        if op.kind != SpendOpKind::Withdrawal || op.state != SpendOpState::Pending {
+        let cancellable = match op.kind {
+            SpendOpKind::Withdrawal => op.state == SpendOpState::Pending,
+            SpendOpKind::Refresh => {
+                op.state == SpendOpState::Frozen && op.signatures.iter().any(Option::is_none)
+            }
+            _ => false,
+        };
+        if !cancellable {
             fail(ErrorCode::BadOpState);
         }
         for utxo in &op.utxos {
@@ -772,7 +789,11 @@ impl VaultContract {
         }
         self.emit(
             op.vault_id.0,
-            "withdrawal_cancelled",
+            if is_refresh {
+                "refresh_cancelled"
+            } else {
+                "withdrawal_cancelled"
+            },
             json!({ "op_id": op_id, "by": caller }),
         );
         self.flush_and_charge(op.vault_id.0, storage_before);
@@ -900,6 +921,24 @@ impl VaultContract {
                 if live {
                     fail(ErrorCode::OutpointReserved);
                 }
+            }
+        }
+    }
+
+    /// At most one Refresh per Delay, counted from the newest Refresh's `created_at`, whatever
+    /// became of it.
+    fn check_refresh_rate(&self, vault: &Vault) {
+        let last = self.vault_ops.get(&vault.vault_id.0).and_then(|ids| {
+            ids.iter().rev().find_map(|id| {
+                self.ops
+                    .get(id)
+                    .filter(|op| op.kind == SpendOpKind::Refresh)
+                    .map(|op| op.created_at.0)
+            })
+        });
+        if let Some(created_at) = last {
+            if env::block_timestamp() < created_at.saturating_add(vault.policy.delay_ns.0) {
+                fail(ErrorCode::RefreshTooSoon);
             }
         }
     }

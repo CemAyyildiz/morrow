@@ -12,6 +12,10 @@
     "./browser": {
       "types": "./src/browser.ts",
       "default": "./src/browser.ts"
+    },
+    "./envelope": {
+      "types": "./src/crypto/browser-envelope.ts",
+      "default": "./src/crypto/browser-envelope.ts"
     }
   },
   "license": "MIT",

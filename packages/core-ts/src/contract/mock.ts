@@ -263,6 +263,13 @@ export class MockContractClient implements ContractClient {
   async refresh(args: RefreshArgs): Promise<SpendOp> {
     const vault = this.ownerAction(args.vault_id, args.envelope);
     this.checkInputs(args.utxos, false);
+    // One Refresh per Delay, from the newest one's created_at, whatever became of it.
+    const last = [...this.ops.values()]
+      .reverse()
+      .find((o) => o.vault_id === vault.vault_id && o.kind === "refresh");
+    if (last && this.nowNs < BigInt(last.created_at) + BigInt(vault.policy.delay_ns)) {
+      this.fail("ERR_REFRESH_TOO_SOON");
+    }
     const total = args.utxos.reduce((sum, u) => sum + BigInt(u.value_sats), 0n);
     const destination = vault.addresses?.vault ?? "";
     const op = this.newOp(vault, "refresh", "pending", total.toString(), destination, args);
@@ -304,14 +311,22 @@ export class MockContractClient implements ContractClient {
   async cancel(opId: U64, envelope?: Hex): Promise<void> {
     const op = this.op(opId);
     const vault = this.activeVault(op.vault_id);
+    const isRefresh = op.kind === "refresh";
     if (this.caller === vault.owner_account) {
       this.checkEnvelope(envelope);
-    } else if (!this.guardianOf(vault)) {
+    } else if (isRefresh || !this.guardianOf(vault)) {
       this.fail("ERR_UNAUTHORIZED");
     }
-    if (op.kind !== "withdrawal" || op.state !== "pending") this.fail("ERR_BAD_OP_STATE");
+    // A pending withdrawal, or a Frozen Refresh with an unsigned input (Owner only).
+    const cancellable = isRefresh
+      ? op.state === "frozen" && op.signatures.some((s) => s === null)
+      : op.kind === "withdrawal" && op.state === "pending";
+    if (!cancellable) this.fail("ERR_BAD_OP_STATE");
     op.state = "cancelled";
-    this.emit(vault.vault_id, "withdrawal_cancelled", { op_id: op.op_id, by: this.caller });
+    this.emit(vault.vault_id, isRefresh ? "refresh_cancelled" : "withdrawal_cancelled", {
+      op_id: op.op_id,
+      by: this.caller,
+    });
   }
 
   async beginClawback(args: BeginClawbackArgs): Promise<U64> {
