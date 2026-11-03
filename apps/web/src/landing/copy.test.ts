@@ -20,6 +20,9 @@ const RELATIVE_BUT_TOMORROW = new RegExp(
   RELATIVE_TIME.flags,
 );
 
+/** The story's third era, "Today": a label for the present, the one exception to the rule. */
+const PRESENT_ERA = "landingCopy.story.beats.2.era";
+
 describe("landing copy", () => {
   it("has strings to check", () => {
     expect(strings.length).toBeGreaterThan(80);
@@ -37,8 +40,19 @@ describe("landing copy", () => {
     expect(text).not.toMatch(HYPE);
   });
 
-  it.each(strings)("$path has no relative time other than tomorrow", ({ text }) => {
-    expect(text).not.toMatch(RELATIVE_BUT_TOMORROW);
+  it.each(strings.filter(({ path }) => path !== PRESENT_ERA))(
+    "$path has no relative time other than tomorrow",
+    ({ text }) => {
+      expect(text).not.toMatch(RELATIVE_BUT_TOMORROW);
+    },
+  );
+
+  it("allows one 'Today': the third beat's era label, the present, never a timestamp", () => {
+    expect(strings.find(({ path }) => path === PRESENT_ERA)?.text).toBe("Today");
+    const others = strings.filter(({ path }) => path !== PRESENT_ERA);
+    expect(others.filter(({ text }) => /\btoday\b/i.test(text)).map(({ path }) => path)).toEqual(
+      [],
+    );
   });
 
   it("allows only tomorrow from the relative-time rule", () => {
@@ -58,5 +72,21 @@ describe("landing copy", () => {
   it("keeps the record line free of an invented count until it is live", () => {
     const record = Object.values(landingCopy.record).join(" ");
     expect(record).not.toMatch(/\d|thirteen|zero/i);
+  });
+
+  it("dates each story beat exactly and names one https source per beat", () => {
+    const beats = landingCopy.story.beats;
+    expect(beats.map((beat) => beat.era)).toEqual(["1870s", "2025", "Today"]);
+    expect(beats[1].support).toContain("May 8, 2025");
+    for (const beat of beats) {
+      expect(new URL(beat.source.url).protocol).toBe("https:");
+      expect(beat.source.label.length).toBeGreaterThan(0);
+    }
+    expect(beats.map((beat) => beat.source.url)).toEqual([
+      "https://en.wikipedia.org/wiki/Time_lock",
+      "https://github.com/bitcoin/bips/pull/1848",
+      "https://docs.near.org/chain-abstraction/chain-signatures",
+    ]);
+    expect(beats[1].source.label).toBe("BIP-345 withdrawal, bitcoin/bips #1848");
   });
 });

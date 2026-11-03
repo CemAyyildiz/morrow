@@ -75,3 +75,10 @@ export function resolveRoute(pathname: string): ResolvedRoute {
   const route = NAV_ROUTES.find((candidate) => candidate.path === path);
   return route ? { kind: "nav", route } : { kind: "not-found", path };
 }
+
+/**
+ * Product paths whose screen is real, not a placeholder. The landing's doors (Story 9.2) link
+ * only to these, so a judge never lands on a stub: a story that ships its screen adds its path
+ * here (1.11 `/vault`, 6.1 `/proof`) and its door appears.
+ */
+export const LIVE_PATHS: ReadonlySet<string> = new Set(["/challenge"]);

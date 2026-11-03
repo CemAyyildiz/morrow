@@ -2,10 +2,25 @@
 // RPC, the Bitcoin backend and the watcher, each on its own origin so the CSP check can tell
 // them apart. Shared by playwright.config.ts, the specs and stub-services.ts.
 
-export const WEB_PORT = 4173;
-export const RPC_PORT = 4191;
-export const BACKEND_PORT = 4192;
-export const WATCHER_PORT = 4193;
+// MORROW_E2E_PORT_OFFSET shifts all four ports, so a run can sit beside a server already
+// holding them (a preview, another worktree's run). Default 0.
+function portOffset(raw: string | undefined): number {
+  if (raw === undefined || raw === "") return 0;
+  const offset = Number(raw.trim());
+  // The highest port, 4193 + offset, must stay a valid TCP port.
+  if (!/^\d+$/.test(raw.trim()) || 4193 + offset > 65535) {
+    throw new Error(
+      `MORROW_E2E_PORT_OFFSET must be a non-negative integer up to ${65535 - 4193}, got "${raw}"`,
+    );
+  }
+  return offset;
+}
+const OFFSET = portOffset(process.env.MORROW_E2E_PORT_OFFSET);
+
+export const WEB_PORT = 4173 + OFFSET;
+export const RPC_PORT = 4191 + OFFSET;
+export const BACKEND_PORT = 4192 + OFFSET;
+export const WATCHER_PORT = 4193 + OFFSET;
 
 export const RPC_URL = `http://127.0.0.1:${RPC_PORT}`;
 export const BACKEND_URL = `http://127.0.0.1:${BACKEND_PORT}`;

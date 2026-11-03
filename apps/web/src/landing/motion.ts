@@ -1,6 +1,6 @@
 // Shared motion helpers for the landing: the mockup's clamp / cubic ease / lerp, the
 // reduced-motion preference, and the collage's scroll-driven transforms.
-import { useSyncExternalStore } from "react";
+import { useLayoutEffect, useSyncExternalStore, type RefObject } from "react";
 
 export const clamp = (v: number, a = 0, b = 1) => Math.min(b, Math.max(a, v));
 /** Cubic ease-in-out. */
@@ -52,4 +52,51 @@ export function collagePose(t: number, vw: number, vh: number, reduced: boolean)
     phone: [-28 + 56 * t, 8 - 10 * t, -6 + 10 * t],
     tileY: (s) => (t - 0.5) * s * vh,
   };
+}
+
+/** Items hide until they scroll into view only with motion allowed and a way to tell. */
+export function shouldReveal(reduced: boolean, canObserve: boolean): boolean {
+  return !reduced && canObserve;
+}
+
+/** An item whose top is in or above the viewport is already seen: it never fades. */
+export function alreadySeen(top: number, viewport: number): boolean {
+  return top < viewport;
+}
+
+/**
+ * Fades the `[data-reveal-item]` children of `root` in as they enter the viewport. It only
+ * toggles attributes (`data-reveal` on the root, `data-shown` per item); landing.css draws the
+ * fade, so nothing is styled inline. It arms before paint, and items already in or above the
+ * viewport at that moment show at once, so nothing visible ever fades out. Under reduced
+ * motion, or without IntersectionObserver, nothing is hidden and the items show at once.
+ */
+export function useReveal(root: RefObject<HTMLElement | null>, reduced: boolean) {
+  useLayoutEffect(() => {
+    const el = root.current;
+    if (!el || !shouldReveal(reduced, "IntersectionObserver" in window)) return;
+    const items = Array.from(el.querySelectorAll<HTMLElement>("[data-reveal-item]"));
+    for (const item of items) {
+      if (alreadySeen(item.getBoundingClientRect().top, window.innerHeight)) {
+        item.dataset.shown = "";
+      }
+    }
+    el.dataset.reveal = "";
+    const observer = new IntersectionObserver(
+      (entries) => {
+        for (const entry of entries) {
+          if (!entry.isIntersecting) continue;
+          (entry.target as HTMLElement).dataset.shown = "";
+          observer.unobserve(entry.target);
+        }
+      },
+      { threshold: 0.15 },
+    );
+    for (const item of items) if (!("shown" in item.dataset)) observer.observe(item);
+    return () => {
+      observer.disconnect();
+      delete el.dataset.reveal;
+      for (const item of items) delete item.dataset.shown;
+    };
+  }, [root, reduced]);
 }

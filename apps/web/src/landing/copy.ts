@@ -42,6 +42,54 @@ export const landingCopy = {
     sampleNote: "sample values until a round opens",
   },
 
+  // Story 9.2: why a Bitcoin time-lock safe did not exist before, in three dated beats, each
+  // with one source (checked on 2026-11-03), then the doors into the product.
+  story: {
+    title: "Bitcoin has time locks. It never had a time-lock safe.",
+    beats: [
+      {
+        era: "1870s",
+        claim: "Robbers went around the safe and took the cashier.",
+        support:
+          "They forced him to open it. Banks answered with the time lock: before the set hour nobody can open it, so forcing anyone is pointless.",
+        source: {
+          label: "Time lock, Wikipedia",
+          url: "https://en.wikipedia.org/wiki/Time_lock",
+        },
+      },
+      {
+        era: "2025",
+        claim:
+          "Bitcoin can lock a coin until a date. It cannot make a spend wait in public, where you can still stop it.",
+        support:
+          "Pre-signed vaults fix the amount and destination in advance. A general one takes a covenant, and a covenant takes a soft fork: OP_VAULT (BIP-345) was withdrawn on May 8, 2025, superseded by BIP-443.",
+        source: {
+          label: "BIP-345 withdrawal, bitcoin/bips #1848",
+          url: "https://github.com/bitcoin/bips/pull/1848",
+        },
+      },
+      {
+        // The present era, not a timestamp: the one "today" the copy rules allow (copy.test.ts).
+        era: "Today",
+        claim: "Morrow gives Bitcoin a time-lock safe without a soft fork.",
+        support:
+          "Moving the coins takes a second signature from the NEAR MPC network, and only the Vault Contract can ask for it, through Chain Signatures. It refuses before the Delay ends. If NEAR ever goes away, the Escape Path returns the coins to you.",
+        source: {
+          label: "Chain Signatures, NEAR documentation",
+          url: "https://docs.near.org/chain-abstraction/chain-signatures",
+        },
+      },
+    ],
+    /** Read after each source link's name; the leading space keeps the two words apart. */
+    newTab: " (opens in a new tab)",
+    doorsLabel: "Ways in",
+    doors: {
+      rob: { label: "Rob this vault", detail: "The keys are published. Try them." },
+      create: { label: "Create a vault", detail: "Pick a delay and name your guardians." },
+      proof: { label: "Read the proof", detail: "Read the rules and recompute the address." },
+    },
+  },
+
   features: {
     title: ["Everything a vault should do.", "Nothing a thief can rush."],
     items: [

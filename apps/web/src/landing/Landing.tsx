@@ -11,6 +11,7 @@ import { Final } from "./Final";
 import { HeroDive } from "./HeroDive";
 import { useReducedMotion } from "./motion";
 import { Record } from "./Record";
+import { Story } from "./Story";
 import { PHONE_BELOW, robTarget } from "./useDive";
 import "./landing.css";
 
@@ -128,6 +129,7 @@ export function Landing() {
           crispTry={crispTry}
           mobTry={mobTry}
         />
+        <Story onRob={rob} reduced={reduced} />
         <Features reduced={reduced} />
         <Collage reduced={reduced} />
         <Record />

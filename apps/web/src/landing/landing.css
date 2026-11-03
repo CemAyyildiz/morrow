@@ -303,6 +303,172 @@
   }
 }
 
+/* ---------- story: three beats and the doors (dark, Story 9.2) ----------
+   Not in the mockup. It takes the mockup's unused `.why` / `.beat` rhythm (hairline over each
+   beat, Funnel Display claim, #aeb4be body) with the section headline of the feature list,
+   the light numeral of the product for each era, and one orange door at most. */
+.l-story {
+  padding: 18vh max(9vw, calc((100vw - 1240px) / 2)) 4vh;
+}
+.l-story h2 {
+  font: 400 32px/1.2 "Funnel Display";
+  letter-spacing: -0.02em;
+  max-width: 720px;
+}
+.l-beats {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 32px;
+  margin-top: 9vh;
+  list-style: none;
+  padding: 0;
+}
+.l-beat {
+  display: flex;
+  flex-direction: column;
+  border-top: 1px solid var(--line);
+  padding-top: 22px;
+}
+.l-era {
+  font: 300 clamp(56px, 6vw, 92px) / 1 "Funnel Display";
+  letter-spacing: -0.045em;
+  font-variant-numeric: tabular-nums;
+}
+.l-beat h3 {
+  font: 400 22px/1.25 "Funnel Display";
+  letter-spacing: -0.01em;
+  margin: 28px 0 10px;
+}
+.l-beat-body {
+  color: #aeb4be;
+  line-height: 1.6;
+  margin-bottom: 14px;
+}
+/* Sources sit on one baseline at the foot of each beat. */
+.l-beat .l-source {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  align-self: flex-start;
+  min-height: 44px;
+  margin-top: auto;
+  font: 500 14px "Funnel Sans";
+  color: var(--ink);
+  text-decoration: underline;
+  text-decoration-color: var(--faint);
+  text-underline-offset: 5px;
+}
+.l-beat .l-source:hover {
+  text-decoration-color: currentColor;
+}
+.l-arrow {
+  flex: none;
+}
+/* The doors line up with the beat columns: a door that is not live leaves no gap behind. */
+.l-doors {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 32px;
+  margin-top: 10vh;
+  list-style: none;
+  padding: 0;
+}
+/* The border is muted (at least 3:1 on the page) so a dark door reads as a control. */
+.l-door {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  min-height: 72px;
+  padding: 16px 22px;
+  border-radius: 18px;
+  border: 1px solid var(--mu);
+  background: var(--hi);
+  color: var(--ink);
+  transition: border-color 0.2s;
+}
+.l-door:hover {
+  border-color: var(--ink);
+}
+.l-door b {
+  display: block;
+  font: 600 16px "Funnel Sans";
+}
+.l-door-detail {
+  display: block;
+  margin-top: 2px;
+  font-size: 14px;
+  color: var(--mu);
+}
+.l-door-or {
+  background: var(--or);
+  border-color: var(--or);
+  color: var(--or-fg);
+}
+.l-door-or:hover {
+  border-color: var(--or-fg);
+}
+.l-door-or .l-door-detail {
+  color: var(--or-fg);
+}
+.l-beat .l-source:focus-visible,
+.l-door:focus-visible {
+  outline: 2px solid var(--ink);
+  outline-offset: 3px;
+}
+/* Fade in on scroll, only once motion.ts `useReveal` has armed the section. The transition
+   sits on the shown state only, so arming never animates anything towards 0. */
+.l-story[data-reveal] .l-beat {
+  opacity: 0;
+  transform: translateY(16px);
+}
+.l-story[data-reveal] .l-beat[data-shown] {
+  opacity: 1;
+  transform: none;
+  transition:
+    opacity 0.6s,
+    transform 0.6s;
+}
+.l-story[data-reveal] .l-beat:nth-child(2) {
+  transition-delay: 0.12s;
+}
+.l-story[data-reveal] .l-beat:nth-child(3) {
+  transition-delay: 0.24s;
+}
+/* Below 900 px, as theme.css `desktop` (width >= 900px): 900 itself is desktop. */
+@media (max-width: 899.98px) {
+  .l-story {
+    padding: 12vh 20px 4vh;
+  }
+  .l-beats,
+  .l-doors {
+    grid-template-columns: 1fr;
+  }
+  .l-beats {
+    gap: 48px;
+  }
+  .l-doors {
+    gap: 12px;
+  }
+}
+@media print {
+  .l-story[data-reveal] .l-beat {
+    opacity: 1;
+    transform: none;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .l-story[data-reveal] .l-beat,
+  .l-story[data-reveal] .l-beat[data-shown] {
+    opacity: 1;
+    transform: none;
+    transition: none;
+  }
+  .l-door {
+    transition: none;
+  }
+}
+
 /* ---------- A · feature list + product panel (dark) ---------- */
 .l-feat {
   display: grid;

@@ -41,7 +41,7 @@ export default defineConfig({
   },
   test: {
     include: ["src/**/*.test.ts", "server/**/*.test.ts"],
-    // contrast.test.ts reads theme.css as text (`?raw`); vitest blanks CSS it does not process.
-    css: { include: [/theme\.css/] },
+    // The contrast tests read theme.css and landing.css as text (`?raw`); vitest blanks CSS it does not process.
+    css: { include: [/theme\.css/, /landing\.css/] },
   },
 });
