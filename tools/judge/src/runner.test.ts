@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { exitCode, runScenarios } from "./runner.js";
+import { exitCode, runScenarios, selectScenarios } from "./runner.js";
 import { SCENARIOS, type Scenario } from "./scenarios.js";
 
 async function run(scenarios: Scenario[], release = false) {
@@ -56,5 +56,24 @@ describe("judge runner", () => {
       "S-2 Withdraw after Delay FAIL: ERR_NOT_EXECUTABLE expected",
     ]);
     expect(code).toBe(1);
+  });
+});
+
+describe("selectScenarios", () => {
+  it("selects every Scenario when MORROW_SCENARIOS is unset", () => {
+    expect(selectScenarios(SCENARIOS, undefined)).toEqual({ scenarios: SCENARIOS, unknown: [] });
+  });
+
+  it("selects the named ids in registry order", () => {
+    const { scenarios, unknown } = selectScenarios(SCENARIOS, " S-5,S-1 ");
+    expect(scenarios.map((s) => s.id)).toEqual(["S-1", "S-5"]);
+    expect(unknown).toEqual([]);
+  });
+
+  it("names ids that do not exist, so main exits 1 instead of running nothing", () => {
+    const { scenarios, unknown } = selectScenarios(SCENARIOS, "S-1,S-9,s-2");
+    expect(scenarios.map((s) => s.id)).toEqual(["S-1"]);
+    expect(unknown).toEqual(["S-9", "s-2"]);
+    expect(selectScenarios(SCENARIOS, ",").scenarios).toEqual([]);
   });
 });

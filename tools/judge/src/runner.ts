@@ -14,6 +14,25 @@ export interface RunOptions {
   write: (line: string) => void;
 }
 
+/**
+ * The Scenarios a `MORROW_SCENARIOS` value (comma-separated ids) selects, in registry order, and
+ * the ids it names that do not exist. Unset selects every Scenario.
+ */
+export function selectScenarios(
+  all: Scenario[],
+  value: string | undefined,
+): { scenarios: Scenario[]; unknown: string[] } {
+  if (value === undefined) return { scenarios: all, unknown: [] };
+  const ids = value
+    .split(",")
+    .map((id) => id.trim())
+    .filter((id) => id !== "");
+  return {
+    scenarios: all.filter((s) => ids.includes(s.id)),
+    unknown: ids.filter((id) => !all.some((s) => s.id === id)),
+  };
+}
+
 export function formatResult({ scenario, outcome, detail }: ScenarioResult): string {
   const line = `${scenario.id} ${scenario.name} ${outcome}`;
   return detail ? `${line}: ${detail}` : line;

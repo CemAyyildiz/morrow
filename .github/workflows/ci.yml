@@ -69,14 +69,19 @@ jobs:
           MORROW_REGTEST_RPC: http://morrow:morrow@127.0.0.1:18443
         run: pnpm --filter @morrow/challenge test
       - name: Judge Mode
-        id: judge
         shell: bash
         run: |
           set -o pipefail
           make demo 2>&1 | tee judge.log
       - name: README expected lines in the Judge Mode log
-        if: ${{ !cancelled() && steps.judge.outcome != 'skipped' }}
         run: node .github/scripts/check-readme.mjs --log judge.log
+      - name: Keep the Judge Mode log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: judge-log
+          path: judge.log
+          if-no-files-found: ignore
       - if: always()
         run: make regtest-down
 
