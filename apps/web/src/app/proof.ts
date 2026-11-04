@@ -2,11 +2,14 @@
 // `created_at`), RPC `view_account` (the contract's `code_hash`) and `view_access_key_list`
 // (its full-access keys), all over the configured NEAR RPC, plus the pure mapping and the
 // generated guarantee and trust statements. Story 6.2 adds `get_vault_kit`, read once per Vault
-// on Recompute, and the in-browser address recompute and tamper check of its scripts. Nothing is cached anywhere but in this page's
-// memory, and nothing here invents a value: what cannot be read is said to be unreadable.
+// on Recompute, and the in-browser address recompute and tamper check of its scripts. Nothing
+// is cached anywhere but in this page's memory, and nothing here invents a value: what cannot
+// be read is said to be unreadable.
 import {
+  bytesToHex,
   compareScripts,
   decodeScript,
+  hexToBytes,
   p2wshAddress,
   sameOp,
   scriptNumber,
@@ -891,8 +894,18 @@ export function canonicalVaultId(digits: string): string | null {
 /** The `get_vault_kit` fields the recompute reads; the witness templates are not read. */
 export type ProofKit = Omit<VaultKit, "witness_templates">;
 
+/** Standard policy relays a P2WSH witness script of at most 3,600 bytes; a kit's is no larger. */
+export const MAX_SCRIPT_BYTES = 3_600;
+
 const isScriptHex = (value: unknown): value is string =>
-  isHex(value) && value.length > 0 && value.length % 2 === 0;
+  isHex(value) &&
+  value.length > 0 &&
+  value.length % 2 === 0 &&
+  value.length <= 2 * MAX_SCRIPT_BYTES;
+
+/** A 33-byte compressed secp256k1 key, lowercase hex. */
+const isKeyHex = (value: unknown): value is string =>
+  isString(value) && /^0[23][0-9a-f]{64}$/.test(value);
 
 /** The `get_vault_kit` view (`contracts/vault` `VaultKit`); null when it has another shape. */
 export function parseKit(value: unknown): ProofKit | null {
@@ -903,7 +916,7 @@ export function parseKit(value: unknown): ProofKit | null {
   if (typeof blocks !== "number" || !Number.isSafeInteger(blocks) || blocks < 0) return null;
   const addresses = parsePair(value.addresses);
   const cosigners = parsePair(value.cosigner_pubkeys);
-  if (!addresses || !cosigners || !isHex(cosigners.vault) || !isHex(cosigners.allowance)) {
+  if (!addresses || !cosigners || !isKeyHex(cosigners.vault) || !isKeyHex(cosigners.allowance)) {
     return null;
   }
   return {
@@ -932,16 +945,6 @@ export async function readKit(rpc: ProofRpc, vaultId: string): Promise<KitAnswer
 /** Which of the Vault's two scripts: the Vault Address's or the Allowance Address's. */
 export type ScriptSource = "vault" | "allowance";
 
-/** Lowercase even-length hex as bytes (the kit's scripts are checked by `parseKit`). */
-function bytesOf(hex: string): Uint8Array {
-  const bytes = new Uint8Array(hex.length / 2);
-  for (let i = 0; i < bytes.length; i++) bytes[i] = parseInt(hex.slice(2 * i, 2 * i + 2), 16);
-  return bytes;
-}
-
-const hexOf = (bytes: Uint8Array) =>
-  Array.from(bytes, (byte) => byte.toString(16).padStart(2, "0")).join("");
-
 /** One row of the decoded script: one element, where it sits and what it is for. */
 export interface ScriptRow {
   index: number;
@@ -960,7 +963,10 @@ export interface ScriptRow {
   role: string | null;
   /** The path it is on, from the script's own IF / ELSE structure. */
   path: ScriptPath | null;
-  /** `IF`, `ELSE IF`, `ELSE` or `ENDIF` for the structure's opcodes. */
+  /**
+   * For the structure's opcodes, their own name: `IF`, `ELSE`, `ENDIF`, `NOTIF (inverted)`,
+   * or `OP_ELSE unexpected` when it has no IF to belong to or nests deeper than the Vault Script.
+   */
   branch: string | null;
   /** Not the template's element at this place. */
   differs: boolean;
@@ -982,18 +988,23 @@ export interface Recomputed {
   bytes: Uint8Array;
   flipped: readonly number[];
   rows: ScriptRow[];
-  /** The P2WSH address of `bytes`, computed in the browser. */
+  /** The P2WSH address of `bytes`, computed in the browser for `get_vault`'s network. */
   address: string;
   /** The address `get_vault` states for this script. */
   funded: string;
   addressMatch: boolean;
   scriptCheck: ScriptCheck;
+  /** The kit's own fields that disagree with `get_vault`, named; empty when it agrees. */
+  kitMismatches: string[];
   /** The byte Flip a byte flips: the last byte of the Owner key's push. */
   flipTarget: number;
 }
 
-/** Whose key or which number a template element is: `Owner key`, `Guardian key · alice`. */
-function roleOf(element: VaultScriptElement, vault: Vault): string | null {
+/**
+ * Whose key or which number a template element is: `Owner key`, `Guardian key 1 · alice`.
+ * The threshold is the one `op` itself encodes.
+ */
+function roleOf(element: VaultScriptElement, op: ScriptOp | null, vault: Vault): string | null {
   const r = copy.proof.recompute.roles;
   switch (element.role) {
     case "owner_key":
@@ -1005,7 +1016,7 @@ function roleOf(element: VaultScriptElement, vault: Vault): string | null {
       return r.guardian((element.guardian ?? 0) + 1, guardian?.guardian_account ?? "");
     }
     case "threshold":
-      return r.threshold;
+      return r.threshold((op && scriptNumber(op)) ?? scriptNumber(element.op) ?? 1);
     case "guardian_count":
       return r.guardianCount(vault.policy.guardians.length);
     case "timelock":
@@ -1015,18 +1026,39 @@ function roleOf(element: VaultScriptElement, vault: Vault): string | null {
   }
 }
 
-/** The template of `source` from `get_vault`'s keys and timelock; null when a key is unreadable. */
-function templateOf(kit: ProofKit, vault: Vault, source: ScriptSource) {
+/**
+ * The template of `source` from `get_vault` alone: its Owner key, its Co-signer key for
+ * `source`, its Guardian keys in Policy order and its Escape Timelock. Null when a key is
+ * unreadable or the Co-signer keys are not stored yet.
+ */
+function templateOf(vault: Vault, source: ScriptSource) {
+  if (vault.cosigner_pubkeys === null) return null;
   try {
     return vaultScriptTemplate(
       vault.owner_key,
-      kit.cosigner_pubkeys[source],
+      vault.cosigner_pubkeys[source],
       vault.policy.guardians.map((guardian) => guardian.guardian_key),
       vault.policy.escape_timelock_blocks,
     );
   } catch {
     return null;
   }
+}
+
+/** The kit's fields that differ from what `get_vault` states, by name. Pure. */
+export function kitMismatches(kit: ProofKit, vault: Vault): string[] {
+  const m = copy.proof.recompute.mismatch;
+  const out: string[] = [];
+  const cosigners = vault.cosigner_pubkeys;
+  if (cosigners?.vault !== kit.cosigner_pubkeys.vault) out.push(m.cosigner(m.vault));
+  if (cosigners?.allowance !== kit.cosigner_pubkeys.allowance) {
+    out.push(m.cosigner(m.allowance));
+  }
+  if (kit.btc_network !== vault.policy.btc_network) out.push(m.network);
+  if (vault.addresses?.vault !== kit.addresses.vault) out.push(m.address(m.vault));
+  if (vault.addresses?.allowance !== kit.addresses.allowance) out.push(m.address(m.allowance));
+  if (kit.escape_timelock_blocks !== vault.policy.escape_timelock_blocks) out.push(m.timelock);
+  return out;
 }
 
 /** What the first differing element is called in the script check. */
@@ -1037,23 +1069,51 @@ function elementName(
 ): string {
   const r = copy.proof.recompute;
   if (!element) return r.extra(actual?.name ?? "");
-  const role = roleOf(element, vault);
-  const name = role ?? element.op.name;
+  const name = roleOf(element, actual, vault) ?? element.op.name;
   return actual === null ? r.missingElement(name) : r.differs(name);
 }
 
-const BRANCHES: Record<ScriptPath, string> = {
-  withdrawal: "IF",
-  clawback: "ELSE IF",
-  escape: "ELSE",
-};
+const OP_IF = 0x63;
+const OP_NOTIF = 0x64;
+const OP_ELSE = 0x67;
+const OP_ENDIF = 0x68;
+/** The Vault Script nests IFs two deep. */
+const MAX_DEPTH = 2;
+
+/**
+ * Each structure opcode's label, by its own name and place: `IF`, `ELSE`, `ENDIF`,
+ * `NOTIF (inverted)`; one with no IF to belong to, or deeper than the Vault Script nests,
+ * `OP_ELSE unexpected`. Null for every other element.
+ */
+function branchLabels(ops: readonly ScriptOp[]): (string | null)[] {
+  const b = copy.proof.recompute.branches;
+  let depth = 0;
+  return ops.map((op) => {
+    if (op.kind !== "op") return null;
+    if (op.opcode === OP_IF || op.opcode === OP_NOTIF) {
+      depth += 1;
+      if (depth > MAX_DEPTH) return b.unexpected(op.name);
+      return op.opcode === OP_IF ? b.if : b.notif;
+    }
+    if (op.opcode === OP_ELSE) {
+      return depth === 0 || depth > MAX_DEPTH ? b.unexpected(op.name) : b.else;
+    }
+    if (op.opcode === OP_ENDIF) {
+      if (depth === 0) return b.unexpected(op.name);
+      depth -= 1;
+      return depth >= MAX_DEPTH ? b.unexpected(op.name) : b.endif;
+    }
+    return null;
+  });
+}
 
 /**
  * Recomputes the `source` script of the kit in the browser, with the bytes at `flipped` XOR
- * 0x01: decodes it element by element, hashes it to its P2WSH address and checks both the
- * address against `get_vault`'s and the script against the template rebuilt from `get_vault`'s
- * Owner key, Guardian keys (in Policy order) and Escape Timelock with the kit's Co-signer key.
- * Null when `get_vault` states no address to check against. Pure.
+ * 0x01: decodes it element by element, hashes it to its P2WSH address for `get_vault`'s
+ * network, and checks the address against `get_vault`'s and the script against the template
+ * rebuilt from `get_vault` alone (Owner key, Co-signer key, Guardian keys in Policy order,
+ * Escape Timelock). It also names the kit's own fields that disagree with `get_vault`. Null
+ * when `get_vault` states no address to check against. Pure.
  */
 export function recompute(
   kit: ProofKit,
@@ -1062,14 +1122,15 @@ export function recompute(
   source: ScriptSource = "vault",
 ): Recomputed | null {
   if (vault.addresses === null) return null;
-  const original = bytesOf(source === "vault" ? kit.vault_script_hex : kit.allowance_script_hex);
+  const original = hexToBytes(source === "vault" ? kit.vault_script_hex : kit.allowance_script_hex);
   const bytes = original.slice();
   const flips = [...new Set(flipped)].filter((at) => at >= 0 && at < bytes.length);
   for (const at of flips) bytes[at] = (bytes[at] as number) ^ 0x01;
 
   const ops = decodeScript(bytes);
   const paths = scriptPaths(ops);
-  const template = templateOf(kit, vault, source);
+  const branches = branchLabels(ops);
+  const template = templateOf(vault, source);
   const elements = template?.elements ?? [];
   const difference = template
     ? compareScripts(
@@ -1082,8 +1143,6 @@ export function recompute(
     const element = elements[index];
     // Labels follow the template only while the bytes line up with it.
     const aligned = element !== undefined && element.op.offset === op.offset;
-    const path = paths[index] ?? null;
-    const isBranch = op.kind === "op" && [0x63, 0x64, 0x67, 0x68].includes(op.opcode);
     const same = aligned && sameOp(op, element.op);
     const number =
       aligned && ["threshold", "guardian_count", "timelock"].includes(element.role)
@@ -1094,12 +1153,12 @@ export function recompute(
       offset: op.offset,
       size: op.size,
       name: op.name,
-      data: op.kind === "push" ? hexOf(op.data) : null,
+      data: op.kind === "push" ? bytesToHex(op.data) : null,
       number,
       kind: aligned ? element.role : null,
-      role: aligned ? roleOf(element, vault) : null,
-      path,
-      branch: isBranch ? (op.opcode === 0x68 || path === null ? "ENDIF" : BRANCHES[path]) : null,
+      role: aligned ? roleOf(element, op, vault) : null,
+      path: paths[index] ?? null,
+      branch: branches[index] ?? null,
       differs: template !== null && !same,
       flipped: flips.some((at) => at >= op.offset && at < op.offset + op.size),
     };
@@ -1113,7 +1172,8 @@ export function recompute(
   const target = owner?.kind === "push" ? owner : firstPush;
   const flipTarget = target ? target.offset + target.size - 1 : 0;
 
-  const address = p2wshAddress(bytes, kit.btc_network);
+  const network = vault.policy.btc_network;
+  const address = p2wshAddress(bytes, network);
   const funded = vault.addresses[source];
   let scriptCheck: ScriptCheck;
   if (template === null) {
@@ -1129,7 +1189,7 @@ export function recompute(
   }
   return {
     source,
-    network: kit.btc_network,
+    network,
     bytes,
     flipped: flips,
     rows,
@@ -1137,6 +1197,7 @@ export function recompute(
     funded,
     addressMatch: address === funded,
     scriptCheck,
+    kitMismatches: kitMismatches(kit, vault),
     flipTarget,
   };
 }

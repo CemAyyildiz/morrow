@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
+  bytesToHex,
   p2wshAddress,
   vaultScriptTemplate,
   type Guardian,
@@ -22,6 +23,7 @@ import {
   hasWatcher,
   isDue,
   parseEvents,
+  kitMismatches,
   parseKit,
   parseVault,
   pendingFrom,
@@ -922,8 +924,7 @@ describe("the address recompute", () => {
   const SCRIPT =
     "6321021111111111111111111111111111111111111111111111111111111111111111ad2103aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaac67632103aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaad5121022222222222222222222222222222222222222222222222222222222222222222210233333333333333333333333333333333333333333333333333333333333333332102444444444444444444444444444444444444444444444444444444444444444453ae6702a866b27521021111111111111111111111111111111111111111111111111111111111111111ac6868";
   const ADDRESS = "tb1qjzz9rvff0n247nl76zcwwylrjkej02l4pa8l5he6zzyn9kagp3aq2u9zku";
-  const hex = (bytes: Uint8Array) =>
-    Array.from(bytes, (b) => b.toString(16).padStart(2, "0")).join("");
+  const hex = bytesToHex;
   const ALLOWANCE_SCRIPT = hex(
     vaultScriptTemplate(OWNER, ALLOWANCE_COSIGNER, GUARDIAN_KEYS, 26_280).script,
   );
@@ -970,9 +971,16 @@ describe("the address recompute", () => {
       { ...view, escape_timelock_blocks: "26280" },
       { ...view, addresses: null },
       { ...view, cosigner_pubkeys: { vault: "xyz", allowance: COSIGNER } },
+      // Keys are 33-byte compressed secp256k1 keys, nothing else.
+      { ...view, cosigner_pubkeys: { vault: `04${"aa".repeat(32)}`, allowance: COSIGNER } },
+      { ...view, cosigner_pubkeys: { vault: COSIGNER, allowance: `03${"aa".repeat(31)}` } },
+      { ...view, cosigner_pubkeys: { vault: COSIGNER.toUpperCase(), allowance: COSIGNER } },
+      // A script larger than the 3,600 bytes standard policy relays.
+      { ...view, vault_script_hex: "51".repeat(3_601) },
     ]) {
       expect(parseKit(bad)).toBeNull();
     }
+    expect(parseKit({ ...view, vault_script_hex: "51".repeat(3_600) })).not.toBeNull();
   });
 
   it("reads get_vault_kit once over the RPC; any failure is one failed answer", async () => {
@@ -1014,8 +1022,8 @@ describe("the address recompute", () => {
       [35, "OP_CHECKSIGVERIFY", null, "withdrawal", null],
       [36, "OP_PUSHBYTES_33", "Co-signer key", "withdrawal", null],
       [70, "OP_CHECKSIG", null, "withdrawal", null],
-      [71, "OP_ELSE", null, "clawback", "ELSE IF"],
-      [72, "OP_IF", null, "clawback", "ELSE IF"],
+      [71, "OP_ELSE", null, "clawback", "ELSE"],
+      [72, "OP_IF", null, "clawback", "IF"],
       [73, "OP_PUSHBYTES_33", "Co-signer key", "clawback", null],
       [107, "OP_CHECKSIGVERIFY", null, "clawback", null],
       [108, "OP_1", "1 Guardian signature needed", "clawback", null],
@@ -1083,15 +1091,57 @@ describe("the address recompute", () => {
     expect(result.scriptCheck).toEqual({ ok: false, element: "Owner key differs", at: 1 });
     // The address is checked against get_vault's: it does not match either.
     expect(result.addressMatch).toBe(false);
-    // A kit whose address matches its own tampered script still fails the address check
-    // against get_vault, and the script check names the element.
-    const wrongGuardians = vault(
-      { ...VAULT, addresses: { vault: p2wshAddress(other.script, "signet"), allowance: "x" } },
-      { guardians: VAULT.policy.guardians },
+    // Even where get_vault's address is the tampered script's own, the script check still
+    // names the element.
+    const fundedTampered = vault(
+      {
+        ...VAULT,
+        addresses: { vault: p2wshAddress(other.script, "signet"), allowance: ALLOWANCE_ADDRESS },
+      },
+      VAULT.policy,
     );
-    const funded = recompute(tampered, wrongGuardians)!;
+    const funded = recompute(tampered, fundedTampered)!;
     expect(funded.addressMatch).toBe(true);
-    expect(funded.scriptCheck.ok).toBe(false);
+    expect(funded.scriptCheck).toEqual({ ok: false, element: "Owner key differs", at: 1 });
+  });
+
+  it("a kit that swaps the Co-signer key in its script and its keys fails against get_vault", () => {
+    const thief = `02${"66".repeat(32)}`;
+    const script = vaultScriptTemplate(OWNER, thief, GUARDIAN_KEYS, 26_280).script;
+    const swapped: ProofKit = {
+      ...KIT,
+      vault_script_hex: hex(script),
+      cosigner_pubkeys: { ...KIT.cosigner_pubkeys, vault: thief },
+      addresses: { ...KIT.addresses, vault: p2wshAddress(script, "signet") },
+    };
+    const result = recompute(swapped, VAULT)!;
+    expect(result.scriptCheck).toEqual({ ok: false, element: "Co-signer key differs", at: 36 });
+    expect(result.addressMatch).toBe(false);
+    expect(result.kitMismatches).toEqual(["Vault Co-signer key", "Vault Address"]);
+  });
+
+  it("names every kit field that disagrees with get_vault, and none when it agrees", () => {
+    expect(kitMismatches(KIT, VAULT)).toEqual([]);
+    expect(recompute(KIT, VAULT)!.kitMismatches).toEqual([]);
+    const off: ProofKit = {
+      ...KIT,
+      btc_network: "bitcoin",
+      addresses: { vault: "bc1qother", allowance: "bc1qanother" },
+      escape_timelock_blocks: 6,
+      cosigner_pubkeys: { vault: COSIGNER, allowance: `03${"77".repeat(32)}` },
+    };
+    expect(kitMismatches(off, VAULT)).toEqual([
+      "Allowance Co-signer key",
+      "Bitcoin network",
+      "Vault Address",
+      "Allowance Address",
+      "Escape Timelock",
+    ]);
+    // The address is encoded for get_vault's network, not the kit's.
+    const result = recompute(off, VAULT)!;
+    expect(result.network).toBe("signet");
+    expect(result.address).toBe(ADDRESS);
+    expect(result.addressMatch).toBe(true);
   });
 
   it("names a different timelock, a reordered Guardian list and a missing element", () => {
@@ -1114,7 +1164,7 @@ describe("the address recompute", () => {
     const long = { ...KIT, vault_script_hex: `${SCRIPT}ac` };
     expect(recompute(long, VAULT)!.scriptCheck).toEqual({
       ok: false,
-      element: "OP_CHECKSIG is more than the template has",
+      element: "an extra OP_CHECKSIG after the template's end",
       at: 256,
     });
     const badKey = vault({ ...VAULT, owner_key: "abc" }, VAULT.policy);
@@ -1144,9 +1194,56 @@ describe("the address recompute", () => {
     ["regtest", "bcrt1q"],
     ["bitcoin", "bc1q"],
   ] as const)("encodes the %s address with its HRP", (network, prefix) => {
-    const result = recompute({ ...KIT, btc_network: network }, VAULT)!;
+    const onNetwork: Vault = { ...VAULT, policy: { ...VAULT.policy, btc_network: network } };
+    const result = recompute({ ...KIT, btc_network: network }, onNetwork)!;
     expect(result.address.startsWith(prefix)).toBe(true);
     expect(result.address).toBe(p2wshAddress(result.bytes, network));
+  });
+
+  it("labels each structure opcode by its own name, and odd structure as unexpected", () => {
+    const labels = (script: string) =>
+      recompute({ ...KIT, vault_script_hex: script }, VAULT)!.rows.map((row) => [
+        row.name,
+        row.branch,
+        row.path,
+      ]);
+    // An inverted outer branch: NOTIF, and its arms on no path.
+    expect(labels(`64${SCRIPT.slice(2)}`).slice(0, 2)).toEqual([
+      ["OP_NOTIF", "NOTIF (inverted)", null],
+      ["OP_PUSHBYTES_33", null, null],
+    ]);
+    // Unmatched ELSE and ENDIF, and an IF deeper than the Vault Script nests.
+    expect(labels("67ac68")).toEqual([
+      ["OP_ELSE", "OP_ELSE unexpected", null],
+      ["OP_CHECKSIG", null, null],
+      ["OP_ENDIF", "OP_ENDIF unexpected", null],
+    ]);
+    expect(labels("6363636768686868").map(([, branch]) => branch)).toEqual([
+      "IF",
+      "IF",
+      "OP_IF unexpected",
+      "OP_ELSE unexpected",
+      "OP_ENDIF unexpected",
+      "ENDIF",
+      "ENDIF",
+      "OP_ENDIF unexpected",
+    ]);
+  });
+
+  it("reads the threshold from the script itself", () => {
+    // OP_1 → OP_2 at byte 108: 2 of the Guardians must sign.
+    const two = `${SCRIPT.slice(0, 216)}52${SCRIPT.slice(218)}`;
+    const result = recompute({ ...KIT, vault_script_hex: two }, VAULT)!;
+    expect(result.rows[9]).toMatchObject({ name: "OP_2", number: 2 });
+    expect(result.rows[9]!.role).toBe("2 Guardian signatures needed");
+    expect(result.scriptCheck).toEqual({
+      ok: false,
+      element: "2 Guardian signatures needed differs",
+      at: 108,
+    });
+    expect(copy.proof.recompute.pathRules(2, 3, "6 blocks").clawback).toBe(
+      "Co-signer + 2 of 3 Guardians",
+    );
   });
 
   it("claims nothing without an address to check against", () => {

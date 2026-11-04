@@ -368,13 +368,19 @@ export function compareScripts(
  * The path each element of a decoded script is on, read from its IF / ELSE / ENDIF structure
  * the way the Vault Script nests them: the outer IF branch is the Withdrawal Path, the inner IF
  * branch of the outer ELSE the Clawback Path and the inner ELSE the Escape Path. OP_IF and
- * OP_ELSE carry the path they open; OP_ENDIF and anything outside those branches null.
+ * OP_ELSE carry the path they open; OP_ENDIF and anything outside those branches null. An
+ * OP_NOTIF inverts its arms, which the Vault Script never does: everything under one is on no
+ * path.
  */
 export function scriptPaths(ops: readonly ScriptOp[]): (ScriptPath | null)[] {
   /** The branch taken at each open IF: 0 for its IF arm, 1 after its ELSE. */
   const stack: number[] = [];
+  /** How many of the open IFs are OP_NOTIF. */
+  let inverted = 0;
+  const notifs: boolean[] = [];
   const pathOf = (): ScriptPath | null => {
     const [outer, inner] = stack;
+    if (inverted > 0) return null;
     if (stack.length === 1 && outer === 0) return "withdrawal";
     if (stack.length === 2 && outer === 1) return inner === 0 ? "clawback" : "escape";
     return null;
@@ -382,15 +388,18 @@ export function scriptPaths(ops: readonly ScriptOp[]): (ScriptPath | null)[] {
   return ops.map((op) => {
     if (op.kind === "op" && (op.opcode === OP_IF || op.opcode === OP_NOTIF)) {
       stack.push(0);
+      notifs.push(op.opcode === OP_NOTIF);
+      if (op.opcode === OP_NOTIF) inverted += 1;
       return pathOf();
     }
     if (op.kind === "op" && op.opcode === OP_ELSE && stack.length > 0) {
       stack[stack.length - 1] = 1;
       // The outer ELSE opens the inner IF that follows it: the Clawback Path.
-      return stack.length === 1 ? "clawback" : pathOf();
+      return stack.length === 1 && inverted === 0 ? "clawback" : pathOf();
     }
     if (op.kind === "op" && op.opcode === OP_ENDIF && stack.length > 0) {
       stack.pop();
+      if (notifs.pop()) inverted -= 1;
       return null;
     }
     return pathOf();

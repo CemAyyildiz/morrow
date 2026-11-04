@@ -2,9 +2,10 @@
  * The browser-safe part of core-ts: pure modules only (explorer links, error codes with their
  * meanings, event kinds and types, transaction failure reading) plus what "Try with these keys"
  * needs: NEAR transaction signing, the Watcher Envelope and SegWit address checks, plus the Proof
- * Page's Vault Script decoding and P2WSH address recompute, built on @noble and @scure. Nothing here may import near-api-js, libsodium or bitcoinjs-lib, directly
- * or through another module: `browser.test.ts` walks the import graph and allows only those
- * small pure packages, and the web build fails if a heavy one reaches its bundle.
+ * Page's Vault Script decoding and P2WSH address recompute, built on @noble and @scure. Nothing
+ * here may import near-api-js, libsodium or bitcoinjs-lib, directly or through another module:
+ * `browser.test.ts` walks the import graph and allows only those small pure packages, and the
+ * web build fails if a heavy one reaches its bundle.
  */
 export { bitcoinTxUrl, nearAccountUrl, nearTxUrl, type NearNetwork } from "./xray/links.js";
 export {
@@ -56,6 +57,8 @@ export {
   type SignedFunctionCall,
 } from "./near/browser-tx.js";
 export { sealWatcherEnvelope, type WatcherEnvelopeFlag } from "./crypto/browser-envelope.js";
+// The full entry's own hex helpers (pure), so both entries export the same functions.
+export { bytesToHex, hexToBytes } from "./crypto/hex.js";
 export {
   SEGWIT_HRP,
   decodeSegwitAddress,

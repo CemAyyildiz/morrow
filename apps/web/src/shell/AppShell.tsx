@@ -10,7 +10,8 @@ import { TestnetBanner } from "./TestnetBanner";
 
 // The product frame: skip link, testnet banner, phone bar or sidebar, the main column, the
 // phone menu, and the one polite live region. Screens announce live outcomes (a new Attempt
-// Log row) through it with `useAnnounce`.
+// Log row) through it with `useAnnounce`. Each announcement re-renders the region's line under
+// a new key, so the same text announced twice (two flips in a row) is read twice.
 //
 // After each in-app navigation (not on first load) the region announces the page title,
 // keyed on the path so two pages with one title are both announced, and focus moves to
@@ -28,7 +29,11 @@ export function AppShell({
   const { config } = useAppData();
   const { path } = useRouter();
   const [menuOpen, setMenuOpen] = useState(false);
-  const [announcement, setAnnouncement] = useState("");
+  const [announcement, setAnnouncement] = useState({ text: "", n: 0 });
+  const announce = useCallback(
+    (text: string) => setAnnouncement((last) => ({ text, n: last.n + 1 })),
+    [],
+  );
   const main = useRef<HTMLElement>(null);
   const menuButton = useRef<HTMLButtonElement>(null);
   const lastPath = useRef(path);
@@ -43,12 +48,12 @@ export function AppShell({
   useEffect(() => {
     if (path === lastPath.current) return;
     lastPath.current = path;
-    setAnnouncement(title);
+    announce(title);
     // Browser Back with the menu open closes it.
     setMenuOpen(false);
     // A choice from the phone menu has already asked for the menu button.
     pendingFocus.current ??= "main";
-  }, [path, title]);
+  }, [path, title, announce]);
 
   // Restore focus once the menu is closed and the new page is rendered.
   useEffect(() => {
@@ -59,7 +64,7 @@ export function AppShell({
   });
 
   return (
-    <AnnounceContext.Provider value={setAnnouncement}>
+    <AnnounceContext.Provider value={announce}>
       <div className="flex min-h-dvh flex-col">
         <div inert={menuOpen} className="contents">
           <a
@@ -88,7 +93,7 @@ export function AppShell({
         </div>
         <PhoneMenu open={menuOpen} activeId={activeId} onClose={closeMenu} />
         <div aria-live="polite" className="sr-only" data-testid="live-region">
-          <p key={path}>{announcement}</p>
+          <p key={`${path} ${announcement.n}`}>{announcement.text}</p>
         </div>
       </div>
     </AnnounceContext.Provider>

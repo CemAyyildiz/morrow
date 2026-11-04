@@ -62,6 +62,8 @@ describe("@morrow/core-ts/browser", () => {
       "contract/policy.ts",
       "contract/types.ts",
       "crypto/browser-envelope.ts",
+      "crypto/errors.ts",
+      "crypto/hex.ts",
       "near/browser-tx.ts",
       "xray/failure.ts",
       "xray/links.ts",
@@ -189,6 +191,7 @@ describe("@morrow/core-ts/browser", () => {
         "signet",
       ),
     ).toBe("tb1qrp33g0q5c5txsp9arysrx4k6zdkfs4nce4xj0gdcccefvpysxf3q0sl5k7");
+    expect(browser.bytesToHex(browser.hexToBytes("00ff"))).toBe("00ff");
     expect(browser.decodeScript(Uint8Array.of(0x63, 0x68)).map((op) => op.name)).toEqual([
       "OP_IF",
       "OP_ENDIF",

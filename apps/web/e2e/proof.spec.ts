@@ -574,6 +574,7 @@ test.describe("Address recompute", () => {
     );
     await expect(script.getByTestId("script-check-text")).toHaveCSS("color", OK);
     await expect(view.locator("[data-testid=script-row][data-differs=true]")).toHaveCount(0);
+    await expect(view.getByTestId("kit-check")).toHaveAttribute("data-match", "true");
   }
 
   async function expectRed(page: Page, element: string) {
@@ -658,7 +659,7 @@ test.describe("Address recompute", () => {
   test("Flip a byte turns both checks red with text, Reset brings back the green match", async ({
     page,
   }) => {
-    const { fired } = await open(page, "/proof/7");
+    const { fired, requests } = await open(page, "/proof/7");
     await recomputeButton(page).click();
     await expectGreen(page);
 
@@ -686,6 +687,22 @@ test.describe("Address recompute", () => {
     await expectGreen(page);
     await expect(byte).toHaveText("7a");
     await expect(live(page)).toContainText("Reset to the published script");
+    // Reset is spent in turn; focus goes back to Flip a byte.
+    await expect(reset).toBeDisabled();
+    await expect(flip).toBeFocused();
+
+    // A second Recompute starts over: earlier flips are cleared.
+    await vaultView(page).locator("[data-testid=script-byte][data-offset='40']").click();
+    await expectRed(page, "Co-signer key differs");
+    await recomputeButton(page).click();
+    await expectGreen(page);
+    await expect(
+      vaultView(page).locator("[data-testid=script-byte][aria-pressed=true]"),
+    ).toHaveCount(0);
+    // The kit is read once for Recompute twice and the Allowance row.
+    await addresses(page).getByRole("button", { name: "Recompute the Allowance Address" }).click();
+    await expect(page.getByTestId("recompute-allowance")).toBeVisible();
+    expect(methods(requests).filter((m) => m === "get_vault_kit")).toHaveLength(1);
     expect(await fired()).toEqual([]);
   });
 
@@ -722,6 +739,15 @@ test.describe("Address recompute", () => {
     await expect(
       vaultView(page).locator("[data-testid=script-byte][data-offset='0']"),
     ).toBeFocused();
+    await page.keyboard.press("End");
+    const last = vaultView(page).locator("[data-testid=script-byte][data-offset='221']");
+    await expect(last).toBeFocused();
+    await expect(last).toHaveText("68");
+    await page.keyboard.press("Space");
+    await expect(last).toHaveAttribute("aria-pressed", "true");
+    await expect(last).toHaveText("69");
+    await expect(live(page)).toContainText("Byte 221 flipped");
+    await expect(vaultView(page).getByRole("toolbar", { name: "Script bytes" })).toBeVisible();
   });
 
   test("a tampered kit fails the script check by name and the address check", async ({ page }) => {
@@ -761,6 +787,28 @@ test.describe("Address recompute", () => {
     await expect(failed).toHaveCount(0);
   });
 
+  test("Retry after a failed Allowance read opens the Allowance view", async ({ page }) => {
+    let fail = true;
+    await routeRpc(page, (params) =>
+      params.method_name === "get_vault_kit" && fail
+        ? { error: { name: "HANDLER_ERROR", cause: { name: "TIMEOUT_ERROR", info: {} } } }
+        : undefined,
+    );
+    await open(page, "/proof/7");
+    const toggle = addresses(page).getByRole("button", { name: "Recompute the Allowance Address" });
+    await toggle.click();
+    const failed = page.getByTestId("recompute-failed");
+    await expect(failed).toContainText("Could not read the Vault Kit");
+    await expect(toggle).toHaveAttribute("aria-expanded", "false");
+    fail = false;
+    await failed.getByRole("button", { name: "Retry" }).click();
+    await expect(toggle).toHaveAttribute("aria-expanded", "true");
+    await expect(
+      page.getByTestId("recompute-allowance").getByTestId("address-check"),
+    ).toHaveAttribute("data-match", "true");
+    await expect(vaultView(page)).toHaveCount(0);
+  });
+
   test("a Vault without keys has no script: Recompute is unavailable and says why", async ({
     page,
   }) => {
@@ -787,11 +835,17 @@ test.describe("Address recompute", () => {
     page,
   }) => {
     await open(page, "/proof/7");
+    // The Vault's view first, so the Allowance's flip can be seen to leave it alone.
+    await recomputeButton(page).click();
+    await expectGreen(page);
     const toggle = addresses(page).getByRole("button", { name: "Recompute the Allowance Address" });
     await expect(toggle).toHaveAttribute("aria-expanded", "false");
     await expect(page.getByTestId("recompute-allowance")).toHaveCount(0);
     await toggle.click();
     await expect(toggle).toHaveAttribute("aria-expanded", "true");
+    await expect(live(page)).toHaveText(
+      "Allowance Address recomputed: the recomputed address matches the funded Allowance Address. Script check: the script encodes the keys and timelock get_vault states.",
+    );
     const view = page.getByTestId("recompute-allowance");
     await expect(view.getByTestId("address-check")).toHaveAttribute("data-match", "true");
     await expect(view.getByTestId("address-check-text")).toHaveText(
@@ -801,22 +855,31 @@ test.describe("Address recompute", () => {
     await expect(view.locator("[data-testid=script-row][data-offset='36']")).toContainText(
       PROOF_VAULT.cosigner_pubkeys.allowance,
     );
-    // Its own Flip a byte; the Vault's view is not touched.
+    // Its own Flip a byte; the Vault's view stays green.
     await view.getByRole("button", { name: "Flip a byte" }).click();
     await expect(view.getByTestId("address-check")).toHaveAttribute("data-match", "false");
-    await expect(page.getByTestId("recompute-vault")).toHaveCount(0);
+    await expect(live(page)).toHaveText(
+      "Byte 34 flipped: the recomputed address does not match the funded Allowance Address. Script check: Owner key differs.",
+    );
+    await expectGreen(page);
     await toggle.click();
     await expect(page.getByTestId("recompute-allowance")).toBeHidden();
   });
 
   test("with reduced motion the checks and rows change without a transition", async ({ page }) => {
-    await page.emulateMedia({ reducedMotion: "reduce" });
+    await page.emulateMedia({ reducedMotion: "no-preference" });
     await open(page, "/proof/7");
     await recomputeButton(page).click();
     await expectGreen(page);
-    const durations = await vaultView(page)
-      .locator("[data-testid=script-row], [data-testid=address-check], [data-testid=script-byte]")
-      .evaluateAll((els) => [...new Set(els.map((el) => getComputedStyle(el).transitionDuration))]);
-    expect(durations).toEqual(["0s"]);
+    const durations = () =>
+      vaultView(page)
+        .locator("[data-testid=script-row], [data-testid=address-check], [data-testid=script-byte]")
+        .evaluateAll((els) => [
+          ...new Set(els.map((el) => getComputedStyle(el).transitionDuration)),
+        ]);
+    // By default the colours ease; with reduced motion they change at once.
+    expect(await durations()).toEqual(["0.3s"]);
+    await page.emulateMedia({ reducedMotion: "reduce" });
+    await expect.poll(durations).toEqual(["0s"]);
   });
 });

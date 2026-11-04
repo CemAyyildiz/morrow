@@ -309,4 +309,20 @@ describe("scriptPaths", () => {
       null,
     ]);
   });
+
+  it("puts everything under an OP_NOTIF on no path", () => {
+    // OP_NOTIF ac OP_ELSE OP_IF ac OP_ENDIF OP_ENDIF, then OP_IF ac OP_ENDIF.
+    expect(scriptPaths(decodeScript(hexToBytes("64ac6763ac6868" + "63ac68")))).toEqual([
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      "withdrawal",
+      "withdrawal",
+      null,
+    ]);
+  });
 });

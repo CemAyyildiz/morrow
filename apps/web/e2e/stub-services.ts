@@ -4,10 +4,11 @@
 //   contract), `call_function get_vault` (Delay, Owner Account, watcher key) and the signer's
 //   `state` (threshold 11 of 16). For the Proof Page (proof-fixture.ts): `view_account` (the
 //   code hash), the full `get_vault` and `get_vault_kit` of Vault #7, ERR_VAULT_NOT_FOUND for
-//   other ids, and `events_since` over a fixed log. For "Try with these keys": `view_access_key` (a nonce per
-//   key), `block` (final) and `send_tx`, which checks the ed25519 signature over sha256 of the
-//   borsh transaction, records it (`GET /__sent?public_key=`), and answers `request_withdrawal`
-//   with an op id and its `withdrawal_requested` log, `begin_execute` with ERR_NOT_EXECUTABLE.
+//   other ids, and `events_since` over a fixed log. For "Try with these keys":
+//   `view_access_key` (a nonce per key), `block` (final) and `send_tx`, which checks the
+//   ed25519 signature over sha256 of the borsh transaction, records it
+//   (`GET /__sent?public_key=`), and answers `request_withdrawal` with an op id and its
+//   `withdrawal_requested` log, `begin_execute` with ERR_NOT_EXECUTABLE.
 //   It never runs a contract. `POST /__allowance {public_key, spent}` makes a key out of
 //   allowance; `POST /__nonce {public_key, race}` answers its next `race` sends with
 //   InvalidNonce, as when other visitors use the key at the same time: the error names the

@@ -440,8 +440,27 @@ export const copy = {
       atByte: (at: number) => `at byte ${at}`,
       differs: (name: string) => `${name} differs`,
       missingElement: (name: string) => `${name} is missing`,
-      extra: (name: string) => `${name} is more than the template has`,
+      extra: (name: string) => `an extra ${name} after the template's end`,
       unreadableKeys: "The keys get_vault states could not be read as keys",
+      kitCheck: "Kit agrees with get_vault",
+      kitAgrees:
+        "yes. Its Co-signer keys, Bitcoin network, addresses and Escape Timelock are the ones get_vault states.",
+      kitDisagrees: (fields: string) => `no. It differs on ${fields}.`,
+      mismatch: {
+        vault: "Vault",
+        allowance: "Allowance",
+        cosigner: (which: string) => `${which} Co-signer key`,
+        network: "Bitcoin network",
+        address: (which: string) => `${which} Address`,
+        timelock: "Escape Timelock",
+      },
+      branches: {
+        if: "IF",
+        notif: "NOTIF (inverted)",
+        else: "ELSE",
+        endif: "ENDIF",
+        unexpected: (name: string) => `${name} unexpected`,
+      },
       flip: "Flip a byte",
       reset: "Reset",
       flipHint: (at: number) =>
@@ -449,9 +468,9 @@ export const copy = {
       flippedNote: (count: number) => `${plural(count, "byte")} flipped in this browser only.`,
       paths: "Paths",
       pathNames: { withdrawal: "Withdrawal", clawback: "Clawback", escape: "Escape" },
-      pathRules: (guardians: number, blocks: string) => ({
+      pathRules: (threshold: number, guardians: number, blocks: string) => ({
         withdrawal: "Owner + Co-signer",
-        clawback: `Co-signer + 1 of ${plural(guardians, "Guardian")}`,
+        clawback: `Co-signer + ${threshold} of ${plural(guardians, "Guardian")}`,
         escape: `Owner after the CSV of ${blocks}`,
       }),
       decoded: (size: number) => `Decoded script · ${plural(size, "byte")}`,
@@ -466,7 +485,7 @@ export const copy = {
         cosigner: "Co-signer key",
         guardian: (n: number, account: string) =>
           account === "" ? `Guardian key ${n}` : `Guardian key ${n} · ${account}`,
-        threshold: "1 Guardian signature needed",
+        threshold: (count: number) => `${plural(count, "Guardian signature")} needed`,
         guardianCount: (count: number) => `${plural(count, "Guardian key")} in all`,
         timelock: (blocks: string) => `Escape Timelock · ${blocks}`,
       },

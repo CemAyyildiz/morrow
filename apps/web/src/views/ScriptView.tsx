@@ -20,9 +20,6 @@ import { useAnnounce } from "@/shell/announce";
 
 const r = copy.proof.recompute;
 
-/** How many bytes ArrowUp / ArrowDown move in the byte view. */
-const BYTE_ROW = 16;
-
 // The Address card's recompute (story 6.2): Recompute reads `get_vault_kit` once and runs the
 // address and script checks here, in the browser; Flip a byte and the byte view tamper with a
 // copy of the script, so the checks turn red, and Reset brings back the published bytes. The
@@ -34,32 +31,29 @@ export function AddressRecompute({ vault, config }: { vault: Vault; config: AppC
   /** Bumped by every Recompute: the computation has run, and its flips start over. */
   const [run, setRun] = useState(0);
   const [allowanceOpen, setAllowanceOpen] = useState(false);
+  /** The action whose kit read failed, which Retry runs again. */
+  const [failedAction, setFailedAction] = useState<ScriptSource>("vault");
   const allowanceId = useId();
 
-  const onRecompute = async () => {
-    const kit = await read();
-    if (kit === null) {
+  /** Reads the kit if needed, then recomputes `source`'s script and says what it found. */
+  const runFor = async (source: ScriptSource) => {
+    const answer = await read();
+    // A read cut short (another Vault, the page left) says nothing.
+    if (answer.kind === "aborted") return;
+    if (answer.kind === "failed") {
+      setFailedAction(source);
       announce(r.failed);
       return;
     }
-    setRun((n) => n + 1);
-    const result = recompute(kit, vault);
+    if (source === "vault") setRun((n) => n + 1);
+    else setAllowanceOpen(true);
+    const result = recompute(answer.kit, vault, [], source);
     if (result) announce(recomputeAnnouncement(result, { kind: "recompute" }));
   };
 
-  const onAllowance = async () => {
-    if (allowanceOpen) {
-      setAllowanceOpen(false);
-      return;
-    }
-    const kit = await read();
-    if (kit === null) {
-      announce(r.failed);
-      return;
-    }
-    setAllowanceOpen(true);
-    const result = recompute(kit, vault, [], "allowance");
-    if (result) announce(recomputeAnnouncement(result, { kind: "recompute" }));
+  const onAllowance = () => {
+    if (allowanceOpen) setAllowanceOpen(false);
+    else void runFor("allowance");
   };
 
   const kit = state.kind === "ok" ? state.kit : null;
@@ -70,7 +64,7 @@ export function AddressRecompute({ vault, config }: { vault: Vault; config: AppC
         <Button
           variant="primary"
           data-testid="recompute-action"
-          onClick={() => void onRecompute()}
+          onClick={() => void runFor("vault")}
           disabled={state.kind === "loading"}
         >
           {state.kind === "loading" ? r.reading : r.action}
@@ -80,7 +74,7 @@ export function AddressRecompute({ vault, config }: { vault: Vault; config: AppC
         <div data-testid="recompute-failed" className="flex flex-col items-start gap-2">
           <p className="text-[14px] font-semibold text-alarm">{r.failed}</p>
           <p className="text-[13px] text-muted">{r.failedBody}</p>
-          <Button variant="secondary" onClick={() => void onRecompute()}>
+          <Button variant="secondary" onClick={() => void runFor(failedAction)}>
             {r.retry}
           </Button>
         </div>
@@ -92,7 +86,7 @@ export function AddressRecompute({ vault, config }: { vault: Vault; config: AppC
           data-testid="recompute-allowance-toggle"
           aria-expanded={allowanceOpen}
           aria-controls={allowanceId}
-          onClick={() => void onAllowance()}
+          onClick={onAllowance}
           disabled={state.kind === "loading"}
         >
           {r.allowanceToggle}
@@ -148,8 +142,6 @@ export function ScriptView({
     const moves: Record<string, number> = {
       ArrowRight: at + 1,
       ArrowLeft: at - 1,
-      ArrowDown: at + BYTE_ROW,
-      ArrowUp: at - BYTE_ROW,
       Home: 0,
       End: last,
     };
@@ -207,7 +199,7 @@ export function ScriptView({
       <div className="flex min-w-0 flex-col gap-2">
         <h3 className="text-label text-muted">{r.bytes}</h3>
         <div
-          role="group"
+          role="toolbar"
           aria-label={r.bytesLabel}
           data-testid="script-bytes"
           className="flex flex-wrap font-mono text-[12px]"
@@ -260,6 +252,7 @@ function Checks({
 }) {
   const check = result.scriptCheck;
   const where = !check.ok && check.at !== null ? ` ${r.atByte(check.at)}` : "";
+  const agrees = result.kitMismatches.length === 0;
   return (
     <div className="flex flex-col gap-3">
       <div
@@ -327,6 +320,14 @@ function Checks({
             : r.scriptBad(`${check.element}${where}`)}
         </p>
       </div>
+      <p
+        data-testid="kit-check"
+        data-match={agrees}
+        className={cn("text-[13px] [overflow-wrap:anywhere]", agrees ? "text-ok" : "text-alarm")}
+      >
+        <span className="font-semibold">{r.kitCheck}:</span>{" "}
+        {agrees ? r.kitAgrees : r.kitDisagrees(result.kitMismatches.join(", "))}
+      </p>
     </div>
   );
 }
@@ -340,7 +341,8 @@ function Decoded({ result, vault, motion }: { result: Recomputed; vault: Vault; 
     result.rows.find((row) => row.kind === kind)?.number ?? null;
   const guardians = numberOf("guardian_count") ?? vault.policy.guardians.length;
   const timelock = numberOf("timelock") ?? vault.policy.escape_timelock_blocks;
-  const rules = r.pathRules(guardians, blocksOf(timelock));
+  const threshold = numberOf("threshold") ?? 1;
+  const rules = r.pathRules(threshold, guardians, blocksOf(timelock));
   return (
     <div className="flex min-w-0 flex-col gap-2">
       <h3 className="text-label text-muted">{r.decoded(result.bytes.length)}</h3>

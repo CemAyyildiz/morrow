@@ -21,13 +21,29 @@ const COSIGNERS = { vault: `02${"c3".repeat(32)}`, allowance: `03${"d4".repeat(3
 const GUARDIAN_KEYS = [`02${"a1".repeat(32)}`, `03${"b2".repeat(32)}`];
 export const PROOF_TIMELOCK = 26_280;
 
+/** The contract's `push_number`: OP_0, OP_1..OP_16, else minimal little-endian CScriptNum. */
+function pushNumber(value: number): string {
+  if (value === 0) return "00";
+  if (value <= 16) return (0x50 + value).toString(16);
+  const bytes: number[] = [];
+  for (let rest = value; rest > 0; rest = Math.floor(rest / 256)) bytes.push(rest % 256);
+  if ((bytes.at(-1) as number) & 0x80) bytes.push(0);
+  const hex = (byte: number) => byte.toString(16).padStart(2, "0");
+  return hex(bytes.length) + bytes.map(hex).join("");
+}
+
 /**
- * The Vault Script for these keys, the contract's `build_vault_script` (core/script.rs) for
- * 2 Guardians and a 2-byte timelock: OP_IF <owner> OP_CHECKSIGVERIFY <cosigner> OP_CHECKSIG
- * OP_ELSE OP_IF <cosigner> OP_CHECKSIGVERIFY OP_1 <g1> <g2> OP_2 OP_CHECKMULTISIG OP_ELSE
- * <26,280> OP_CHECKSEQUENCEVERIFY OP_DROP <owner> OP_CHECKSIG OP_ENDIF OP_ENDIF.
+ * The Vault Script for these keys, the contract's `build_vault_script` (core/script.rs):
+ * OP_IF <owner> OP_CHECKSIGVERIFY <cosigner> OP_CHECKSIG OP_ELSE OP_IF <cosigner>
+ * OP_CHECKSIGVERIFY OP_1 <guardians…> <n> OP_CHECKMULTISIG OP_ELSE <timelock>
+ * OP_CHECKSEQUENCEVERIFY OP_DROP <owner> OP_CHECKSIG OP_ENDIF OP_ENDIF.
  */
-export function vaultScriptHex(owner: string, cosigner: string, guardians = GUARDIAN_KEYS) {
+export function vaultScriptHex(
+  owner: string,
+  cosigner: string,
+  guardians = GUARDIAN_KEYS,
+  timelock = PROOF_TIMELOCK,
+) {
   const push = (key: string) => `21${key}`;
   return [
     "63",
@@ -41,10 +57,10 @@ export function vaultScriptHex(owner: string, cosigner: string, guardians = GUAR
     "ad",
     "51",
     ...guardians.map(push),
-    "52",
+    pushNumber(guardians.length),
     "ae",
     "67",
-    "02a866",
+    pushNumber(timelock),
     "b2",
     "75",
     push(owner),
