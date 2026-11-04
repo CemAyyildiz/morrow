@@ -23,11 +23,17 @@ export {
 export type {
   AccountId,
   BtcNetwork,
+  Guardian,
+  GuardianKind,
   Hex,
   Outpoint,
+  Policy,
+  PolicyChange,
   PolicyChangeFields,
   SpendOpKind,
   U64,
+  Vault,
+  VaultState,
 } from "./contract/types.js";
 export { failureKind, txFailure, type TxFailure } from "./xray/failure.js";
 export type {

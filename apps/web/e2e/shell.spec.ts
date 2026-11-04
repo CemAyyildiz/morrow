@@ -2,7 +2,7 @@ import { expect, test, type Locator, type Page, type Request } from "@playwright
 import { BACKEND_URL, RPC_URL, WATCHER_URL } from "./services.ts";
 
 const NAV_ROUTES = ["/vault", "/challenge", "/guardians", "/policy", "/proof", "/x-ray"];
-const ROUTES = [...NAV_ROUTES, "/g/7/clawback", "/nope"];
+const ROUTES = [...NAV_ROUTES, "/proof/7", "/g/7/clawback", "/nope"];
 const NAV_LABELS = ["Vault", "Challenge", "Guardians", "Policy", "Proof", "X-Ray"];
 
 const INK = "rgb(243, 241, 236)";
@@ -222,7 +222,6 @@ test("other nav routes show the shell, a title and skeletons, without a primary 
     ["/vault", "Vault"],
     ["/guardians", "Guardians"],
     ["/policy", "Policy"],
-    ["/proof", "Proof"],
     ["/x-ray", "X-Ray"],
   ];
   for (const [path, title] of pages) {

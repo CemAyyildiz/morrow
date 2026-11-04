@@ -1,8 +1,8 @@
 import { useCallback, useRef, type MouseEvent } from "react";
 import { downloadKeys } from "@/app/challenge";
 import { useAppData } from "@/app/data";
-import { useRouter } from "@/app/router";
-import { HOME_PATH } from "@/app/routes";
+import { Link, useRouter } from "@/app/router";
+import { HOME_PATH, PROOF_PATH } from "@/app/routes";
 import { Cards } from "./Cards";
 import { Collage } from "./Collage";
 import { landingCopy } from "./copy";
@@ -122,7 +122,7 @@ export function Landing() {
           <a href="#app" onClick={rob}>
             {t.nav.rob}
           </a>
-          <a href="#why">{t.nav.proof}</a>
+          <Link to={PROOF_PATH}>{t.nav.proof}</Link>
           <a href={t.githubUrl} rel="noreferrer">
             {t.nav.github}
           </a>

@@ -1,0 +1,696 @@
+import { afterEach, describe, expect, it, vi } from "vitest";
+import type { Guardian, PolicyChange, Vault } from "@morrow/core-ts/browser";
+import { alerts } from "@/shell/SystemCard";
+import {
+  EVENTS_PAGE,
+  MAX_EVENT_PAGES,
+  canonicalVaultId,
+  changeLine,
+  changeSummary,
+  codeHashFrom,
+  firstCursorAtOrAfter,
+  formatAmount,
+  fullAccessKeysFrom,
+  guarantees,
+  parseEvents,
+  parseVault,
+  pendingFrom,
+  policyRows,
+  proofRpc,
+  readProof,
+  residualRisk,
+  rpcAnswer,
+  trustStatements,
+  vaultEvents,
+  withdrawalLine,
+  type EventPage,
+  type ProofEvent,
+  type ProofFacts,
+  type ProofRpc,
+  type RpcAnswer,
+  type StatementFacts,
+} from "./proof";
+import { resolveRoute } from "./routes";
+import { heldAfter } from "./useProof";
+import { copy } from "@/copy";
+
+/** Local wall-clock times, so the tests hold in any time zone. */
+const NOW = new Date(2026, 10, 12, 9, 0).getTime();
+const at = (day: number, hour: number, minute = 0) =>
+  new Date(2026, 10, day, hour, minute).getTime();
+const ns = (ms: number) => (BigInt(ms) * 1_000_000n).toString();
+const HOUR_NS = 3_600_000_000_000n;
+
+const RECOVERY = "tb1qrecoveryhomeaddress000000000000000000";
+const NEW_RECOVERY = "tb1qnewrecoveryaddress0000000000000000000";
+const TRUSTED: Guardian = {
+  guardian_key: `02${"aa".repeat(32)}`,
+  guardian_account: "alice.testnet",
+  kind: "trusted_contact",
+};
+const WATCHER: Guardian = {
+  guardian_key: `03${"bb".repeat(32)}`,
+  guardian_account: "watcher.morrow.testnet",
+  kind: "auto_clawback",
+};
+
+/** Vault #7 of the matrix: 24 h / 7 d / 26,280 blocks, a Trusted Contact and a watcher. */
+function vault(overrides: Partial<Vault> = {}, policy: Partial<Vault["policy"]> = {}): Vault {
+  return {
+    vault_id: "7",
+    owner_account: "owner.testnet",
+    owner_key: `02${"11".repeat(32)}`,
+    policy: {
+      delay_ns: (24n * HOUR_NS).toString(),
+      policy_change_delay_ns: (7n * 24n * HOUR_NS).toString(),
+      escape_timelock_blocks: 26_280,
+      recovery_address: RECOVERY,
+      allowance_limit_sats: "100000",
+      fee_cap_sats: "20000",
+      fast_approval: false,
+      fast_approval_floor_ns: HOUR_NS.toString(),
+      guardians: [TRUSTED, WATCHER],
+      btc_network: "signet",
+      watcher_x25519_pk: "cc".repeat(32),
+      ...policy,
+    },
+    state: "active",
+    cosigner_pubkeys: { vault: `02${"dd".repeat(32)}`, allowance: `03${"ee".repeat(32)}` },
+    addresses: { vault: "tb1qvaultaddress", allowance: "tb1qallowanceaddress" },
+    storage_balance: "5000000000000000000000",
+    created_at: ns(at(10, 8)),
+    pending_change: null,
+    ...overrides,
+  };
+}
+
+const CHANGE: PolicyChange = {
+  change_id: "4",
+  vault_id: "7",
+  changes: { recovery_address: NEW_RECOVERY },
+  proposed_at: ns(at(4, 9)),
+  effective_at: ns(at(11, 9)),
+  state: "pending",
+  vetoed_by: null,
+};
+
+const FACTS: StatementFacts = {
+  now: NOW,
+  contractId: "vault.morrow.testnet",
+  coSigner: "v1.signer-prod.testnet",
+  codeHash: "9fQfdZ8sTLoJ8JKXqi4hpcXpDa5k5Ky3HQeQyh4Bh8WG",
+  withdrawals: [],
+};
+
+let seqs = 0;
+function event(kind: string, data: Record<string, unknown>, time = at(11, 10), vaultId = "7") {
+  seqs += 1;
+  return { seq: String(seqs), block_timestamp: ns(time), vault_id: vaultId, kind, data };
+}
+
+const requested = (opId: string, amount = "60000", executable = at(13, 14, 2)) =>
+  event("withdrawal_requested", {
+    op_id: opId,
+    amount_sats: amount,
+    destination: "tb1qthief",
+    executable_at: ns(executable),
+    utxos: [],
+    envelope: "00".repeat(80),
+  });
+
+describe("get_vault", () => {
+  it("reads the contract's Vault view", () => {
+    const view = vault({ pending_change: CHANGE });
+    expect(parseVault(JSON.parse(JSON.stringify(view)))).toEqual(view);
+    expect(parseVault({ ...view, addresses: null, cosigner_pubkeys: null })?.addresses).toBeNull();
+  });
+
+  it("refuses other shapes", () => {
+    const view = vault();
+    expect(parseVault(null)).toBeNull();
+    expect(parseVault({ ...view, state: "open" })).toBeNull();
+    expect(parseVault({ ...view, created_at: 7 })).toBeNull();
+    expect(parseVault({ ...view, policy: { ...view.policy, delay_ns: 1 } })).toBeNull();
+    expect(
+      parseVault({
+        ...view,
+        policy: { ...view.policy, guardians: [{ ...TRUSTED, kind: "friend" }] },
+      }),
+    ).toBeNull();
+    expect(parseVault({ ...view, pending_change: { ...CHANGE, state: "maybe" } })).toBeNull();
+  });
+});
+
+describe("RPC answers", () => {
+  it("tells a contract error (a missing Vault) from a node that does not answer", () => {
+    expect(rpcAnswer({ result: { block_height: 1 } })).toEqual({
+      kind: "ok",
+      value: { block_height: 1 },
+    });
+    expect(
+      rpcAnswer({
+        error: {
+          name: "HANDLER_ERROR",
+          cause: { name: "CONTRACT_EXECUTION_ERROR", info: {} },
+          data: "Smart contract panicked: ERR_VAULT_NOT_FOUND",
+        },
+      }).kind,
+    ).toBe("error");
+    expect(rpcAnswer({ result: { error: "wasm execution failed: ERR_VAULT_NOT_FOUND" } })).toEqual({
+      kind: "error",
+      text: "wasm execution failed: ERR_VAULT_NOT_FOUND",
+    });
+    expect(
+      rpcAnswer({ error: { name: "INTERNAL_ERROR", cause: { name: "TIMEOUT_ERROR" } } }),
+    ).toEqual({ kind: "unreachable" });
+    expect(rpcAnswer("nope")).toEqual({ kind: "unreachable" });
+    expect(rpcAnswer({ id: 1 })).toEqual({ kind: "unreachable" });
+  });
+
+  afterEach(() => vi.unstubAllGlobals());
+
+  it("sends final view calls and queries to the RPC, and treats a failed fetch as unreachable", async () => {
+    const bodies: unknown[] = [];
+    const fetchMock = vi.fn(async (_url: string, init: RequestInit) => {
+      bodies.push(JSON.parse(String(init.body)));
+      const value = [...new TextEncoder().encode(JSON.stringify({ ok: 1 }))];
+      return new Response(JSON.stringify({ jsonrpc: "2.0", id: 1, result: { result: value } }));
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    const rpc = proofRpc(
+      "https://rpc.example.org",
+      "vault.morrow.testnet",
+      new AbortController().signal,
+    );
+    expect(await rpc.view("get_vault", { vault_id: "7" })).toEqual({
+      kind: "ok",
+      value: { ok: 1 },
+    });
+    await rpc.query({ request_type: "view_account", account_id: "vault.morrow.testnet" });
+    expect(bodies).toEqual([
+      {
+        jsonrpc: "2.0",
+        id: "morrow-web",
+        method: "query",
+        params: {
+          finality: "final",
+          request_type: "call_function",
+          account_id: "vault.morrow.testnet",
+          method_name: "get_vault",
+          args_base64: btoa('{"vault_id":"7"}'),
+        },
+      },
+      {
+        jsonrpc: "2.0",
+        id: "morrow-web",
+        method: "query",
+        params: {
+          finality: "final",
+          request_type: "view_account",
+          account_id: "vault.morrow.testnet",
+        },
+      },
+    ]);
+
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => Promise.reject(new TypeError("offline"))),
+    );
+    expect(await rpc.view("get_vault", { vault_id: "7" })).toEqual({ kind: "unreachable" });
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => new Response("bad gateway", { status: 502 })),
+    );
+    expect(await rpc.query({ request_type: "view_account" })).toEqual({ kind: "unreachable" });
+  });
+});
+
+describe("view_account and view_access_key_list", () => {
+  it("reads the code_hash", () => {
+    expect(codeHashFrom({ code_hash: FACTS.codeHash, amount: "1" })).toBe(FACTS.codeHash);
+    expect(codeHashFrom({ code_hash: "not base58 0OIl" })).toBeNull();
+    expect(codeHashFrom(null)).toBeNull();
+  });
+
+  const fn = { access_key: { nonce: 1, permission: { FunctionCall: { allowance: null } } } };
+  const full = { access_key: { nonce: 1, permission: "FullAccess" } };
+
+  it("counts full-access keys: none is locked", () => {
+    expect(fullAccessKeysFrom({ keys: [fn] })).toBe(0);
+    expect(fullAccessKeysFrom({ keys: [] })).toBe(0);
+    expect(fullAccessKeysFrom({ keys: [fn, full] })).toBe(1);
+    expect(fullAccessKeysFrom({ keys: [{ access_key: { permission: "Other" } }] })).toBeNull();
+    expect(fullAccessKeysFrom({})).toBeNull();
+  });
+
+  it("words the lock state", () => {
+    expect(copy.proof.locked).toBe("Locked: no full-access keys");
+    expect(copy.proof.unlocked(1)).toBe("Unlocked: 1 full-access key");
+    expect(copy.proof.unlocked(2)).toBe("Unlocked: 2 full-access keys");
+  });
+});
+
+describe("the event scan", () => {
+  /** A contract-global log: `before` events of Vault 42, then Vault 7's from `created`. */
+  function log(before: number, mine: ProofEvent[], after = 0): ProofEvent[] {
+    const all: ProofEvent[] = [];
+    for (let i = 0; i < before; i++) {
+      all.push({
+        seq: "0",
+        block_timestamp: ns(at(1, 0) + i),
+        vault_id: "42",
+        kind: "storage_topped_up",
+        data: { amount_yocto: "1" },
+      });
+    }
+    all.push(...mine);
+    for (let i = 0; i < after; i++) {
+      all.push({
+        seq: "0",
+        block_timestamp: ns(at(12, 8) + i),
+        vault_id: "42",
+        kind: "storage_topped_up",
+        data: { amount_yocto: "1" },
+      });
+    }
+    return all.map((e, i) => ({ ...e, seq: String(i + 1) }));
+  }
+
+  /** `events_since` over `all`: `seq > cursor`, at most `limit`, counting calls. */
+  function pageOver(all: ProofEvent[]) {
+    const calls: [bigint, number][] = [];
+    const page: EventPage = async (cursor, limit) => {
+      calls.push([cursor, limit]);
+      return all.filter((e) => BigInt(e.seq) > cursor).slice(0, limit);
+    };
+    return { page, calls };
+  }
+
+  const created = BigInt(ns(at(10, 8)));
+
+  it("finds the first seq at or after created_at by binary search", async () => {
+    const mine = [event("vault_created", { owner_account: "o" }, at(10, 8))];
+    for (const before of [0, 1, 2, 3, 130, 1000]) {
+      const { page, calls } = pageOver(log(before, mine));
+      expect(await firstCursorAtOrAfter(page, created)).toBe(BigInt(before));
+      expect(calls.length).toBeLessThan(2 * Math.log2(before + 2) + 4);
+      expect(calls.every(([, limit]) => limit === 1)).toBe(true);
+    }
+    // Past the end: nothing at or after.
+    const { page } = pageOver(log(5, []));
+    expect(await firstCursorAtOrAfter(page, created)).toBe(5n);
+  });
+
+  it("keeps only this Vault's events, in pages of 100", async () => {
+    const mine = [event("vault_created", {}, at(10, 8)), requested("3")];
+    const all = log(130, mine, 250);
+    const { page, calls } = pageOver(all);
+    const { events, truncated } = await vaultEvents(page, "7", 130n);
+    expect(events.map((e) => e.kind)).toEqual(["vault_created", "withdrawal_requested"]);
+    expect(truncated).toBe(false);
+    expect(calls.map(([cursor, limit]) => [Number(cursor), limit])).toEqual([
+      [130, EVENTS_PAGE],
+      [230, EVENTS_PAGE],
+      [330, EVENTS_PAGE],
+    ]);
+  });
+
+  it("stops after 50 pages and says the history is truncated", async () => {
+    const mine = [requested("3")];
+    const all = log(0, mine, MAX_EVENT_PAGES * EVENTS_PAGE + 5);
+    const { page } = pageOver(all);
+    const result = await vaultEvents(page, "7", 0n);
+    expect(result.truncated).toBe(true);
+    expect(result.events).toHaveLength(1);
+    // Exactly 50 full pages and nothing more is the whole history.
+    const exact = pageOver(log(0, mine, MAX_EVENT_PAGES * EVENTS_PAGE - 1));
+    expect((await vaultEvents(exact.page, "7", 0n)).truncated).toBe(false);
+  });
+
+  it("reads events_since entries and refuses other shapes", () => {
+    const e = requested("3");
+    expect(parseEvents([e])).toEqual([e]);
+    expect(parseEvents([{ ...e, seq: 3 }])).toBeNull();
+    expect(parseEvents({})).toBeNull();
+  });
+});
+
+describe("pending ops from events", () => {
+  it("lists a request with no later terminal event", () => {
+    const { withdrawals, clawedBack } = pendingFrom([requested("3")]);
+    expect(withdrawals).toHaveLength(1);
+    expect(withdrawalLine(withdrawals[0]!, "signet", NOW)).toBe(
+      "Withdrawal #3 · 0.0006 sBTC · executable 13 Nov 14:02",
+    );
+    expect(withdrawals[0]!.destination).toBe("tb1qthief");
+    expect(clawedBack).toBeNull();
+  });
+
+  it("takes executable_at from a later fast_approved", () => {
+    const { withdrawals } = pendingFrom([
+      requested("3"),
+      event("fast_approved", { op_id: "3", by: "alice.testnet", executable_at: ns(at(12, 15)) }),
+    ]);
+    expect(withdrawalLine(withdrawals[0]!, "signet", NOW)).toBe(
+      "Withdrawal #3 · 0.0006 sBTC · executable 15:00",
+    );
+  });
+
+  it("keeps a Frozen request until it is signed", () => {
+    const frozen = pendingFrom([
+      requested("3"),
+      event("op_frozen", { op_id: "3", kind: "withdrawal", envelope: null, fee_sats: "300" }),
+    ]);
+    expect(frozen.withdrawals.map((op) => [op.opId, op.frozen])).toEqual([["3", true]]);
+  });
+
+  it.each([
+    ["op_voided", { op_id: "3", by_op_id: "9" }],
+    ["withdrawal_cancelled", { op_id: "3", by: "owner.testnet" }],
+    ["op_signed", { op_id: "3" }],
+  ])("drops a request settled by %s", (kind, data) => {
+    const { withdrawals } = pendingFrom([requested("3"), requested("5"), event(kind, data)]);
+    expect(withdrawals.map((op) => op.opId)).toEqual(["5"]);
+  });
+
+  it("reads the Clawback from vault_clawed_back", () => {
+    const { clawedBack } = pendingFrom([
+      event(
+        "vault_clawed_back",
+        { op_id: "9", by: "watcher", recovery_address: RECOVERY },
+        at(12, 3, 4),
+      ),
+    ]);
+    expect(clawedBack).toEqual({ recoveryAddress: RECOVERY, at: ns(at(12, 3, 4)) });
+    expect(copy.proof.clawedBack(RECOVERY, "03:04")).toBe(`Sent home to ${RECOVERY} · 03:04`);
+  });
+});
+
+describe("display", () => {
+  it("formats amounts without trailing zeros, in the Vault's unit", () => {
+    expect(formatAmount("60000", "signet")).toBe("0.0006 sBTC");
+    expect(formatAmount("100000000", "bitcoin")).toBe("1 BTC");
+    expect(formatAmount("0", "testnet4")).toBe("0 tBTC");
+    expect(formatAmount("123456789", "regtest")).toBe("1.23456789 rBTC");
+  });
+
+  it("shows every Policy row with the Vault's values", () => {
+    expect(policyRows(vault().policy).map((row) => [row.label, row.value])).toEqual([
+      ["Delay", "24 h"],
+      ["Policy Change Delay", "7 d"],
+      ["Escape Timelock", "26,280 blocks"],
+      ["Recovery Address", RECOVERY],
+      ["Allowance limit", "0.001 sBTC per 24 h"],
+      ["Fee Cap", "0.0002 sBTC"],
+      ["Fast Approval", "Off"],
+    ]);
+    expect(policyRows(vault({}, { fast_approval: true }).policy)[6]!.value).toBe("On · Floor 1 h");
+  });
+
+  it("words the pending Policy Change with its absolute effective time", () => {
+    expect(changeLine(CHANGE, "signet", NOW)).toBe(
+      `Policy Change #4 · Recovery Address → ${NEW_RECOVERY} · effective 11 Nov 09:00`,
+    );
+    expect(
+      changeSummary(
+        {
+          delay_ns: (48n * HOUR_NS).toString(),
+          fast_approval: true,
+          fast_approval_floor_ns: HOUR_NS.toString(),
+          fee_cap_sats: "5000",
+        },
+        "signet",
+      ),
+    ).toBe(
+      "Delay → 48 h · Fee Cap → 0.00005 sBTC · Fast Approval → on · Fast Approval Floor → 1 h",
+    );
+  });
+
+  it("puts the heartbeat in the Alerts line, alarm after 5 min or unreachable", () => {
+    expect(alerts({ kind: "seen", minutes: 2, stale: false })).toEqual({
+      text: "Alerts: watcher last seen 2 min ago",
+      ok: true,
+      alarm: false,
+    });
+    expect(alerts({ kind: "seen", minutes: 7, stale: true }).alarm).toBe(true);
+    expect(alerts({ kind: "unreachable" })).toMatchObject({
+      text: "Alerts: watcher unreachable",
+      alarm: true,
+    });
+  });
+});
+
+describe("statements", () => {
+  const ids = (list: { id: string }[]) => list.map((s) => s.id);
+  const text = (list: { id: string; text: string }[], id: string) =>
+    list.find((s) => s.id === id)?.text;
+
+  it("an active Vault with an Auto-Clawback Guardian, Fast Approval off: G-1..G-4, T-1..T-4, T-6", () => {
+    const v = vault();
+    const g = guarantees(v, FACTS);
+    const t = trustStatements(v, FACTS);
+    expect(ids(g)).toEqual(["G-1", "G-2", "G-3", "G-4"]);
+    expect(ids(t)).toEqual(["T-1", "T-2", "T-3", "T-4", "T-6"]);
+    expect(residualRisk(v)).toBeNull();
+
+    expect(text(g, "G-1")).toBe(
+      "A withdrawal waits 24 h. Before a coin's Escape Timelock of 26,280 blocks matures, no bitcoin leaves the Vault Address sooner than 24 h after its Withdrawal Request, except back to the Vault Address (Refresh) or to the Recovery Address (Clawback). A thief holding both the Owner Key and the Owner Account still waits 24 h. The Spending Allowance pays up to 0.001 sBTC per 24 h without the Delay.",
+    );
+    expect(text(g, "G-2")).toBe(
+      `Until a withdrawal executes, any of the 2 Guardians (alice.testnet, watcher.morrow.testnet) can send the whole Vault to the Recovery Address. Clawback pays only ${RECOVERY}.`,
+    );
+    expect(text(g, "G-3")).toBe(
+      "The Co-signer cannot spend alone on any path. If NEAR or the Co-signer stops, the Owner Key alone can spend each coin 26,280 blocks (about 182 d 12 h) after it confirmed, using only Bitcoin.",
+    );
+    expect(text(g, "G-4")).toBe(
+      `No Policy field changes sooner than 7 d after it is proposed, and the Guardians and the Escape Timelock never change for this Vault. Every Guardian is alerted and can veto. A Clawback during a pending change pays the Recovery Address in effect, ${RECOVERY}.`,
+    );
+    expect(text(t, "T-1")).toBe(
+      "The NEAR MPC network behind v1.signer-prod.testnet signs only what vault.morrow.testnet requests, and stays live. If it stops, G-3 still holds through the Escape Path, and G-1 and G-2 pause until it recovers.",
+    );
+    expect(text(t, "T-2")).toBe(
+      `The code deployed at vault.morrow.testnet is correct. It is open source, and its code_hash ${FACTS.codeHash} is read from NEAR so anyone can match it to a build.`,
+    );
+    expect(text(t, "T-3")).toBe(
+      "A Guardian and the NEAR MPC network do not collude. If one of the 2 Guardians (alice.testnet, watcher.morrow.testnet) and the network behind v1.signer-prod.testnet do, they can sign a Clawback Path spend to any address, because Bitcoin script cannot restrict destinations. This is the one theft path.",
+    );
+    expect(text(t, "T-4")).toBe(`The Owner keeps the private key of ${RECOVERY} safe and offline.`);
+    expect(text(t, "T-6")).toBe(
+      `The Guardian Watcher holding the key of watcher.morrow.testnet stays live and uncompromised. If it is down, alerts and duress Clawbacks stop, but G-1 still holds and human Guardians can still claw back; the Alerts line on this page shows when it was last seen. If it is compromised, it can claw back to ${RECOVERY} only: theft also needs the MPC network (T-3).`,
+    );
+  });
+
+  it("T-1 names the configured Co-signer and makes no threshold claim", () => {
+    const t1 = text(trustStatements(vault(), { ...FACTS, coSigner: "v1.signer" }), "T-1");
+    expect(t1).toContain("v1.signer ");
+    expect(t1).not.toMatch(/\d+ of \d+|threshold/);
+  });
+
+  it("without an Auto-Clawback Guardian: no T-6, and the plain residual-risk sentence", () => {
+    const v = vault({}, { guardians: [TRUSTED] });
+    expect(ids(trustStatements(v, FACTS))).toEqual(["T-1", "T-2", "T-3", "T-4"]);
+    expect(residualRisk(v)).toBe(
+      "This Vault has no Auto-Clawback Guardian, so a Recovery Address change is stopped only by a Guardian veto within 7 d.",
+    );
+  });
+
+  it("with Fast Approval on: T-5 with the Floor, and G-1 says so", () => {
+    const v = vault({}, { fast_approval: true });
+    const t = trustStatements(v, FACTS);
+    expect(ids(t)).toEqual(["T-1", "T-2", "T-3", "T-4", "T-5", "T-6"]);
+    expect(text(t, "T-5")).toBe(
+      "Fast Approval is on. A Trusted Contact (alice.testnet) does not collude with, or get fooled by, a thief who holds the Owner Key and the Owner Account. If one does, the theft completes after the Fast Approval Floor of 1 h instead of 24 h.",
+    );
+    expect(text(guarantees(v, FACTS), "G-1")).toContain(
+      "Fast Approval is on: a Trusted Contact can shorten the wait to the Fast Approval Floor of 1 h.",
+    );
+  });
+
+  it("follows the Vault's values: a changed field changes the sentence", () => {
+    const v = vault(
+      {},
+      {
+        delay_ns: (48n * HOUR_NS).toString(),
+        allowance_limit_sats: "0",
+        escape_timelock_blocks: 1000,
+        guardians: [WATCHER],
+      },
+    );
+    const g = guarantees(v, FACTS);
+    expect(text(g, "G-1")).toMatch(
+      /^A withdrawal waits 48 h\. Before a coin's Escape Timelock of 1,000 blocks/,
+    );
+    expect(text(g, "G-1")).toContain(
+      "The Spending Allowance is 0, so every spend waits the Delay.",
+    );
+    expect(text(g, "G-2")).toContain("any of the 1 Guardian (watcher.morrow.testnet)");
+    expect(text(g, "G-3")).toContain("1,000 blocks (about 6 d 22 h)");
+  });
+
+  it("states the earliest pending executable_at and the pending change's effective time", () => {
+    const { withdrawals } = pendingFrom([
+      requested("3", "60000", at(13, 14, 2)),
+      requested("5", "1000", at(13, 9, 30)),
+    ]);
+    const g = guarantees(vault({ pending_change: CHANGE }), { ...FACTS, withdrawals });
+    expect(text(g, "G-1")).toMatch(/No pending withdrawal can be signed before 13 Nov 09:30\.$/);
+    expect(text(g, "G-4")).toMatch(/Policy Change #4 cannot take effect before 11 Nov 09:00\.$/);
+  });
+
+  it("always states T-3, and T-2 without a readable code_hash", () => {
+    for (const guardians of [[TRUSTED], [WATCHER], [TRUSTED, WATCHER]]) {
+      expect(ids(trustStatements(vault({}, { guardians }), FACTS))).toContain("T-3");
+    }
+    expect(text(trustStatements(vault(), { ...FACTS, codeHash: null }), "T-2")).toBe(
+      "The code deployed at vault.morrow.testnet is correct. It is open source; its code_hash could not be read on this refresh.",
+    );
+  });
+});
+
+describe("one refresh", () => {
+  /** A fake contract over `events`, answering `get_vault` with `view` (or the error). */
+  function fakeRpc(
+    view: Vault | "missing" | "down",
+    events: ProofEvent[],
+    keys: unknown[] = [{ access_key: { permission: { FunctionCall: {} } } }],
+  ) {
+    const calls: string[] = [];
+    const rpc: ProofRpc = {
+      async query(params): Promise<RpcAnswer<Record<string, unknown>>> {
+        calls.push(String(params.request_type));
+        if (view === "down") return { kind: "unreachable" };
+        if (params.request_type === "view_account") {
+          return { kind: "ok", value: { code_hash: FACTS.codeHash } };
+        }
+        return { kind: "ok", value: { keys } };
+      },
+      async view(method, args): Promise<RpcAnswer<unknown>> {
+        calls.push(method);
+        if (view === "down") return { kind: "unreachable" };
+        if (method === "get_vault") {
+          if (view === "missing") {
+            return { kind: "error", text: "Smart contract panicked: ERR_VAULT_NOT_FOUND" };
+          }
+          return { kind: "ok", value: JSON.parse(JSON.stringify(view)) };
+        }
+        const cursor = BigInt(String(args.cursor));
+        return {
+          kind: "ok",
+          value: events.filter((e) => BigInt(e.seq) > cursor).slice(0, Number(args.limit)),
+        };
+      },
+    };
+    return { rpc, calls };
+  }
+
+  const history = () => {
+    seqs = 0;
+    return [
+      event("vault_created", {}, at(1, 0), "42"),
+      event("vault_created", {}, at(10, 8)),
+      requested("3"),
+      requested("2"),
+      event(
+        "withdrawal_requested",
+        { op_id: "8", amount_sats: "1", executable_at: "1" },
+        at(11, 11),
+        "42",
+      ),
+      event("op_voided", { op_id: "2", by_op_id: "9" }),
+    ];
+  };
+
+  it("reads the Vault, its pending ops, the code_hash and the lock", async () => {
+    const { rpc } = fakeRpc(vault({ pending_change: CHANGE }), history());
+    const answer = await readProof(rpc, "vault.morrow.testnet", "7");
+    expect(answer.kind).toBe("ok");
+    if (answer.kind !== "ok") return;
+    expect(answer.facts.withdrawals.map((op) => op.opId)).toEqual(["3"]);
+    expect(answer.facts.codeHash).toBe(FACTS.codeHash);
+    expect(answer.facts.fullAccessKeys).toBe(0);
+    expect(answer.facts.truncated).toBe(false);
+    expect(answer.facts.vault.pending_change?.change_id).toBe("4");
+  });
+
+  it("counts an unlocked contract's full-access keys", async () => {
+    const { rpc } = fakeRpc(vault(), history(), [{ access_key: { permission: "FullAccess" } }]);
+    const answer = await readProof(rpc, "vault.morrow.testnet", "7");
+    expect(answer.kind === "ok" && answer.facts.fullAccessKeys).toBe(1);
+  });
+
+  it("runs the binary search once per Vault across refreshes", async () => {
+    const { rpc, calls } = fakeRpc(vault(), history());
+    const starts = new Map<string, bigint>();
+    await readProof(rpc, "vault.morrow.testnet", "7", starts);
+    const first = calls.length;
+    calls.length = 0;
+    await readProof(rpc, "vault.morrow.testnet", "7", starts);
+    expect(calls.length).toBeLessThan(first);
+    expect(starts.get(`7:${ns(at(10, 8))}`)).toBe(1n);
+  });
+
+  it("an unknown Vault is missing, with its error code verbatim", async () => {
+    const { rpc } = fakeRpc("missing", []);
+    expect(await readProof(rpc, "vault.morrow.testnet", "999")).toEqual({
+      kind: "missing",
+      code: "ERR_VAULT_NOT_FOUND",
+    });
+    expect(copy.proof.missing("999", "vault.morrow.testnet")).toBe(
+      "No Vault #999 on vault.morrow.testnet",
+    );
+  });
+
+  it("an RPC that does not answer is unreachable, mid-scan too", async () => {
+    expect(await readProof(fakeRpc("down", []).rpc, "c", "7")).toEqual({ kind: "unreachable" });
+    const { rpc } = fakeRpc(vault(), history());
+    const flaky: ProofRpc = {
+      query: rpc.query,
+      view: async (method, args) =>
+        method === "events_since" ? { kind: "unreachable" } : rpc.view(method, args),
+    };
+    expect(await readProof(flaky, "c", "7")).toEqual({ kind: "unreachable" });
+  });
+
+  it("keeps the last data after a failure, marked stale; without any it is unreachable", () => {
+    const facts = { vault: vault() } as ProofFacts;
+    const ok = heldAfter(null, "7", { kind: "ok", facts }, NOW);
+    expect(ok.state).toEqual({ kind: "ok", facts, now: NOW, stale: false });
+    expect(heldAfter(ok, "7", { kind: "unreachable" }, NOW + 1).state).toEqual({
+      kind: "ok",
+      facts,
+      now: NOW,
+      stale: true,
+    });
+    expect(heldAfter(null, "7", { kind: "unreachable" }, NOW).state).toEqual({
+      kind: "unreachable",
+    });
+    // Another Vault's data is never kept for this one.
+    expect(heldAfter(ok, "8", { kind: "unreachable" }, NOW).state).toEqual({ kind: "unreachable" });
+  });
+});
+
+describe("routes", () => {
+  it("resolves /proof/<digits> to the Proof item with the Vault id", () => {
+    const resolved = resolveRoute("/proof/7");
+    expect(resolved.kind === "nav" && [resolved.route.id, resolved.vaultId]).toEqual([
+      "proof",
+      "7",
+    ]);
+    const padded = resolveRoute("/proof/007/");
+    expect(padded.kind === "nav" && padded.vaultId).toBe("7");
+    const bare = resolveRoute("/proof");
+    expect(bare.kind === "nav" && [bare.route.id, bare.vaultId]).toEqual(["proof", undefined]);
+  });
+
+  it.each(["/proof/abc", "/proof/7/extra", "/proof/-1", "/proof/99999999999999999999"])(
+    "%s is not found",
+    (path) => expect(resolveRoute(path).kind).toBe("not-found"),
+  );
+
+  it("takes only u64 ids", () => {
+    expect(canonicalVaultId("18446744073709551615")).toBe("18446744073709551615");
+    expect(canonicalVaultId("18446744073709551616")).toBeNull();
+    expect(canonicalVaultId("7a")).toBeNull();
+    expect(canonicalVaultId("")).toBeNull();
+  });
+});

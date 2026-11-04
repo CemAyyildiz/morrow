@@ -2,8 +2,11 @@ import type { AppConfig, HeartbeatState } from "@/app/data";
 import { copy } from "@/copy";
 import { cn } from "@/lib/utils";
 
-/** The Alerts line: healthy only on a fresh heartbeat; alarm unless still checking. */
-function alerts(heartbeat: HeartbeatState): { text: string; ok: boolean; alarm: boolean } {
+/**
+ * The Alerts line: healthy only on a fresh heartbeat; alarm unless still checking. The Proof
+ * Page shows the same line.
+ */
+export function alerts(heartbeat: HeartbeatState): { text: string; ok: boolean; alarm: boolean } {
   switch (heartbeat.kind) {
     case "seen":
       return {

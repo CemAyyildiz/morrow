@@ -6,6 +6,7 @@ import { AppShell } from "@/shell/AppShell";
 import { ChallengeView } from "@/views/ChallengeView";
 import { NotFoundView } from "@/views/NotFoundView";
 import { PlaceholderView } from "@/views/PlaceholderView";
+import { ProofView } from "@/views/ProofView";
 import { useRouter } from "./router";
 import { resolveRoute } from "./routes";
 
@@ -40,6 +41,8 @@ export function App() {
         <NotFoundView path={resolved.path} />
       ) : resolved.route.id === "challenge" ? (
         <ChallengeView />
+      ) : resolved.route.id === "proof" ? (
+        <ProofView vaultId={resolved.vaultId ?? null} />
       ) : (
         <PlaceholderView title={resolved.route.title} />
       )}

@@ -63,15 +63,29 @@ test("each beat links its source in a new tab", async ({ page }) => {
   await expect(story(page).locator("ol a")).toHaveCount(SOURCES.length);
 });
 
-test("only live doors show: today, Rob this vault", async ({ page }) => {
+test("only live doors show: today, Rob this vault and Read the proof", async ({ page }) => {
   await open(page);
   const doors = page.getByTestId("story-doors");
-  await expect(doors.getByRole("link")).toHaveCount(1);
+  await expect(doors.getByRole("link")).toHaveCount(2);
   await expect(doors.getByRole("link", { name: /^Rob this vault/ })).toHaveAttribute(
     "href",
     "#app",
   );
-  await expect(doors.getByRole("link", { name: /Create a vault|Read the proof/ })).toHaveCount(0);
+  await expect(doors.getByRole("link", { name: /^Read the proof/ })).toHaveAttribute(
+    "href",
+    "/proof",
+  );
+  await expect(doors.getByRole("link", { name: /Create a vault/ })).toHaveCount(0);
+});
+
+test('the "Read the proof" door opens the Proof Page in place', async ({ page }) => {
+  await open(page);
+  await page
+    .getByTestId("story-doors")
+    .getByRole("link", { name: /^Read the proof/ })
+    .click();
+  await expect(page).toHaveURL(/\/proof$/);
+  await expect(page.getByRole("heading", { level: 1 })).toHaveText("Proof");
 });
 
 test('the "Rob this vault" door jumps to the product end of the dive', async ({ page }, info) => {

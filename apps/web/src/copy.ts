@@ -229,6 +229,151 @@ export const copy = {
     announce: (title: string, detail: string) => `${title}: ${detail}`,
   },
 
+  /**
+   * The Proof Page (story 6.1). Every value comes from the chain; the guarantee and trust
+   * templates take the Vault's own values, so no statement is generic.
+   */
+  proof: {
+    vaultChip: (id: string) => `vault #${id}`,
+    liveRound: (round: number) => `challenge round ${round}`,
+    loading: "Reading the Vault from NEAR",
+    states: { pending_keys: "pending keys", active: "active", clawed_back: "clawed back" },
+    guardianKinds: {
+      trusted_contact: "Trusted Contact",
+      backup_device: "Backup Device",
+      auto_clawback: "Auto-Clawback Guardian",
+    },
+    sections: {
+      policy: "Policy",
+      vault: "Vault",
+      addresses: "Addresses",
+      pending: "Pending",
+      contract: "Contract",
+      guarantees: "Guarantees",
+      trust: "Trust assumptions",
+    },
+    rows: {
+      delay: "Delay",
+      policyChangeDelay: "Policy Change Delay",
+      escapeTimelock: "Escape Timelock",
+      recoveryAddress: "Recovery Address",
+      allowanceLimit: "Allowance limit",
+      feeCap: "Fee Cap",
+      fastApproval: "Fast Approval",
+      guardians: "Guardians",
+      perDay: (amount: string) => `${amount} per 24 h`,
+      fastOn: (floor: string) => `On · Floor ${floor}`,
+      fastOff: "Off",
+      state: "State",
+      owner: "Owner Account",
+      created: "Created",
+      network: "Bitcoin network",
+      vaultAddress: "Vault Address",
+      allowanceAddress: "Allowance Address",
+      notActive: "Not active yet: its Co-signer keys are still being derived.",
+      codeHash: "code_hash",
+      contract: "Contract",
+      lock: "Lock",
+      alerts: "Alerts",
+    },
+    pendingWithdrawal: (op: string, amount: string, at: string) =>
+      `Withdrawal #${op} · ${amount} · executable ${at}`,
+    destination: (address: string) => `to ${address}`,
+    frozen: "frozen",
+    pendingChange: (id: string, changes: string, at: string) =>
+      `Policy Change #${id} · ${changes} · effective ${at}`,
+    noPending: "No Withdrawal Request or Policy Change is pending.",
+    truncated: (pages: number) =>
+      `History truncated: only ${pages} pages of 100 events after this Vault's creation were read, so a pending request may be missing here.`,
+    change: {
+      field: (label: string, value: string) => `${label} → ${value}`,
+      delay: "Delay",
+      policyChangeDelay: "Policy Change Delay",
+      recoveryAddress: "Recovery Address",
+      allowanceLimit: "Allowance limit",
+      feeCap: "Fee Cap",
+      fastApproval: "Fast Approval",
+      fastApprovalFloor: "Fast Approval Floor",
+      on: "on",
+      off: "off",
+      none: "no field",
+    },
+    locked: "Locked: no full-access keys",
+    unlocked: (count: number) => `Unlocked: ${plural(count, "full-access key")}`,
+    lockUnknown: "Lock status could not be read",
+    unread: "could not be read",
+    explorer: "NearBlocks",
+    explorerLabel: (contract: string) => `${contract} on NearBlocks (opens in a new tab)`,
+    clawedBack: (recovery: string, at: string) => `Sent home to ${recovery} · ${at}`,
+    clawedBackUntimed: (recovery: string) => `Sent home to ${recovery}`,
+    missing: (id: string, contract: string) => `No Vault #${id} on ${contract}`,
+    missingBody: "The contract has no Vault with this id. Vault ids are the numbers it assigns.",
+    unreachable: "Could not reach NEAR",
+    unreachableBody:
+      "Every value on this page is read from the NEAR RPC, and it did not answer. The page asks again every 30 seconds.",
+    stale:
+      "Could not reach NEAR. The values below are from the last read that answered; the page asks again every 30 seconds.",
+    retry: "Retry",
+    noRpc: "No NEAR RPC configured",
+    noRpcBody: "This deployment has no NEAR RPC, so the page cannot read any Vault from the chain.",
+    open: {
+      title: "Open a Vault by id",
+      body: (contract: string) =>
+        `No Challenge round is open. Enter the id of any Vault on ${contract} to read its rules from the chain.`,
+      label: "Vault id",
+      submit: "Open",
+      invalid: "A Vault id is digits only, for example 7.",
+    },
+    guaranteesIntro: "What the contract and the Vault Script enforce for this Vault.",
+    trustIntro: "What these guarantees rely on.",
+    guarantees: {
+      g1Title: "No instant theft",
+      g1: (delay: string, blocks: string) =>
+        `A withdrawal waits ${delay}. Before a coin's Escape Timelock of ${blocks} matures, no bitcoin leaves the Vault Address sooner than ${delay} after its Withdrawal Request, except back to the Vault Address (Refresh) or to the Recovery Address (Clawback). A thief holding both the Owner Key and the Owner Account still waits ${delay}.`,
+      g1Fast: (floor: string) =>
+        `Fast Approval is on: a Trusted Contact can shorten the wait to the Fast Approval Floor of ${floor}.`,
+      g1Allowance: (amount: string) =>
+        `The Spending Allowance pays up to ${amount} per 24 h without the Delay.`,
+      g1NoAllowance: "The Spending Allowance is 0, so every spend waits the Delay.",
+      g1Earliest: (at: string) => `No pending withdrawal can be signed before ${at}.`,
+      g2Title: "Safe-direction recovery",
+      g2: (count: number, guardians: string, recovery: string) =>
+        `Until a withdrawal executes, any of the ${plural(count, "Guardian")} (${guardians}) can send the whole Vault to the Recovery Address. Clawback pays only ${recovery}.`,
+      g3Title: "No hostage",
+      g3: (blocks: string, about: string) =>
+        `The Co-signer cannot spend alone on any path. If NEAR or the Co-signer stops, the Owner Key alone can spend each coin ${blocks} (about ${about}) after it confirmed, using only Bitcoin.`,
+      g4Title: "No silent rule changes",
+      g4: (delay: string, recovery: string) =>
+        `No Policy field changes sooner than ${delay} after it is proposed, and the Guardians and the Escape Timelock never change for this Vault. Every Guardian is alerted and can veto. A Clawback during a pending change pays the Recovery Address in effect, ${recovery}.`,
+      g4Pending: (id: string, at: string) =>
+        `Policy Change #${id} cannot take effect before ${at}.`,
+    },
+    trust: {
+      t1Title: "The MPC network signs only what the contract asks",
+      t1: (coSigner: string, contract: string) =>
+        `The NEAR MPC network behind ${coSigner} signs only what ${contract} requests, and stays live. If it stops, G-3 still holds through the Escape Path, and G-1 and G-2 pause until it recovers.`,
+      t2Title: "The contract code is correct",
+      t2: (contract: string, hash: string) =>
+        `The code deployed at ${contract} is correct. It is open source, and its code_hash ${hash} is read from NEAR so anyone can match it to a build.`,
+      t2Unread: (contract: string) =>
+        `The code deployed at ${contract} is correct. It is open source; its code_hash could not be read on this refresh.`,
+      t3Title: "The one theft path",
+      t3: (count: number, guardians: string, coSigner: string) =>
+        `A Guardian and the NEAR MPC network do not collude. If one of the ${plural(count, "Guardian")} (${guardians}) and the network behind ${coSigner} do, they can sign a Clawback Path spend to any address, because Bitcoin script cannot restrict destinations. This is the one theft path.`,
+      t4Title: "The Recovery Address key stays offline",
+      t4: (recovery: string) => `The Owner keeps the private key of ${recovery} safe and offline.`,
+      t5Title: "Trusted Contacts are not fooled",
+      t5: (contacts: string, floor: string, delay: string) =>
+        `Fast Approval is on. A Trusted Contact (${contacts}) does not collude with, or get fooled by, a thief who holds the Owner Key and the Owner Account. If one does, the theft completes after the Fast Approval Floor of ${floor} instead of ${delay}.`,
+      noTrustedContact: "none on this Vault",
+      t6Title: "The Guardian Watcher stays live",
+      t6: (watchers: string, recovery: string) =>
+        `The Guardian Watcher holding the key of ${watchers} stays live and uncompromised. If it is down, alerts and duress Clawbacks stop, but G-1 still holds and human Guardians can still claw back; the Alerts line on this page shows when it was last seen. If it is compromised, it can claw back to ${recovery} only: theft also needs the MPC network (T-3).`,
+    },
+    residual: (delay: string) =>
+      `This Vault has no Auto-Clawback Guardian, so a Recovery Address change is stopped only by a Guardian veto within ${delay}.`,
+  },
+
   placeholder: "This screen is not part of this build.",
 
   notFound: {

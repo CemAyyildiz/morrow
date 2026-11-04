@@ -51,9 +51,9 @@ describe("story doors", () => {
     ]);
   });
 
-  it("shows only the doors whose destination is live; today that is Rob this vault", () => {
-    expect([...LIVE_PATHS]).toEqual(["/challenge"]);
-    expect(ids(liveDoors())).toEqual(["rob"]);
+  it("shows only the doors whose destination is live; today Rob this vault and Read the proof", () => {
+    expect([...LIVE_PATHS]).toEqual(["/challenge", "/proof"]);
+    expect(ids(liveDoors())).toEqual(["rob", "proof"]);
   });
 
   it("adds a door once its path is flagged live, with no other change", () => {
@@ -86,6 +86,13 @@ describe("story doors, rendered", () => {
     const { items } = render(new Set(["/challenge"]));
     expect(items).toHaveLength(1);
     expect(items[0]).toContain('href="#app"');
+  });
+
+  it("draws Read the proof after Rob this vault with today's live paths", () => {
+    const { items } = render(LIVE_PATHS);
+    expect(items).toHaveLength(2);
+    expect(items[1]).toContain('href="/proof"');
+    expect(items[1]).toContain(landingCopy.story.doors.proof.label);
   });
 
   it("adds Create a vault after Rob this vault once /vault is live", () => {

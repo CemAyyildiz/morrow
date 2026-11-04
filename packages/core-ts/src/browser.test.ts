@@ -98,6 +98,60 @@ describe("@morrow/core-ts/browser", () => {
     }
   });
 
+  it("exports the get_vault view types for the Proof Page, as types only", () => {
+    const guardian: browser.Guardian = {
+      guardian_key: `02${"11".repeat(32)}`,
+      guardian_account: "g.testnet",
+      kind: "auto_clawback" satisfies browser.GuardianKind,
+    };
+    const change: browser.PolicyChange = {
+      change_id: "4",
+      vault_id: "7",
+      changes: { recovery_address: "tb1qnew" },
+      proposed_at: "1",
+      effective_at: "2",
+      state: "pending",
+      vetoed_by: null,
+    };
+    const policy: browser.Policy = {
+      delay_ns: "86400000000000",
+      policy_change_delay_ns: "604800000000000",
+      escape_timelock_blocks: 26_280,
+      recovery_address: "tb1qhome",
+      allowance_limit_sats: "0",
+      fee_cap_sats: "20000",
+      fast_approval: false,
+      fast_approval_floor_ns: "3600000000000",
+      guardians: [guardian],
+      btc_network: "signet",
+      watcher_x25519_pk: "33".repeat(32),
+    };
+    const vault: browser.Vault = {
+      vault_id: "7",
+      owner_account: "o.testnet",
+      owner_key: `02${"22".repeat(32)}`,
+      policy,
+      state: "active" satisfies browser.VaultState,
+      cosigner_pubkeys: null,
+      addresses: null,
+      storage_balance: "0",
+      created_at: "1",
+      pending_change: change,
+    };
+    expect(vault.pending_change?.changes.recovery_address).toBe("tb1qnew");
+    // Types leave nothing behind at run time.
+    for (const name of [
+      "Vault",
+      "Policy",
+      "Guardian",
+      "GuardianKind",
+      "VaultState",
+      "PolicyChange",
+    ]) {
+      expect(Object.keys(browser)).not.toContain(name);
+    }
+  });
+
   it("exports the same values as the full entry", () => {
     for (const name of Object.keys(browser)) {
       expect((everything as Record<string, unknown>)[name]).toBe(

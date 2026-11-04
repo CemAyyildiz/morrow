@@ -9,6 +9,7 @@ import {
   XRayIcon,
   type IconProps,
 } from "@/shell/icons";
+import { canonicalVaultId } from "./proof";
 import { normalizePath } from "./router";
 
 export type NavId = "vault" | "challenge" | "guardians" | "policy" | "proof" | "xray";
@@ -55,6 +56,9 @@ export const NAV_ROUTES: readonly NavRoute[] = [
 
 export const HOME_PATH = "/challenge";
 
+/** The Proof Page: the live Challenge Vault's proof, or a form to open any Vault by id. */
+export const PROOF_PATH = "/proof";
+
 /** The public landing (Epic 9), drawn full-bleed outside the app shell. */
 export const LANDING_PATH = "/";
 
@@ -67,8 +71,11 @@ export const REDIRECTS: Readonly<Record<string, string>> = { "/rob": HOME_PATH }
 export type ResolvedRoute =
   | { kind: "redirect"; to: string }
   | { kind: "landing" }
-  | { kind: "nav"; route: NavRoute }
+  /** `vaultId` is set on `/proof/<digits>`: the Proof Page of that Vault. */
+  | { kind: "nav"; route: NavRoute; vaultId?: string }
   | { kind: "not-found"; path: string };
+
+const PROOF_PARAM = /^\/proof\/(\d+)$/;
 
 export function resolveRoute(pathname: string): ResolvedRoute {
   const path = normalizePath(pathname);
@@ -76,12 +83,21 @@ export function resolveRoute(pathname: string): ResolvedRoute {
   if (to !== undefined) return { kind: "redirect", to };
   if (path === LANDING_PATH) return { kind: "landing" };
   const route = NAV_ROUTES.find((candidate) => candidate.path === path);
-  return route ? { kind: "nav", route } : { kind: "not-found", path };
+  if (route) return { kind: "nav", route };
+  // `/proof/<vault_id>`, shareable: the Proof nav item stays the current page.
+  const proof = PROOF_PARAM.exec(path);
+  const vaultId = proof?.[1] === undefined ? null : canonicalVaultId(proof[1]);
+  const proofRoute = NAV_ROUTES.find((candidate) => candidate.id === "proof");
+  if (vaultId !== null && proofRoute) return { kind: "nav", route: proofRoute, vaultId };
+  return { kind: "not-found", path };
 }
+
+/** The Proof Page of Vault `vaultId`. */
+export const proofPath = (vaultId: string) => `${PROOF_PATH}/${vaultId}`;
 
 /**
  * Product paths whose screen is real, not a placeholder. The landing's doors (Story 9.2) link
  * only to these, so a judge never lands on a stub: a story that ships its screen adds its path
  * here (1.11 `/vault`, 6.1 `/proof`) and its door appears.
  */
-export const LIVE_PATHS: ReadonlySet<string> = new Set(["/challenge"]);
+export const LIVE_PATHS: ReadonlySet<string> = new Set(["/challenge", "/proof"]);

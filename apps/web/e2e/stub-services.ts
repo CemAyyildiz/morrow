@@ -2,7 +2,9 @@
 // `node e2e/stub-services.ts`.
 // - NEAR RPC: `view_access_key_list` of the contract with one function-call key (a locked
 //   contract), `call_function get_vault` (Delay, Owner Account, watcher key) and the signer's
-//   `state` (threshold 11 of 16). For "Try with these keys": `view_access_key` (a nonce per
+//   `state` (threshold 11 of 16). For the Proof Page (proof-fixture.ts): `view_account` (the
+//   code hash), the full `get_vault` of Vault #7, ERR_VAULT_NOT_FOUND for other ids, and
+//   `events_since` over a fixed log. For "Try with these keys": `view_access_key` (a nonce per
 //   key), `block` (final) and `send_tx`, which checks the ed25519 signature over sha256 of the
 //   borsh transaction, records it (`GET /__sent?public_key=`), and answers `request_withdrawal`
 //   with an op id and its `withdrawal_requested` log, `begin_execute` with ERR_NOT_EXECUTABLE.
@@ -32,6 +34,7 @@ import {
   VAULT_SATS,
   attemptsAt,
 } from "./challenge-fixture.ts";
+import { CODE_HASH, PROOF_EVENTS, PROOF_VAULT, PROOF_VAULT_ID } from "./proof-fixture.ts";
 import {
   BACKEND_PORT,
   CHALLENGE_PORT,
@@ -95,10 +98,40 @@ function rpcResult(params: Record<string, unknown> | undefined): unknown {
       ],
     };
   }
+  if (
+    params?.request_type === "view_account" &&
+    params.account_id === WEB_ENV.MORROW_VAULT_CONTRACT
+  ) {
+    return {
+      amount: "100000000000000000000000000",
+      locked: "0",
+      code_hash: CODE_HASH,
+      storage_usage: 412_000,
+      storage_paid_at: 0,
+      block_hash: "stub",
+      block_height: 1,
+    };
+  }
   if (params?.request_type !== "call_function") return null;
   const args = JSON.parse(Buffer.from(String(params.args_base64), "base64").toString()) as {
     vault_id?: string;
+    cursor?: string;
+    limit?: number;
   };
+  if (params.account_id === WEB_ENV.MORROW_VAULT_CONTRACT) {
+    // The Proof Page's Vault, in full (the challenge Vault "42" keeps its short shape).
+    if (params.method_name === "get_vault" && args.vault_id === PROOF_VAULT_ID) {
+      return viewResult(PROOF_VAULT);
+    }
+    if (params.method_name === "get_vault" && args.vault_id !== VAULT_ID) {
+      return VAULT_NOT_FOUND;
+    }
+    if (params.method_name === "events_since") {
+      const cursor = BigInt(args.cursor ?? "0");
+      const limit = Math.min(100, Math.max(1, args.limit ?? 100));
+      return viewResult(PROOF_EVENTS.filter((e) => BigInt(e.seq) > cursor).slice(0, limit));
+    }
+  }
   if (
     params.account_id === WEB_ENV.MORROW_VAULT_CONTRACT &&
     params.method_name === "get_vault" &&
@@ -121,6 +154,19 @@ function rpcResult(params: Record<string, unknown> | undefined): unknown {
   }
   return null;
 }
+
+/** What nearcore answers when a view call panics: here `get_vault` of an unknown id. */
+const VAULT_NOT_FOUND = Symbol("vault not found");
+const VAULT_NOT_FOUND_ERROR = {
+  name: "HANDLER_ERROR",
+  cause: {
+    name: "CONTRACT_EXECUTION_ERROR",
+    info: { vm_error: "Smart contract panicked: ERR_VAULT_NOT_FOUND" },
+  },
+  code: -32000,
+  message: "Server error",
+  data: "Smart contract panicked: ERR_VAULT_NOT_FOUND",
+};
 
 // "Try with these keys": access keys, the final block and signed transactions.
 
@@ -361,6 +407,9 @@ const rpc = createServer((request, response) => {
         });
       }
       const result = rpcResult(params);
+      if (result === VAULT_NOT_FOUND) {
+        return json(response, 200, { jsonrpc: "2.0", id, error: VAULT_NOT_FOUND_ERROR });
+      }
       if (result === null) {
         return json(response, 200, { jsonrpc: "2.0", id, error: { name: "UNKNOWN_REQUEST" } });
       }
