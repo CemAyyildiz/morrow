@@ -15,13 +15,14 @@ import type {
 } from "@morrow/core-ts/browser";
 import { copy } from "@/copy";
 import { absoluteTime, formatDuration, nsToMs, viewResult } from "./challenge";
+import type { HeartbeatState } from "./data";
 import { withTimeout } from "./live";
 
 /** How often the page reads the chain again. */
 export const PROOF_POLL_MS = 30_000;
 /** `events_since` answers at most this many events per call. */
 export const EVENTS_PAGE = 100;
-/** Pages read per refresh; past that the page says the history is truncated. */
+/** Pages read per refresh at most; a longer history is read on across refreshes. */
 export const MAX_EVENT_PAGES = 50;
 /** The approximate Bitcoin block interval the Escape Timelock is put in days with. */
 const BLOCK_MS = 10 * 60_000;
@@ -288,16 +289,20 @@ export interface ProofEvent {
   block_timestamp: string;
   vault_id: string;
   kind: string;
-  data: Record<string, unknown>;
+  /** Read only for this Vault's events, and only when it is an object. */
+  data: unknown;
 }
 
-/** An `events_since` answer; null when any entry has another shape. */
+/**
+ * An `events_since` answer; null when an entry lacks the envelope (`seq`, time, Vault, kind).
+ * `data` is not checked here: another Vault's is never read.
+ */
 export function parseEvents(value: unknown): ProofEvent[] | null {
   if (!Array.isArray(value)) return null;
   const events: ProofEvent[] = [];
   for (const event of value as unknown[]) {
     if (!isRecord(event) || !isU64(event.seq) || !isU64(event.block_timestamp)) return null;
-    if (!isU64(event.vault_id) || !isString(event.kind) || !isRecord(event.data)) return null;
+    if (!isU64(event.vault_id) || !isString(event.kind)) return null;
     events.push({
       seq: event.seq,
       block_timestamp: event.block_timestamp,
@@ -311,6 +316,8 @@ export function parseEvents(value: unknown): ProofEvent[] | null {
 
 /** Thrown when a page cannot be read: the whole refresh counts as unreachable. */
 class Unreachable extends Error {}
+/** Thrown when the contract answers `events_since` with an error: not a Vault Contract. */
+class Misconfigured extends Error {}
 
 /** Events with `seq > cursor`, at most `limit`. */
 export type EventPage = (cursor: bigint, limit: number) => Promise<ProofEvent[]>;
@@ -318,6 +325,7 @@ export type EventPage = (cursor: bigint, limit: number) => Promise<ProofEvent[]>
 function eventPage(rpc: ProofRpc): EventPage {
   return async (cursor, limit) => {
     const answer = await rpc.view("events_since", { cursor: cursor.toString(), limit });
+    if (answer.kind === "error") throw new Misconfigured();
     const events = answer.kind === "ok" ? parseEvents(answer.value) : null;
     if (events === null) throw new Unreachable();
     return events;
@@ -349,30 +357,6 @@ export async function firstCursorAtOrAfter(page: EventPage, createdAt: bigint): 
   return hi;
 }
 
-/**
- * The Vault's events from `start`, ascending, reading at most `maxPages` pages of 100.
- * `truncated` when more events follow the last page read.
- */
-export async function vaultEvents(
-  page: EventPage,
-  vaultId: string,
-  start: bigint,
-  maxPages = MAX_EVENT_PAGES,
-): Promise<{ events: ProofEvent[]; truncated: boolean }> {
-  const events: ProofEvent[] = [];
-  let cursor = start;
-  for (let pages = 0; pages < maxPages; pages++) {
-    const batch = await page(cursor, EVENTS_PAGE);
-    for (const event of batch) if (event.vault_id === vaultId) events.push(event);
-    const last = batch.at(-1);
-    if (!last || batch.length < EVENTS_PAGE) return { events, truncated: false };
-    cursor = BigInt(last.seq);
-  }
-  // The cap was reached: one more event means the history goes on past what was read.
-  const more = await page(cursor, 1);
-  return { events, truncated: more.length > 0 };
-}
-
 // Pending ops
 
 export interface PendingWithdrawal {
@@ -392,48 +376,107 @@ export interface ClawedBack {
   at: string;
 }
 
+/**
+ * The history scan of one Vault, folded as it is read and kept between refreshes: each refresh
+ * reads on from `cursor`, so the newest events are never the ones left out.
+ */
+export interface Scan {
+  vaultId: string;
+  createdAt: string;
+  /** The last `seq` read; null until the binary search has found the start. */
+  cursor: bigint | null;
+  /** Withdrawals still Pending or Frozen, by op id, in request order. */
+  open: Map<string, PendingWithdrawal>;
+  clawedBack: ClawedBack | null;
+  /** Events read from the start, every Vault's. */
+  read: number;
+  /** The last page came back short: everything up to it is folded. */
+  caughtUp: boolean;
+}
+
+export const newScan = (vaultId: string, createdAt: string): Scan => ({
+  vaultId,
+  createdAt,
+  cursor: null,
+  open: new Map(),
+  clawedBack: null,
+  read: 0,
+  caughtUp: false,
+});
+
+const copyScan = (scan: Scan): Scan => ({
+  ...scan,
+  open: new Map([...scan.open].map(([id, op]) => [id, { ...op }])),
+});
+
 /** Events that settle a withdrawal: it is no longer pending. */
 const SETTLING = new Set(["withdrawal_cancelled", "op_signed", "op_voided"]);
 
 /**
- * Withdrawals still Pending or Frozen: a `withdrawal_requested` without a later
- * `withdrawal_cancelled`, `op_signed` or `op_voided`, in request order. Also the Clawback,
- * from `vault_clawed_back`. `events` are the Vault's, ascending.
+ * Folds one event into `scan`. Another Vault's event is skipped unread; this Vault's with
+ * unreadable data is skipped too. A withdrawal stays open while Pending or Frozen: from
+ * `withdrawal_requested` until `withdrawal_cancelled`, `op_signed` or `op_voided`.
  */
-export function pendingFrom(events: readonly ProofEvent[]): {
-  withdrawals: PendingWithdrawal[];
-  clawedBack: ClawedBack | null;
-} {
-  const open = new Map<string, PendingWithdrawal>();
-  let clawedBack: ClawedBack | null = null;
-  for (const event of events) {
-    const data = event.data;
-    const opId = isU64(data.op_id) ? data.op_id : null;
-    if (event.kind === "withdrawal_requested") {
-      if (opId === null || !isU64(data.amount_sats) || !isU64(data.executable_at)) continue;
-      open.set(opId, {
-        opId,
-        amountSats: data.amount_sats,
-        destination: isString(data.destination) ? data.destination : "",
-        executableAt: data.executable_at,
-        requestedAt: event.block_timestamp,
-        frozen: false,
-      });
-    } else if (event.kind === "fast_approved") {
-      const op = opId === null ? undefined : open.get(opId);
-      if (op && isU64(data.executable_at)) op.executableAt = data.executable_at;
-    } else if (event.kind === "op_frozen") {
-      const op = opId === null ? undefined : open.get(opId);
-      if (op) op.frozen = true;
-    } else if (SETTLING.has(event.kind)) {
-      if (opId !== null) open.delete(opId);
-    } else if (event.kind === "vault_clawed_back") {
-      if (isAccount(data.recovery_address)) {
-        clawedBack = { recoveryAddress: data.recovery_address, at: event.block_timestamp };
-      }
+export function foldEvent(scan: Scan, event: ProofEvent): void {
+  if (event.vault_id !== scan.vaultId || !isRecord(event.data)) return;
+  const data = event.data;
+  const opId = isU64(data.op_id) ? data.op_id : null;
+  const op = opId === null ? undefined : scan.open.get(opId);
+  if (event.kind === "withdrawal_requested") {
+    if (opId === null || !isU64(data.amount_sats) || !isU64(data.executable_at)) return;
+    scan.open.set(opId, {
+      opId,
+      amountSats: data.amount_sats,
+      destination: isString(data.destination) ? data.destination : "",
+      executableAt: data.executable_at,
+      requestedAt: event.block_timestamp,
+      frozen: false,
+    });
+  } else if (event.kind === "fast_approved") {
+    if (op && isU64(data.executable_at)) op.executableAt = data.executable_at;
+  } else if (event.kind === "op_frozen") {
+    if (op) op.frozen = true;
+  } else if (SETTLING.has(event.kind)) {
+    if (opId !== null) scan.open.delete(opId);
+  } else if (event.kind === "vault_clawed_back") {
+    if (isAccount(data.recovery_address)) {
+      scan.clawedBack = { recoveryAddress: data.recovery_address, at: event.block_timestamp };
     }
   }
-  return { withdrawals: [...open.values()], clawedBack };
+}
+
+/** The pending withdrawals and the Clawback of a Vault's events, ascending. Pure. */
+export function pendingFrom(
+  events: readonly ProofEvent[],
+  vaultId = events[0]?.vault_id ?? "",
+): { withdrawals: PendingWithdrawal[]; clawedBack: ClawedBack | null } {
+  const scan = newScan(vaultId, "0");
+  for (const event of events) foldEvent(scan, event);
+  return { withdrawals: [...scan.open.values()], clawedBack: scan.clawedBack };
+}
+
+/**
+ * Reads on from the scan's cursor (finding the start first), at most `maxPages` pages of 100,
+ * folding each page as it comes. `caughtUp` once a page comes back short.
+ */
+export async function advanceScan(
+  page: EventPage,
+  scan: Scan,
+  maxPages = MAX_EVENT_PAGES,
+): Promise<void> {
+  scan.cursor ??= await firstCursorAtOrAfter(page, BigInt(scan.createdAt));
+  for (let pages = 0; pages < maxPages; pages++) {
+    const batch = await page(scan.cursor, EVENTS_PAGE);
+    for (const event of batch) foldEvent(scan, event);
+    scan.read += batch.length;
+    const last = batch.at(-1);
+    if (last) scan.cursor = BigInt(last.seq);
+    if (batch.length < EVENTS_PAGE) {
+      scan.caughtUp = true;
+      return;
+    }
+  }
+  scan.caughtUp = false;
 }
 
 // One refresh
@@ -443,8 +486,8 @@ export interface ProofFacts {
   vault: Vault;
   withdrawals: PendingWithdrawal[];
   clawedBack: ClawedBack | null;
-  /** More than `MAX_EVENT_PAGES` pages of history: the pending list may miss some. */
-  truncated: boolean;
+  /** `caughtUp` false while the history is still being read: the pending list is partial. */
+  history: { caughtUp: boolean; read: number };
   /** Null when `view_account` answered without a readable one. */
   codeHash: string | null;
   /** Full-access keys on the contract account; null when the list could not be read. */
@@ -453,62 +496,67 @@ export interface ProofFacts {
 
 export type ProofAnswer =
   | { kind: "ok"; facts: ProofFacts }
-  /** `get_vault` failed in the contract: no such Vault. `code` is its `ERR_*`, verbatim. */
-  | { kind: "missing"; code: string | null }
+  /** `get_vault` failed with `ERR_VAULT_NOT_FOUND`, verbatim in `code`. */
+  | { kind: "missing"; code: string }
+  /** The contract account answered, but not as a Vault Contract. */
+  | { kind: "misconfigured" }
   | { kind: "unreachable" };
 
+/** Where the scan of the Vault on screen is kept between refreshes. */
+export interface ScanHolder {
+  current: Scan | null;
+}
+
 /**
- * Reads the Vault and its facts. `starts` keeps the scan's first cursor per Vault between
- * refreshes (it never moves: the log is append-only), so the binary search runs once.
+ * Reads the Vault and its facts. The history scan in `holder` is read on from its cursor; it
+ * starts over for another Vault (or a recreated one). A refresh that fails keeps the scan as it
+ * was, so no page is folded twice.
  */
 export async function readProof(
   rpc: ProofRpc,
   contractId: string,
   vaultId: string,
-  starts: Map<string, bigint> = new Map(),
+  holder: ScanHolder = { current: null },
 ): Promise<ProofAnswer> {
   const answer = await rpc.view("get_vault", { vault_id: vaultId });
   if (answer.kind === "error") {
-    return { kind: "missing", code: /ERR_[A-Z_]+/.exec(answer.text)?.[0] ?? null };
+    return answer.text.includes("ERR_VAULT_NOT_FOUND")
+      ? { kind: "missing", code: "ERR_VAULT_NOT_FOUND" }
+      : { kind: "misconfigured" };
   }
   if (answer.kind === "unreachable") return { kind: "unreachable" };
   const vault = parseVault(answer.value);
-  if (vault === null || vault.vault_id !== vaultId) return { kind: "unreachable" };
+  if (vault === null || vault.vault_id !== vaultId) return { kind: "misconfigured" };
   try {
-    const page = eventPage(rpc);
-    const key = `${vaultId}:${vault.created_at}`;
-    const scan = async () => {
-      let start = starts.get(key);
-      if (start === undefined) {
-        start = await firstCursorAtOrAfter(page, BigInt(vault.created_at));
-        starts.set(key, start);
-      }
-      return vaultEvents(page, vaultId, start);
-    };
-    const [account, keys, history] = await Promise.all([
+    const before = holder.current;
+    const same = before?.vaultId === vaultId && before.createdAt === vault.created_at;
+    const scan = same && before ? copyScan(before) : newScan(vaultId, vault.created_at);
+    const [account, keys] = await Promise.all([
       rpc.query({ request_type: "view_account", account_id: contractId }),
       rpc.query({ request_type: "view_access_key_list", account_id: contractId }),
-      scan(),
+      advanceScan(eventPage(rpc), scan),
     ]);
     if (account.kind === "unreachable" || keys.kind === "unreachable") {
       return { kind: "unreachable" };
     }
-    const { withdrawals, clawedBack } = pendingFrom(history.events);
+    if (account.kind === "error" || keys.kind === "error") return { kind: "misconfigured" };
+    // Another refresh may have moved the scan on meanwhile: then this one is not kept.
+    if (holder.current === before) holder.current = scan;
     return {
       kind: "ok",
       facts: {
         vault,
-        withdrawals,
-        clawedBack,
-        truncated: history.truncated,
-        codeHash: account.kind === "ok" ? codeHashFrom(account.value) : null,
-        fullAccessKeys: keys.kind === "ok" ? fullAccessKeysFrom(keys.value) : null,
+        withdrawals: [...scan.open.values()].map((op) => ({ ...op })),
+        clawedBack: scan.clawedBack,
+        history: { caughtUp: scan.caughtUp, read: scan.read },
+        codeHash: codeHashFrom(account.value),
+        fullAccessKeys: fullAccessKeysFrom(keys.value),
       },
     };
-  } catch {
-    // A page that could not be read (`Unreachable`) or any other surprise: nothing is shown
-    // that was not read, and the next refresh tries again.
-    return { kind: "unreachable" };
+  } catch (error) {
+    // A page that could not be read, or any other surprise: nothing is shown that was not
+    // read, and the next refresh tries again.
+    return error instanceof Misconfigured ? { kind: "misconfigured" } : { kind: "unreachable" };
   }
 }
 
@@ -578,6 +626,7 @@ export interface PolicyRow {
   mono?: boolean;
 }
 
+/** The Policy rows; the Guardians, with their keys, are drawn by the view. */
 export function policyRows(policy: Policy): PolicyRow[] {
   const r = copy.proof.rows;
   const net = policy.btc_network;
@@ -595,8 +644,13 @@ export function policyRows(policy: Policy): PolicyRow[] {
       label: r.fastApproval,
       value: policy.fast_approval ? r.fastOn(durationOf(policy.fast_approval_floor_ns)) : r.fastOff,
     },
+    { label: r.watcherKey, value: policy.watcher_x25519_pk, mono: true },
   ];
 }
+
+/** A Pending (not Frozen) withdrawal whose `executable_at` has passed at `now`. */
+export const isDue = (op: PendingWithdrawal, now: number) =>
+  !op.frozen && nsToMs(op.executableAt) <= now;
 
 /** A pending Withdrawal Request's line: `Withdrawal #3 · 0.0006 sBTC · executable 13 Nov 14:02`. */
 export function withdrawalLine(op: PendingWithdrawal, network: CoreBtcNetwork, now: number) {
@@ -620,13 +674,41 @@ export function changeLine(change: PolicyChange, network: CoreBtcNetwork, now: n
 export const pendingChangeOf = (vault: Vault) =>
   vault.pending_change?.state === "pending" ? vault.pending_change : null;
 
+/** Whether the Vault has an Auto-Clawback Guardian, whose key the deployment's watcher holds. */
+export const hasWatcher = (vault: Vault) =>
+  vault.policy.guardians.some((guardian) => guardian.kind === "auto_clawback");
+
+/**
+ * The deployment watcher's heartbeat line: alarm when stale, missing, unreachable or silent.
+ * Shown only for a Vault with an Auto-Clawback Guardian.
+ */
+export function watcherLine(heartbeat: HeartbeatState): { text: string; alarm: boolean } {
+  const w = copy.proof.watcher;
+  switch (heartbeat.kind) {
+    case "seen":
+      return { text: w.seen(heartbeat.minutes), alarm: heartbeat.stale };
+    case "none":
+      return { text: w.none, alarm: true };
+    case "checking":
+      return { text: w.checking, alarm: false };
+    case "unreachable":
+      return { text: w.unreachable, alarm: true };
+    case "silent":
+      return { text: w.silent, alarm: true };
+  }
+}
+
 // Statements
 
 export interface Statement {
-  /** `G-1` … `G-4`, `T-1` … `T-6`. */
+  /** `G-1` … `G-4`, `T-1` … `T-6`, or `Closed`. */
   id: string;
   title: string;
   text: string;
+  /** A warning drawn after the text in the alarm tone. */
+  alert?: string;
+  /** A link drawn after the text. */
+  link?: { href: string; text: string };
 }
 
 /** What the statements read besides the Vault. */
@@ -637,6 +719,9 @@ export interface StatementFacts {
   coSigner: string;
   codeHash: string | null;
   withdrawals: readonly PendingWithdrawal[];
+  clawedBack: ClawedBack | null;
+  /** False while the history is still being read: no claim about pending requests. */
+  caughtUp: boolean;
 }
 
 const guardiansOf = (vault: Vault, kind?: GuardianKind) =>
@@ -645,30 +730,54 @@ const guardiansOf = (vault: Vault, kind?: GuardianKind) =>
 const accounts = (guardians: readonly Guardian[]) =>
   guardians.map((guardian) => guardian.guardian_account).join(", ");
 
-/** The earliest `executable_at` among pending withdrawals, ns. */
-function earliestExecutable(withdrawals: readonly PendingWithdrawal[]): string | null {
+/** The earliest future `executable_at` among Pending (not Frozen) withdrawals, ns. */
+function earliestExecutable(withdrawals: readonly PendingWithdrawal[], now: number): string | null {
   let earliest: string | null = null;
   for (const op of withdrawals) {
+    if (op.frozen || isDue(op, now)) continue;
     if (earliest === null || BigInt(op.executableAt) < BigInt(earliest)) earliest = op.executableAt;
   }
   return earliest;
 }
 
-/** G-1 to G-4 for this Vault, every value from its Policy. Pure. */
+/**
+ * G-1 to G-4 for an active Vault, every value from its Policy. A clawed-back Vault gets the
+ * closed-Vault statement instead, and a Vault whose keys are still being derived none (see
+ * `stateNotice`). Pure.
+ */
 export function guarantees(vault: Vault, facts: StatementFacts): Statement[] {
   const g = copy.proof.guarantees;
   const p = vault.policy;
+  if (vault.state === "pending_keys") return [];
+  if (vault.state === "clawed_back") {
+    const recovery = facts.clawedBack?.recoveryAddress ?? p.recovery_address;
+    return [
+      {
+        id: "Closed",
+        title: g.closedTitle,
+        text: facts.clawedBack
+          ? g.closed(recovery, absoluteTime(nsToMs(facts.clawedBack.at), facts.now))
+          : g.closedUntimed(recovery),
+      },
+    ];
+  }
   const delay = durationOf(p.delay_ns);
   const blocks = blocksOf(p.escape_timelock_blocks);
-  const earliest = earliestExecutable(facts.withdrawals);
   const g1 = [g.g1(delay, blocks)];
-  if (p.fast_approval) g1.push(g.g1Fast(durationOf(p.fast_approval_floor_ns)));
+  if (p.fast_approval && guardiansOf(vault, "trusted_contact").length > 0) {
+    g1.push(g.g1Fast(durationOf(p.fast_approval_floor_ns)));
+  }
   g1.push(
     p.allowance_limit_sats === "0"
       ? g.g1NoAllowance
       : g.g1Allowance(formatAmount(p.allowance_limit_sats, p.btc_network)),
   );
-  if (earliest !== null) g1.push(g.g1Earliest(absoluteTime(nsToMs(earliest), facts.now)));
+  // Only a fully read history may claim anything about pending requests.
+  const due = facts.caughtUp ? facts.withdrawals.filter((op) => isDue(op, facts.now)) : [];
+  const earliest = facts.caughtUp ? earliestExecutable(facts.withdrawals, facts.now) : null;
+  if (due.length === 0 && earliest !== null) {
+    g1.push(g.g1Earliest(absoluteTime(nsToMs(earliest), facts.now)));
+  }
 
   const change = pendingChangeOf(vault);
   const g4 = [g.g4(durationOf(p.policy_change_delay_ns), p.recovery_address)];
@@ -676,7 +785,12 @@ export function guarantees(vault: Vault, facts: StatementFacts): Statement[] {
     g4.push(g.g4Pending(change.change_id, absoluteTime(nsToMs(change.effective_at), facts.now)));
   }
   return [
-    { id: "G-1", title: g.g1Title, text: g1.join(" ") },
+    {
+      id: "G-1",
+      title: g.g1Title,
+      text: g1.join(" "),
+      ...(due.length > 0 ? { alert: due.map((op) => g.g1Due(op.opId)).join(" ") } : {}),
+    },
     {
       id: "G-2",
       title: g.g2Title,
@@ -689,6 +803,11 @@ export function guarantees(vault: Vault, facts: StatementFacts): Statement[] {
     },
     { id: "G-4", title: g.g4Title, text: g4.join(" ") },
   ];
+}
+
+/** The notice the Guarantees card shows instead of statements; null when it has some. */
+export function stateNotice(vault: Vault): string | null {
+  return vault.state === "pending_keys" ? copy.proof.guarantees.notActive : null;
 }
 
 /**
@@ -707,6 +826,7 @@ export function trustStatements(vault: Vault, facts: StatementFacts): Statement[
         facts.codeHash === null
           ? t.t2Unread(facts.contractId)
           : t.t2(facts.contractId, facts.codeHash),
+      link: { href: copy.proof.repoUrl, text: copy.proof.repoLink },
     },
     {
       id: "T-3",
@@ -720,11 +840,10 @@ export function trustStatements(vault: Vault, facts: StatementFacts): Statement[
     statements.push({
       id: "T-5",
       title: t.t5Title,
-      text: t.t5(
-        contacts.length === 0 ? t.noTrustedContact : accounts(contacts),
-        durationOf(p.fast_approval_floor_ns),
-        durationOf(p.delay_ns),
-      ),
+      text:
+        contacts.length === 0
+          ? t.t5None
+          : t.t5(accounts(contacts), durationOf(p.fast_approval_floor_ns), durationOf(p.delay_ns)),
     });
   }
   const watchers = guardiansOf(vault, "auto_clawback");
@@ -743,7 +862,7 @@ export function trustStatements(vault: Vault, facts: StatementFacts): Statement[
  * plain sentence that says so. Null when the Vault has one.
  */
 export function residualRisk(vault: Vault): string | null {
-  if (guardiansOf(vault, "auto_clawback").length > 0) return null;
+  if (hasWatcher(vault)) return null;
   return copy.proof.residual(durationOf(vault.policy.policy_change_delay_ns));
 }
 

@@ -88,6 +88,9 @@ export function resolveRoute(pathname: string): ResolvedRoute {
   const proof = PROOF_PARAM.exec(path);
   const vaultId = proof?.[1] === undefined ? null : canonicalVaultId(proof[1]);
   const proofRoute = NAV_ROUTES.find((candidate) => candidate.id === "proof");
+  // `/proof/007` is Vault 7: the address bar is rewritten to `/proof/7`.
+  if (vaultId !== null && vaultId !== proof?.[1])
+    return { kind: "redirect", to: proofPath(vaultId) };
   if (vaultId !== null && proofRoute) return { kind: "nav", route: proofRoute, vaultId };
   return { kind: "not-found", path };
 }

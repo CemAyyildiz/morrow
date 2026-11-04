@@ -7,11 +7,14 @@ import {
   changeLine,
   guarantees,
   guardianLabel,
-  MAX_EVENT_PAGES,
+  hasWatcher,
+  isDue,
   pendingChangeOf,
   policyRows,
   residualRisk,
+  stateNotice,
   trustStatements,
+  watcherLine,
   withdrawalLine,
   type ProofFacts,
   type Statement,
@@ -26,7 +29,6 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { copy } from "@/copy";
 import { cn } from "@/lib/utils";
 import { PageHeader } from "@/shell/PageHeader";
-import { alerts } from "@/shell/SystemCard";
 
 const p = copy.proof;
 
@@ -37,13 +39,22 @@ const p = copy.proof;
 export function ProofView({ vaultId }: { vaultId: string | null }) {
   const { challenge, challengeStatus, config } = useAppData();
   if (vaultId !== null) return <VaultProof vaultId={vaultId} config={config} />;
-  const live = challenge?.keys?.vault_id;
-  const liveId = live === null || live === undefined ? null : canonicalVaultId(live);
-  if (challenge && liveId !== null) {
-    return <VaultProof vaultId={liveId} config={config} round={challenge.round} />;
-  }
-  // Until `/round` first answers, nothing is claimed.
-  if (challengeStatus === "loading") {
+  const keys = challenge?.keys ?? null;
+  // Why the form shows instead of the live round's Vault.
+  let lead: string = p.open.noRound;
+  if (challenge && keys) {
+    const liveId = keys.vault_id === null ? null : canonicalVaultId(keys.vault_id);
+    if (keys.vault_contract !== config.contractId) {
+      lead = p.open.otherContract(keys.vault_contract, config.contractId);
+    } else if (liveId === null) {
+      lead = p.open.noVault(challenge.round);
+    } else {
+      return <VaultProof vaultId={liveId} config={config} round={challenge.round} />;
+    }
+  } else if (challengeStatus === "unreachable") {
+    lead = p.open.feedDown;
+  } else if (challengeStatus === "loading") {
+    // Until `/round` first answers, nothing is claimed.
     return (
       <>
         <PageHeader title={copy.titles.proof} />
@@ -54,7 +65,7 @@ export function ProofView({ vaultId }: { vaultId: string | null }) {
   return (
     <>
       <PageHeader title={copy.titles.proof} />
-      <OpenVault contractId={config.contractId} />
+      <OpenVault contractId={config.contractId} lead={lead} />
     </>
   );
 }
@@ -99,11 +110,25 @@ function VaultProof({
           title={p.missing(vaultId, config.contractId)}
           body={p.missingBody}
         >
-          {state.code !== null && (
-            <Badge variant="chip" data-testid="proof-error-code">
-              {state.code}
-            </Badge>
-          )}
+          <Badge variant="chip" data-testid="proof-error-code">
+            {state.code}
+          </Badge>
+        </Notice>
+      </>
+    );
+  }
+  if (state.kind === "misconfigured") {
+    return (
+      <>
+        {header}
+        <Notice
+          testId="proof-misconfigured"
+          title={p.misconfigured(config.contractId)}
+          body={p.misconfiguredBody}
+        >
+          <Button variant="secondary" onClick={retry}>
+            {p.retry}
+          </Button>
         </Notice>
       </>
     );
@@ -128,7 +153,9 @@ function VaultProof({
           data-testid="proof-stale"
           className="flex flex-col items-start gap-3 p-card-pad-mobile desktop:flex-row desktop:items-center desktop:justify-between desktop:p-card-pad"
         >
-          <p className="text-[14px] text-alarm">{p.stale}</p>
+          <p className="text-[14px] text-alarm">
+            {p.stale[state.stale](absoluteTime(state.readAt, state.now))}
+          </p>
           <Button variant="secondary" onClick={retry}>
             {p.retry}
           </Button>
@@ -151,10 +178,15 @@ function ProofBody({ facts, now, config }: { facts: ProofFacts; now: number; con
     coSigner: config.coSigner,
     codeHash: facts.codeHash,
     withdrawals: facts.withdrawals,
+    clawedBack: facts.clawedBack,
+    caughtUp: facts.history.caughtUp,
   };
   const residual = residualRisk(vault);
-  const alert = alerts(config.heartbeat);
+  const notice = stateNotice(vault);
+  // The deployment's watcher matters to this Vault only through an Auto-Clawback Guardian.
+  const watcher = hasWatcher(vault) ? watcherLine(config.heartbeat) : null;
   const near = config.network.near;
+  const reading = !facts.history.caughtUp;
 
   return (
     <>
@@ -184,9 +216,14 @@ function ProofBody({ facts, now, config }: { facts: ProofFacts; now: number; con
                 </Row>
               ))}
               <Row label={p.rows.guardians}>
-                <ul data-testid="proof-guardians">
+                <ul data-testid="proof-guardians" className="flex flex-col gap-1.5">
                   {policy.guardians.map((guardian) => (
-                    <li key={guardian.guardian_account}>{guardianLabel(guardian)}</li>
+                    <li key={guardian.guardian_account}>
+                      <div data-testid="proof-guardian">{guardianLabel(guardian)}</div>
+                      <div className="font-mono text-mono text-muted">
+                        {p.rows.guardianKey(guardian.guardian_key)}
+                      </div>
+                    </li>
                   ))}
                 </ul>
               </Row>
@@ -194,7 +231,8 @@ function ProofBody({ facts, now, config }: { facts: ProofFacts; now: number; con
           </Section>
           <Section id="pending" title={p.sections.pending}>
             {facts.withdrawals.length === 0 && change === null ? (
-              <p className="text-[14px] text-muted">{p.noPending}</p>
+              // Nothing pending is claimed only once the whole history is read.
+              !reading && <p className="text-[14px] text-muted">{p.noPending}</p>
             ) : (
               <ul className="divide-y divide-line">
                 {facts.withdrawals.map((op) => (
@@ -202,6 +240,11 @@ function ProofBody({ facts, now, config }: { facts: ProofFacts; now: number; con
                     <div className="flex flex-wrap items-center gap-2 text-[14px]">
                       <span>{withdrawalLine(op, net, now)}</span>
                       {op.frozen && <Badge variant="chip">{p.frozen}</Badge>}
+                      {isDue(op, now) && (
+                        <Badge variant="alarm" data-testid="proof-due">
+                          {p.due}
+                        </Badge>
+                      )}
                     </div>
                     {op.destination !== "" && (
                       <div className="mt-1 font-mono text-mono text-muted [overflow-wrap:anywhere]">
@@ -220,14 +263,20 @@ function ProofBody({ facts, now, config }: { facts: ProofFacts; now: number; con
                 )}
               </ul>
             )}
-            {facts.truncated && (
-              <p data-testid="proof-truncated" className="mt-3 text-[13px] text-muted">
-                {p.truncated(MAX_EVENT_PAGES)}
+            {reading && (
+              <p data-testid="proof-reading" className="mt-3 text-[13px] text-muted">
+                {p.reading(facts.history.read)}
               </p>
             )}
           </Section>
           <Section id="guarantees" title={p.sections.guarantees} intro={p.guaranteesIntro}>
-            <Statements items={guarantees(vault, statementFacts)} />
+            {notice === null ? (
+              <Statements items={guarantees(vault, statementFacts)} />
+            ) : (
+              <p data-testid="proof-not-active" className="text-[14px] leading-[1.55]">
+                {notice}
+              </p>
+            )}
           </Section>
         </div>
         <div className="flex min-w-0 flex-col gap-stack">
@@ -266,15 +315,17 @@ function ProofBody({ facts, now, config }: { facts: ProofFacts; now: number; con
                       : p.unlocked(facts.fullAccessKeys)}
                 </span>
               </Row>
-              <Row label={p.rows.alerts}>
-                <span
-                  data-testid="proof-heartbeat"
-                  data-alarm={alert.alarm}
-                  className={cn(alert.alarm && "text-alarm")}
-                >
-                  {alert.text}
-                </span>
-              </Row>
+              {watcher && (
+                <Row label={p.rows.watcher}>
+                  <span
+                    data-testid="proof-heartbeat"
+                    data-alarm={watcher.alarm}
+                    className={cn(watcher.alarm && "text-alarm")}
+                  >
+                    {watcher.text}
+                  </span>
+                </Row>
+              )}
             </Rows>
           </Section>
           <Section id="vault" title={p.sections.vault}>
@@ -385,6 +436,22 @@ function Statements({ items }: { items: readonly Statement[] }) {
           <p className="mt-1 text-[14px] leading-[1.55] text-muted [overflow-wrap:anywhere]">
             {item.text}
           </p>
+          {item.alert !== undefined && (
+            <p data-testid="proof-statement-alert" className="mt-1 text-[14px] text-alarm">
+              {item.alert}
+            </p>
+          )}
+          {item.link !== undefined && (
+            <a
+              href={item.link.href}
+              target="_blank"
+              rel="noreferrer"
+              data-testid="proof-statement-link"
+              className="inline-flex min-h-11 items-center text-[13px] text-muted underline decoration-line underline-offset-4 hover:text-ink"
+            >
+              {item.link.text}
+            </a>
+          )}
         </li>
       ))}
     </ol>
@@ -436,7 +503,7 @@ function ProofSkeleton() {
 }
 
 /** Bare `/proof` without a live round: open any Vault by its id. */
-function OpenVault({ contractId }: { contractId: string }) {
+function OpenVault({ contractId, lead }: { contractId: string; lead: string }) {
   const { navigate } = useRouter();
   const [value, setValue] = useState("");
   const [invalid, setInvalid] = useState(false);
@@ -458,7 +525,9 @@ function OpenVault({ contractId }: { contractId: string }) {
       className="flex flex-col items-start gap-3 p-card-pad-mobile desktop:p-card-pad"
     >
       <CardTitle id={ids.title}>{p.open.title}</CardTitle>
-      <CardDescription className="max-w-[520px]">{p.open.body(contractId)}</CardDescription>
+      <CardDescription data-testid="proof-open-lead" className="max-w-[520px]">
+        {lead} {p.open.body(contractId)}
+      </CardDescription>
       <form noValidate onSubmit={submit} className="flex w-full max-w-[420px] flex-col gap-2">
         <label htmlFor={ids.input} className="text-label text-muted">
           {p.open.label}

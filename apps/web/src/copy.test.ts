@@ -23,8 +23,9 @@ describe("shell copy", () => {
   });
 
   // Story 1.9b fixes the heartbeat line as "Alerts: watcher last seen N min ago": an age,
-  // not a time of day. Only that template is exempt.
-  const RELATIVE_TIME_EXEMPT = /^copy\.system\.alertsSeen\(/;
+  // not a time of day. Only that template and the Proof Page's watcher line (the same age) are
+  // exempt.
+  const RELATIVE_TIME_EXEMPT = /^copy\.(system\.alertsSeen|proof\.watcher\.seen)\(/;
 
   it.each(strings.filter(({ path }) => !RELATIVE_TIME_EXEMPT.test(path)))(
     "$path has no relative times",
@@ -35,10 +36,11 @@ describe("shell copy", () => {
 
   it("exempts only the heartbeat age from the relative-time rule", () => {
     expect(copy.system.alertsSeen(3)).toBe("Alerts: watcher last seen 3 min ago");
+    expect(copy.proof.watcher.seen(3)).toBe("Deployment watcher last seen 3 min ago");
     const exempt = strings.filter(({ path }) => RELATIVE_TIME_EXEMPT.test(path));
     expect(exempt.length).toBeGreaterThan(0);
     for (const { text } of exempt) {
-      expect(text).toMatch(/^Alerts: watcher last seen .+ min ago$/);
+      expect(text).toMatch(/^(Alerts: watcher|Deployment watcher) last seen .+ min ago$/);
     }
   });
 

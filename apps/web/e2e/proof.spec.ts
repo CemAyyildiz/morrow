@@ -7,6 +7,7 @@ import {
   PROOF_NEW_RECOVERY,
   PROOF_NOW,
   PROOF_RECOVERY,
+  PROOF_EVENTS,
   PROOF_VAULT,
   PROOF_VAULT_ADDRESS,
 } from "./proof-fixture.ts";
@@ -24,6 +25,68 @@ const isPhone = (info: TestInfo) => info.project.name === "phone";
 const toRpc = (url: URL) => url.origin === new URL(RPC_URL).origin;
 
 test.use({ timezoneId: "UTC" });
+
+const CORS = { "access-control-allow-origin": "*", "cache-control": "no-store" };
+const nsOf = (iso: string) => (BigInt(Date.parse(iso)) * 1_000_000n).toString();
+
+/** A `call_function` result carrying `value`. */
+const viewOk = (value: unknown) => ({
+  result: {
+    block_hash: "stub",
+    block_height: 1,
+    logs: [],
+    result: [...Buffer.from(JSON.stringify(value))],
+  },
+});
+
+/** `events_since` over `events`: `seq > cursor`, at most `limit`. */
+const eventsOver = (events: readonly { seq: string }[], args: Record<string, unknown>) =>
+  viewOk(
+    events.filter((e) => BigInt(e.seq) > BigInt(String(args.cursor))).slice(0, Number(args.limit)),
+  );
+
+/**
+ * Answers the NEAR RPC calls `answer` returns a body for (`{ result }` or `{ error }`); every
+ * other call goes on to the stub.
+ */
+async function routeRpc(
+  page: Page,
+  answer: (
+    params: Record<string, unknown>,
+    args: Record<string, unknown>,
+  ) => Record<string, unknown> | undefined,
+) {
+  await page.route(toRpc, (route) => {
+    const request = route.request();
+    if (request.method() !== "POST") return route.fallback();
+    const call = request.postDataJSON() as { id?: unknown; params?: Record<string, unknown> };
+    const params = call.params ?? {};
+    const args =
+      params.request_type === "call_function"
+        ? (JSON.parse(Buffer.from(String(params.args_base64), "base64").toString()) as Record<
+            string,
+            unknown
+          >)
+        : {};
+    const body = answer(params, args);
+    if (body === undefined) return route.fallback();
+    return route.fulfill({
+      status: 200,
+      headers: CORS,
+      contentType: "application/json",
+      body: JSON.stringify({ jsonrpc: "2.0", id: call.id ?? null, ...body }),
+    });
+  });
+}
+
+/** Serves Vault #7's `get_vault` as `vault`, and `events_since` over `events` when given. */
+function vaultSeven(vault: Record<string, unknown>, events?: readonly { seq: string }[]) {
+  return (params: Record<string, unknown>, args: Record<string, unknown>) => {
+    if (params.method_name === "get_vault" && args.vault_id === "7") return viewOk(vault);
+    if (params.method_name === "events_since" && events) return eventsOver(events, args);
+    return undefined;
+  };
+}
 
 /** Serves `/heartbeat` as `minutes` old; `undefined` is an unreachable watcher. */
 async function heartbeat(page: Page, minutes: number | undefined) {
@@ -86,7 +149,7 @@ async function expectVaultSeven(page: Page) {
     await expect(row).toHaveCount(1);
     await expect(row.locator("dd")).toHaveText(value);
   }
-  await expect(page.getByTestId("proof-guardians").locator("li")).toHaveText([
+  await expect(page.getByTestId("proof-guardian")).toHaveText([
     "alice.testnet (Trusted Contact)",
     "watcher.morrow.testnet (Auto-Clawback Guardian)",
   ]);
@@ -100,7 +163,10 @@ async function expectVaultSeven(page: Page) {
   await expect(pending.getByTestId("proof-change")).toHaveText(
     `Policy Change #${CHANGE.change_id} · Recovery Address → ${PROOF_NEW_RECOVERY} · effective 19 Nov 08:00`,
   );
-  await expect(page.getByTestId("proof-truncated")).toHaveCount(0);
+  await expect(page.getByTestId("proof-reading")).toHaveCount(0);
+  await expect(page.getByTestId("proof-guardians")).toContainText(
+    `key ${PROOF_VAULT.policy.guardians[0]?.guardian_key}`,
+  );
 
   const contract = region(page, "Contract");
   await expect(contract.getByTestId("proof-code-hash")).toHaveText(CODE_HASH);
@@ -141,6 +207,10 @@ async function expectVaultSeven(page: Page) {
   );
   await expect(statement("T-1")).toContainText("v1.signer-prod.testnet");
   await expect(statement("T-2")).toContainText(CODE_HASH);
+  await expect(statement("T-2").getByRole("link")).toHaveAttribute(
+    "href",
+    "https://github.com/CemAyyildiz/morrow",
+  );
   await expect(statement("T-3")).toContainText("This is the one theft path.");
   await expect(page.getByTestId("proof-residual")).toHaveCount(0);
 }
@@ -154,7 +224,7 @@ test.describe("Proof Page", () => {
     await expect(page).toHaveTitle("Proof · morrow");
 
     const heartbeatLine = page.getByTestId("proof-heartbeat");
-    await expect(heartbeatLine).toHaveText("Alerts: watcher last seen 2 min ago");
+    await expect(heartbeatLine).toHaveText("Deployment watcher last seen 2 min ago");
     await expect(heartbeatLine).toHaveAttribute("data-alarm", "false");
 
     // Only the page's origin, the NEAR RPC and the watcher.
@@ -195,19 +265,19 @@ test.describe("Proof Page", () => {
     expect(columns).toBe(isPhone(info) ? 1 : 2);
   });
 
-  test("a heartbeat older than 5 min turns the Alerts line to alarm; none reads unreachable", async ({
+  test("a heartbeat older than 5 min turns the watcher line to alarm; none reads unreachable", async ({
     page,
   }) => {
     await open(page, "/proof/7", 7);
     const line = page.getByTestId("proof-heartbeat");
-    await expect(line).toHaveText("Alerts: watcher last seen 7 min ago");
+    await expect(line).toHaveText("Deployment watcher last seen 7 min ago");
     await expect(line).toHaveAttribute("data-alarm", "true");
     await expect(line).toHaveCSS("color", ALARM);
 
     await page.unroute(`${WATCHER_URL}/heartbeat`);
     await heartbeat(page, undefined);
     await page.clock.runFor(30_000);
-    await expect(line).toHaveText("Alerts: watcher unreachable");
+    await expect(line).toHaveText("Deployment watcher unreachable");
   });
 
   test("an unknown id reads No Vault on the contract, with the error code", async ({ page }) => {
@@ -274,6 +344,172 @@ test.describe("Proof Page", () => {
   });
 });
 
+test.describe("Proof Page states", () => {
+  const statement = (page: Page, id: string) =>
+    page.locator(`[data-testid=proof-statement][data-id="${id}"]`);
+
+  test("a clawed-back Vault: the banner with its absolute time and the closed-Vault statement", async ({
+    page,
+  }) => {
+    const events = [
+      ...PROOF_EVENTS,
+      {
+        seq: String(PROOF_EVENTS.length + 1),
+        block_timestamp: nsOf("2026-11-12T08:30:00Z"),
+        vault_id: "7",
+        kind: "vault_clawed_back",
+        data: { op_id: "9", by: "watcher.morrow.testnet", recovery_address: PROOF_RECOVERY },
+      },
+    ];
+    await routeRpc(
+      page,
+      vaultSeven({ ...PROOF_VAULT, state: "clawed_back", pending_change: null }, events),
+    );
+    await open(page, "/proof/7");
+    await expect(page.getByTestId("proof-clawed-back")).toHaveText(
+      `Sent home to ${PROOF_RECOVERY} · 08:30`,
+    );
+    await expect(page.getByText("clawed back", { exact: true }).first()).toBeVisible();
+    await expect(statement(page, "Closed")).toContainText(
+      `This Vault was sent home to ${PROOF_RECOVERY} at 08:30; no other spend can be co-signed.`,
+    );
+    await expect(statement(page, "G-1")).toHaveCount(0);
+  });
+
+  test("a Vault whose keys are still being derived: the not-active notice, no guarantees", async ({
+    page,
+  }) => {
+    await routeRpc(
+      page,
+      vaultSeven({
+        ...PROOF_VAULT,
+        state: "pending_keys",
+        addresses: null,
+        cosigner_pubkeys: null,
+        pending_change: null,
+      }),
+    );
+    await open(page, "/proof/7");
+    await expect(page.getByTestId("proof-not-active")).toContainText(
+      "This Vault is not active yet",
+    );
+    await expect(statement(page, "G-1")).toHaveCount(0);
+    await expect(region(page, "Addresses")).toContainText("Not active yet");
+  });
+
+  test("Fast Approval on: T-5 with the Floor", async ({ page }) => {
+    await routeRpc(
+      page,
+      vaultSeven({ ...PROOF_VAULT, policy: { ...PROOF_VAULT.policy, fast_approval: true } }),
+    );
+    await open(page, "/proof/7");
+    await expect(statement(page, "T-5")).toContainText(
+      "the theft completes after the Fast Approval Floor of 1 h instead of 24 h",
+    );
+    await expect(
+      region(page, "Policy").locator("dd").getByText("On · Floor 1 h", { exact: true }),
+    ).toBeVisible();
+  });
+
+  test("an unlocked contract is alarm; an unreadable key list says so", async ({ page }) => {
+    let keys: unknown[] = [
+      { public_key: "ed25519:1", access_key: { nonce: 1, permission: "FullAccess" } },
+    ];
+    await routeRpc(page, (params) =>
+      params.request_type === "view_access_key_list"
+        ? { result: { block_hash: "stub", block_height: 1, keys } }
+        : undefined,
+    );
+    await open(page, "/proof/7");
+    const lock = page.getByTestId("proof-lock");
+    await expect(lock).toHaveText("Unlocked: 1 full-access key");
+    await expect(lock).toHaveCSS("color", ALARM);
+
+    keys = [{ public_key: "ed25519:1", access_key: { nonce: 1, permission: "Odd" } }];
+    await page.clock.runFor(30_000);
+    await expect(lock).toHaveText("Lock status could not be read");
+    await expect(lock).toHaveCSS("color", ALARM);
+  });
+
+  test("a long history: reads on each refresh, says so, and claims nothing pending until caught up", async ({
+    page,
+  }) => {
+    const created = {
+      seq: "1",
+      block_timestamp: PROOF_VAULT.created_at,
+      vault_id: "7",
+      kind: "vault_created",
+      data: { owner_account: PROOF_VAULT.owner_account },
+    };
+    const fillers = Array.from({ length: 5_050 }, (_, i) => ({
+      seq: String(i + 2),
+      block_timestamp: (BigInt(PROOF_VAULT.created_at) + BigInt(i + 1)).toString(),
+      vault_id: "42",
+      kind: "storage_topped_up",
+      data: { amount_yocto: "1" },
+    }));
+    const request = {
+      seq: String(fillers.length + 2),
+      block_timestamp: nsOf("2026-11-12T08:02:00Z"),
+      vault_id: "7",
+      kind: "withdrawal_requested",
+      data: {
+        op_id: "3",
+        amount_sats: "60000",
+        destination: "tb1qprooftheif",
+        executable_at: nsOf("2026-11-13T08:02:00Z"),
+      },
+    };
+    await routeRpc(
+      page,
+      vaultSeven({ ...PROOF_VAULT, pending_change: null }, [created, ...fillers, request]),
+    );
+    await open(page, "/proof/7");
+    const pending = region(page, "Pending");
+    await expect(pending.getByTestId("proof-reading")).toHaveText(
+      "Reading the history · 5,000 events read",
+    );
+    await expect(pending).not.toContainText("No Withdrawal Request");
+    await expect(statement(page, "G-1")).not.toContainText("can be signed before");
+
+    await page.clock.runFor(30_000);
+    await expect(pending.getByTestId("proof-reading")).toHaveCount(0);
+    await expect(pending.getByTestId("proof-withdrawal")).toContainText(
+      "Withdrawal #3 · 0.0006 sBTC · executable 13 Nov 08:02",
+    );
+    await expect(statement(page, "G-1")).toContainText(
+      "No pending withdrawal can be signed before 13 Nov 08:02.",
+    );
+  });
+
+  test("a contract that is not a Vault Contract gets its own notice", async ({ page }) => {
+    await routeRpc(page, (params) =>
+      params.method_name === "get_vault"
+        ? { error: { name: "HANDLER_ERROR", cause: { name: "UNKNOWN_ACCOUNT", info: {} } } }
+        : undefined,
+    );
+    await open(page, "/proof/7");
+    await expect(page.getByTestId("proof-misconfigured")).toContainText(
+      "The contract vault.morrow.testnet did not answer as a Vault Contract",
+    );
+    await expect(page.getByTestId("proof-missing")).toHaveCount(0);
+  });
+
+  test("a padded id is rewritten to the canonical address", async ({ page }) => {
+    await open(page, "/proof/007");
+    await expect(page).toHaveURL(/\/proof\/7$/);
+    await expect(page.getByText("vault #7", { exact: true })).toBeVisible();
+  });
+
+  test("the Proof nav item is the current page on /proof and /proof/7", async ({ page }, info) => {
+    test.skip(isPhone(info), "the sidebar is desktop only");
+    for (const path of ["/proof", "/proof/7"]) {
+      await open(page, path);
+      await expect(page.getByTestId("sidebar").locator("[aria-current=page]")).toHaveText("Proof");
+    }
+  });
+});
+
 test.describe("Proof Page with the challenge feed", () => {
   test.use({ baseURL: LIVE_WEB_URL });
 
@@ -291,5 +527,14 @@ test.describe("Proof Page with the challenge feed", () => {
     await expect(page.getByText(`challenge round ${ROUND.round}`, { exact: true })).toBeVisible();
     await expectVaultSeven(page);
     expect(await fired()).toEqual([]);
+  });
+
+  test("bare /proof with the feed unreachable says so, with the form below", async ({ page }) => {
+    await page.route(`${CHALLENGE_URL}/round`, (route) => route.abort("connectionrefused"));
+    await open(page, "/proof");
+    await expect(page.getByTestId("proof-open-lead")).toContainText(
+      "The Challenge feed is not answering",
+    );
+    await expect(region(page, "Open a Vault by id").getByLabel("Vault id")).toBeVisible();
   });
 });

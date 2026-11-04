@@ -271,20 +271,23 @@ export const copy = {
       vaultAddress: "Vault Address",
       allowanceAddress: "Allowance Address",
       notActive: "Not active yet: its Co-signer keys are still being derived.",
+      watcherKey: "Watcher key",
+      guardianKey: (key: string) => `key ${key}`,
       codeHash: "code_hash",
       contract: "Contract",
       lock: "Lock",
-      alerts: "Alerts",
+      watcher: "Watcher",
     },
     pendingWithdrawal: (op: string, amount: string, at: string) =>
       `Withdrawal #${op} · ${amount} · executable ${at}`,
     destination: (address: string) => `to ${address}`,
     frozen: "frozen",
+    due: "executable now",
     pendingChange: (id: string, changes: string, at: string) =>
       `Policy Change #${id} · ${changes} · effective ${at}`,
     noPending: "No Withdrawal Request or Policy Change is pending.",
-    truncated: (pages: number) =>
-      `History truncated: only ${pages} pages of 100 events after this Vault's creation were read, so a pending request may be missing here.`,
+    reading: (count: number) =>
+      `Reading the history · ${count.toLocaleString("en-US")} events read`,
     change: {
       field: (label: string, value: string) => `${label} → ${value}`,
       delay: "Delay",
@@ -307,26 +310,59 @@ export const copy = {
     clawedBack: (recovery: string, at: string) => `Sent home to ${recovery} · ${at}`,
     clawedBackUntimed: (recovery: string) => `Sent home to ${recovery}`,
     missing: (id: string, contract: string) => `No Vault #${id} on ${contract}`,
+    misconfigured: (contract: string) =>
+      `The contract ${contract} did not answer as a Vault Contract`,
+    misconfiguredBody:
+      "Its account, its code or its get_vault answer is not what a Morrow Vault Contract serves. The page asks again every 30 seconds.",
     missingBody: "The contract has no Vault with this id. Vault ids are the numbers it assigns.",
     unreachable: "Could not reach NEAR",
     unreachableBody:
       "Every value on this page is read from the NEAR RPC, and it did not answer. The page asks again every 30 seconds.",
-    stale:
-      "Could not reach NEAR. The values below are from the last read that answered; the page asks again every 30 seconds.",
+    stale: {
+      unreachable: (at: string) =>
+        `Could not reach NEAR · last read ${at}. The values below are from that read; the page asks again every 30 seconds.`,
+      missing: (at: string) =>
+        `The contract did not answer with this Vault · last read ${at}. The values below are from that read; the page asks again every 30 seconds.`,
+      misconfigured: (at: string) =>
+        `The contract did not answer as a Vault Contract · last read ${at}. The values below are from that read; the page asks again every 30 seconds.`,
+    },
     retry: "Retry",
     noRpc: "No NEAR RPC configured",
     noRpcBody: "This deployment has no NEAR RPC, so the page cannot read any Vault from the chain.",
     open: {
       title: "Open a Vault by id",
+      noRound: "No Challenge round is open.",
+      feedDown: "The Challenge feed is not answering, so the live round's Vault cannot be shown.",
+      noVault: (round: number) => `Challenge round ${round} has no Vault yet.`,
+      otherContract: (theirs: string, ours: string) =>
+        `The live round's Vault is on ${theirs}, not on ${ours}, so it is not shown here.`,
       body: (contract: string) =>
-        `No Challenge round is open. Enter the id of any Vault on ${contract} to read its rules from the chain.`,
+        `Enter the id of any Vault on ${contract} to read its rules from the chain.`,
       label: "Vault id",
       submit: "Open",
       invalid: "A Vault id is digits only, for example 7.",
     },
     guaranteesIntro: "What the contract and the Vault Script enforce for this Vault.",
     trustIntro: "What these guarantees rely on.",
+    repoUrl: "https://github.com/CemAyyildiz/morrow",
+    repoLink: "Source: github.com/CemAyyildiz/morrow",
+    /** The deployment's watcher heartbeat, an age like the system card's Alerts line. */
+    watcher: {
+      seen: (minutes: number) => `Deployment watcher last seen ${minutes} min ago`,
+      none: "No deployment watcher configured",
+      checking: "Checking the deployment watcher",
+      unreachable: "Deployment watcher unreachable",
+      silent: "Deployment watcher has not reported",
+    },
     guarantees: {
+      notActive:
+        "This Vault is not active yet: its Co-signer keys are still being derived, so it holds nothing and no guarantee applies to it yet.",
+      closedTitle: "Sent home",
+      closed: (recovery: string, at: string) =>
+        `This Vault was sent home to ${recovery} at ${at}; no other spend can be co-signed.`,
+      closedUntimed: (recovery: string) =>
+        `This Vault was sent home to ${recovery}; no other spend can be co-signed.`,
+      g1Due: (op: string) => `Withdrawal #${op} is executable now.`,
       g1Title: "No instant theft",
       g1: (delay: string, blocks: string) =>
         `A withdrawal waits ${delay}. Before a coin's Escape Timelock of ${blocks} matures, no bitcoin leaves the Vault Address sooner than ${delay} after its Withdrawal Request, except back to the Vault Address (Refresh) or to the Recovery Address (Clawback). A thief holding both the Owner Key and the Owner Account still waits ${delay}.`,
@@ -351,24 +387,24 @@ export const copy = {
     trust: {
       t1Title: "The MPC network signs only what the contract asks",
       t1: (coSigner: string, contract: string) =>
-        `The NEAR MPC network behind ${coSigner} signs only what ${contract} requests, and stays live. If it stops, G-3 still holds through the Escape Path, and G-1 and G-2 pause until it recovers.`,
+        `The NEAR MPC network behind the configured signer ${coSigner} signs only what ${contract} requests, and stays live. If it stops, G-3 still holds through the Escape Path, and G-1 and G-2 pause until it recovers.`,
       t2Title: "The contract code is correct",
       t2: (contract: string, hash: string) =>
-        `The code deployed at ${contract} is correct. It is open source, and its code_hash ${hash} is read from NEAR so anyone can match it to a build.`,
+        `The code deployed at ${contract} is correct. It is open source, and its code_hash ${hash} is read from NEAR: build contracts/vault from the public repository and compare.`,
       t2Unread: (contract: string) =>
-        `The code deployed at ${contract} is correct. It is open source; its code_hash could not be read on this refresh.`,
+        `The code deployed at ${contract} is correct. It is open source, but its code_hash could not be read on this refresh to compare with a build of contracts/vault.`,
       t3Title: "The one theft path",
       t3: (count: number, guardians: string, coSigner: string) =>
-        `A Guardian and the NEAR MPC network do not collude. If one of the ${plural(count, "Guardian")} (${guardians}) and the network behind ${coSigner} do, they can sign a Clawback Path spend to any address, because Bitcoin script cannot restrict destinations. This is the one theft path.`,
+        `A Guardian and the NEAR MPC network do not collude. If one of the ${plural(count, "Guardian")} (${guardians}) and the network behind the configured signer ${coSigner} do, they can sign a Clawback Path spend to any address, because Bitcoin script cannot restrict destinations. This is the one theft path.`,
       t4Title: "The Recovery Address key stays offline",
       t4: (recovery: string) => `The Owner keeps the private key of ${recovery} safe and offline.`,
       t5Title: "Trusted Contacts are not fooled",
       t5: (contacts: string, floor: string, delay: string) =>
         `Fast Approval is on. A Trusted Contact (${contacts}) does not collude with, or get fooled by, a thief who holds the Owner Key and the Owner Account. If one does, the theft completes after the Fast Approval Floor of ${floor} instead of ${delay}.`,
-      noTrustedContact: "none on this Vault",
+      t5None: "Fast Approval is on, but this Vault has no Trusted Contact, so it cannot be used.",
       t6Title: "The Guardian Watcher stays live",
       t6: (watchers: string, recovery: string) =>
-        `The Guardian Watcher holding the key of ${watchers} stays live and uncompromised. If it is down, alerts and duress Clawbacks stop, but G-1 still holds and human Guardians can still claw back; the Alerts line on this page shows when it was last seen. If it is compromised, it can claw back to ${recovery} only: theft also needs the MPC network (T-3).`,
+        `The Guardian Watcher holding the key of ${watchers} stays live and uncompromised. If it is down, alerts and duress Clawbacks stop, but G-1 still holds and human Guardians can still claw back; the Deployment watcher line on this page shows when it was last seen. If it is compromised, it can claw back to ${recovery} only: theft also needs the MPC network (T-3).`,
     },
     residual: (delay: string) =>
       `This Vault has no Auto-Clawback Guardian, so a Recovery Address change is stopped only by a Guardian veto within ${delay}.`,

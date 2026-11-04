@@ -1,6 +1,16 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { poll } from "./live";
-import { PROOF_POLL_MS, proofRpc, readProof, type ProofAnswer, type ProofFacts } from "./proof";
+import {
+  PROOF_POLL_MS,
+  proofRpc,
+  readProof,
+  type ProofAnswer,
+  type ProofFacts,
+  type ScanHolder,
+} from "./proof";
+
+/** Why the data on screen is not from the latest read. */
+export type StaleReason = "unreachable" | "missing" | "misconfigured";
 
 /** Where the Proof Page of one Vault stands. */
 export type ProofState =
@@ -8,18 +18,24 @@ export type ProofState =
   | { kind: "no-rpc" }
   /** The first read has not answered. */
   | { kind: "loading" }
-  /** `stale` once a later read failed: the last answer stays on screen. */
-  | { kind: "ok"; facts: ProofFacts; now: number; stale: boolean }
-  /** `get_vault` failed in the contract. */
-  | { kind: "missing"; code: string | null }
+  /**
+   * The last read that answered, at `readAt`; `now` is the latest answer's time, which every
+   * time on screen is formatted against. `stale` once a later read failed: the data stays.
+   */
+  | { kind: "ok"; facts: ProofFacts; readAt: number; now: number; stale: StaleReason | null }
+  /** `get_vault` failed with `ERR_VAULT_NOT_FOUND`. */
+  | { kind: "missing"; code: string }
+  /** The contract account did not answer as a Vault Contract. */
+  | { kind: "misconfigured" }
   /** The RPC did not answer before any read succeeded. */
   | { kind: "unreachable" };
 
 export type Held = { vaultId: string; state: ProofState };
 
 /**
- * The state after `answer` for `vaultId`. A failed read keeps the last answer of the same
- * Vault, marked stale; without one the page says the RPC is unreachable. Pure.
+ * The state after `answer` for `vaultId` at `now`. After a first read, any failed one keeps
+ * the last data of the same Vault, marked stale with its reason; without data the page says
+ * what failed. Pure.
  */
 export function heldAfter(
   previous: Held | null,
@@ -28,18 +44,22 @@ export function heldAfter(
   now: number,
 ): Held {
   if (answer.kind === "ok") {
-    return { vaultId, state: { kind: "ok", facts: answer.facts, now, stale: false } };
+    return {
+      vaultId,
+      state: { kind: "ok", facts: answer.facts, readAt: now, now, stale: null },
+    };
   }
-  if (answer.kind === "missing") return { vaultId, state: { kind: "missing", code: answer.code } };
   const last = previous?.vaultId === vaultId ? previous.state : null;
-  if (last?.kind === "ok") return { vaultId, state: { ...last, stale: true } };
-  return { vaultId, state: { kind: "unreachable" } };
+  if (last?.kind === "ok") return { vaultId, state: { ...last, now, stale: answer.kind } };
+  if (answer.kind === "missing") return { vaultId, state: { kind: "missing", code: answer.code } };
+  return { vaultId, state: { kind: answer.kind } };
 }
 
 /**
  * Reads the Proof Page of `vaultId` over `rpcUrl` now and every 30 s, with no cache beyond
- * this page's memory. A failed read keeps the last answer and marks it stale; `retry` asks
- * again at once. Every read is aborted on unmount or when the Vault changes.
+ * this page's memory. The history scan is kept between refreshes and read on from its
+ * cursor; it starts over when the Vault changes. `retry` asks again at once. Every read is
+ * aborted on unmount or when the Vault changes.
  */
 export function useProof(
   rpcUrl: string | null,
@@ -49,14 +69,15 @@ export function useProof(
   const [held, setHeld] = useState<Held | null>(null);
   const [ask, setAsk] = useState(0);
   const retry = useCallback(() => setAsk((n) => n + 1), []);
-  // The scan's first cursor per Vault: the binary search runs once per page visit.
-  const starts = useRef(new Map<string, bigint>());
+  const scan = useRef<ScanHolder>({ current: null });
 
   useEffect(() => {
     if (rpcUrl === null) return;
+    // Another Vault starts its own scan.
+    if (scan.current.current?.vaultId !== vaultId) scan.current = { current: null };
+    const holder = scan.current;
     return poll(
-      (signal) =>
-        readProof(proofRpc(rpcUrl, contractId, signal), contractId, vaultId, starts.current),
+      (signal) => readProof(proofRpc(rpcUrl, contractId, signal), contractId, vaultId, holder),
       (answer) => setHeld((previous) => heldAfter(previous, vaultId, answer, Date.now())),
       PROOF_POLL_MS,
     );
