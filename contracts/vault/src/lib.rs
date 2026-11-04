@@ -20,6 +20,7 @@ use crate::core::spend::{
 };
 use crate::core::tx::{
     build_payment, build_refresh, build_sweep, clawback_fee_cap, withdrawal_fee_cap, PaymentPlan,
+    DUST_LIMIT_SATS,
 };
 use crate::events::{record, EventView, StoredEvent, EVENTS_SINCE_MAX_LIMIT};
 use near_sdk::json_types::{U128, U64};
@@ -542,7 +543,6 @@ impl VaultContract {
     /// The payment is built and frozen at once: change goes back to the Allowance Address, RBF
     /// is set on every input, and the fee is ≤ min(Fee Cap, 5% of the amount). The Owner then
     /// signs it through `sign_input` on the allowance path.
-    #[allow(clippy::too_many_arguments)]
     pub fn spend_allowance(
         &mut self,
         vault_id: U64,
@@ -564,12 +564,22 @@ impl VaultContract {
                 "amount must be positive",
             ));
         }
-        // The limit comes before the coins: on a limit of 0 nothing else is even looked at.
+        if amount < DUST_LIMIT_SATS {
+            reject(&Rejection::with(
+                ErrorCode::InsufficientFunds,
+                "amount is below dust",
+            ));
+        }
+        // The limit comes before the coins: on a limit of 0 nothing else is even looked at, not
+        // even the window.
         let limit = vault.policy.allowance_limit_sats.0;
+        if limit == 0 {
+            fail(ErrorCode::AllowanceLimit);
+        }
         let window_sats = self
             .allowance_window(vault_id.0)
             .checked_add(amount)
-            .filter(|total| limit != 0 && *total <= limit)
+            .filter(|total| *total <= limit)
             .unwrap_or_else(|| fail(ErrorCode::AllowanceLimit));
         check_inputs(&utxos).unwrap_or_else(|r| reject(&r));
         self.check_unreserved(&utxos);
@@ -876,8 +886,9 @@ impl VaultContract {
     }
 
     /// Cancels a pending withdrawal (the Owner with an envelope, or any Guardian), or a Frozen
-    /// Refresh that still has an unsigned input (the Owner only, with an envelope). Cancelling a
-    /// Refresh does not reset the Refresh rate limit.
+    /// Refresh or Allowance spend that still has an unsigned input (the Owner only, with an
+    /// envelope). Cancelling a Refresh does not reset the Refresh rate limit; a cancelled
+    /// Allowance spend leaves the Allowance window.
     pub fn cancel(&mut self, op_id: U64, envelope: Option<String>) {
         let storage_before = env::storage_usage();
         let op = self
@@ -887,10 +898,10 @@ impl VaultContract {
             .unwrap_or_else(|| fail(ErrorCode::OpNotFound));
         let vault = self.active_vault(op.vault_id.0).clone();
         let caller = env::predecessor_account_id();
-        let is_refresh = op.kind == SpendOpKind::Refresh;
+        let owner_only = matches!(op.kind, SpendOpKind::Refresh | SpendOpKind::Allowance);
         if caller == vault.owner_account {
             check_envelope(envelope.as_deref()).unwrap_or_else(|r| reject(&r));
-        } else if is_refresh
+        } else if owner_only
             || !vault
                 .policy
                 .guardians
@@ -901,10 +912,10 @@ impl VaultContract {
         }
         let cancellable = match op.kind {
             SpendOpKind::Withdrawal => op.state == SpendOpState::Pending,
-            SpendOpKind::Refresh => {
+            SpendOpKind::Refresh | SpendOpKind::Allowance => {
                 op.state == SpendOpState::Frozen && op.signatures.iter().any(Option::is_none)
             }
-            _ => false,
+            SpendOpKind::Clawback => false,
         };
         if !cancellable {
             fail(ErrorCode::BadOpState);
@@ -917,10 +928,10 @@ impl VaultContract {
         }
         self.emit(
             op.vault_id.0,
-            if is_refresh {
-                "refresh_cancelled"
-            } else {
-                "withdrawal_cancelled"
+            match op.kind {
+                SpendOpKind::Refresh => "refresh_cancelled",
+                SpendOpKind::Allowance => "allowance_cancelled",
+                _ => "withdrawal_cancelled",
             },
             json!({ "op_id": op_id, "by": caller }),
         );

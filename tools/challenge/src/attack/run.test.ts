@@ -609,7 +609,7 @@ function minimalNear(overrides: Partial<NearPort> = {}): NearPort {
     storage_balance: "0",
     created_at: "0",
     pending_change: null,
-    policy: { watcher_x25519_pk: "44".repeat(32) } as never,
+    policy: { watcher_x25519_pk: "44".repeat(32), allowance_limit_sats: "0" } as never,
   };
   const call =
     overrides.call ??
@@ -838,6 +838,33 @@ describe("Bitcoin Owner-Key-only spends", () => {
       },
     });
     expect(escape.actual_class).toBe("unreadable");
+  });
+});
+
+describe("allowance preflight", () => {
+  it("stops before any attempt when the Challenge Vault's Allowance limit is not 0", async () => {
+    const sent: CallPlan[] = [];
+    const near = minimalNear({
+      call: async (_key, plan) => {
+        sent.push(plan);
+        return { kind: "refused", hash: "1".repeat(64), code: "ERR_CLAWED_BACK", failure: "x" };
+      },
+    });
+    const vault = await near.getVault("1");
+    const report = await new AttackRun(
+      handPorts({
+        near: {
+          ...near,
+          getVault: async () =>
+            ({ ...vault, policy: { ...vault.policy, allowance_limit_sats: "100000" } }) as never,
+        },
+      }),
+      { ...HAND, n: 20, dryRun: false },
+    ).execute();
+    expect(report.summary.stopped_reason).toContain("allowance_limit_sats 100000, not 0");
+    expect(report.summary.passed).toBe(false);
+    expect(report.attempts).toEqual([]);
+    expect(sent).toEqual([]);
   });
 });
 

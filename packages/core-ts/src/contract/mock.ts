@@ -242,10 +242,13 @@ export class MockContractClient implements ContractClient {
     assertAddress(args.destination, vault.policy.btc_network);
     const amount = assertU64(args.amount_sats, "amount_sats");
     if (amount <= 0n) this.fail("ERR_INSUFFICIENT_FUNDS", "amount must be positive");
-    // The limit comes before the coins: on a limit of 0 nothing else is even looked at.
+    if (amount < DUST_LIMIT_SATS) this.fail("ERR_INSUFFICIENT_FUNDS", "amount is below dust");
+    // The limit comes before the coins: on a limit of 0 nothing else is even looked at, not
+    // even the window.
     const limit = BigInt(vault.policy.allowance_limit_sats);
+    if (limit === 0n) this.fail("ERR_ALLOWANCE_LIMIT");
     const window = this.allowanceWindow(vault.vault_id) + amount;
-    if (limit === 0n || window > limit) this.fail("ERR_ALLOWANCE_LIMIT");
+    if (window > limit) this.fail("ERR_ALLOWANCE_LIMIT");
     this.checkInputs(args.utxos, false);
     this.checkFunds(args.utxos, amount);
     const op = this.newOp(vault, "allowance", "pending", args.amount_sats, args.destination, args);
@@ -319,22 +322,26 @@ export class MockContractClient implements ContractClient {
   async cancel(opId: U64, envelope?: Hex): Promise<void> {
     const op = this.op(opId);
     const vault = this.activeVault(op.vault_id);
-    const isRefresh = op.kind === "refresh";
+    const ownerOnly = op.kind === "refresh" || op.kind === "allowance";
     if (this.caller === vault.owner_account) {
       this.checkEnvelope(envelope);
-    } else if (isRefresh || !this.guardianOf(vault)) {
+    } else if (ownerOnly || !this.guardianOf(vault)) {
       this.fail("ERR_UNAUTHORIZED");
     }
-    // A pending withdrawal, or a Frozen Refresh with an unsigned input (Owner only).
-    const cancellable = isRefresh
+    // A pending withdrawal, or a Frozen Refresh or Allowance spend with an unsigned input
+    // (Owner only).
+    const cancellable = ownerOnly
       ? op.state === "frozen" && op.signatures.some((s) => s === null)
       : op.kind === "withdrawal" && op.state === "pending";
     if (!cancellable) this.fail("ERR_BAD_OP_STATE");
     op.state = "cancelled";
-    this.emit(vault.vault_id, isRefresh ? "refresh_cancelled" : "withdrawal_cancelled", {
-      op_id: op.op_id,
-      by: this.caller,
-    });
+    const kind =
+      op.kind === "refresh"
+        ? "refresh_cancelled"
+        : op.kind === "allowance"
+          ? "allowance_cancelled"
+          : "withdrawal_cancelled";
+    this.emit(vault.vault_id, kind, { op_id: op.op_id, by: this.caller });
   }
 
   async beginClawback(args: BeginClawbackArgs): Promise<U64> {

@@ -579,6 +579,15 @@ export class AttackRun {
       this.stop(`round ${round.round} Vault has no usable watcher_x25519_pk`);
       return null;
     }
+    // The Challenge Vault must refuse every Allowance spend: with any other limit an attack
+    // would spend from the Allowance for real.
+    const allowanceLimit = String(vault.policy?.allowance_limit_sats ?? "unset");
+    if (allowanceLimit !== "0") {
+      this.stop(
+        `round ${round.round} Vault has allowance_limit_sats ${allowanceLimit}, not 0: the Challenge Vault must refuse every Allowance spend`,
+      );
+      return null;
+    }
     const vaultAddress = vault.addresses?.vault ?? round.vault_address ?? "";
     const utxos = await this.confirmedUtxos(vaultAddress);
     const coins = (utxos ?? []).map((u) => ({

@@ -37,7 +37,7 @@ export interface ContractClient {
 
   /**
    * `cancel`. A pending withdrawal: Owner (envelope required) or any Guardian. A Frozen Refresh
-   * with an unsigned input: Owner only, envelope required.
+   * or Allowance spend with an unsigned input: Owner only, envelope required.
    */
   cancel(opId: U64, envelope?: Hex): Promise<void>;
   /** `begin_clawback`. Any Guardian. Returns the clawback op id. */

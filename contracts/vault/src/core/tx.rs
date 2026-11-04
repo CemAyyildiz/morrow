@@ -298,6 +298,21 @@ pub(crate) mod test_support {
         assert_eq!(at + 4, unsigned.len(), "only the lock time is left");
         found
     }
+
+    /// The nSequence of every input of an unsigned (non-witness) serialization.
+    pub(crate) fn sequences(unsigned: &[u8]) -> Vec<u32> {
+        let mut at = 4;
+        let input_count = unsigned[at] as usize;
+        at += 1;
+        let mut found = Vec::new();
+        for _ in 0..input_count {
+            at += 36;
+            at += 1 + unsigned[at] as usize;
+            found.push(u32::from_le_bytes(unsigned[at..at + 4].try_into().unwrap()));
+            at += 4;
+        }
+        found
+    }
 }
 
 #[cfg(test)]
