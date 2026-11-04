@@ -4,9 +4,10 @@
  *
  * Each round follows one order:
  *   1. `pre`: refusals that need a live Vault and no op (each refused by the Policy, not by the
- *      Vault's state), the Recovery Address redirect the watcher must veto, then the two
- *      Owner-Key-only Bitcoin spends (while the Vault coin is still unspent and confirmed, so the
- *      node's rejection is the script's and BIP68's, not a mempool conflict with the Clawback);
+ *      Vault's state), the Recovery Address redirect the watcher must veto (and, at once, a
+ *      `window` attempt to apply it), then the two Owner-Key-only Bitcoin spends (while the
+ *      Vault coin is still unspent and confirmed, so the node's rejection is the script's and
+ *      BIP68's, not a mempool conflict with the Clawback);
  *   2. `request`: one Withdrawal Request of the full balance, which the watcher claws back;
  *   3. `window`: the attempts that race the Clawback, sent at once: signed with consecutive
  *      nonces from one `view_access_key` read and sent concurrently;
@@ -124,6 +125,7 @@ export type Move =
   | "refresh_over_fee_cap"
   | "policy_change_script_bound"
   | "policy_change_redirect_recovery"
+  | "policy_change_apply_redirect"
   | "escape_early"
   | "no_cosigner"
   | "full_request"
@@ -178,6 +180,13 @@ export const MOVES: Record<Move, MoveInfo> = {
     phase: "pre",
     expected: ["accepted", "ERR_CHANGE_PENDING", "ERR_STORAGE_BUDGET"],
   },
+  // Sent at once after an accepted redirect, racing the veto: the change waits its Policy
+  // Change Delay, or the watcher has already vetoed it. Skipped when no redirect was accepted.
+  policy_change_apply_redirect: {
+    category: "policy_change",
+    phase: "window",
+    expected: ["ERR_CHANGE_NOT_EFFECTIVE", "ERR_BAD_OP_STATE"],
+  },
   escape_early: { category: "bitcoin_escape", phase: "pre", expected: ["rejected"] },
   no_cosigner: { category: "bitcoin_no_cosigner", phase: "pre", expected: ["rejected"] },
   // Another visitor's live request may hold the coin, or the storage may be short under spam:
@@ -231,6 +240,7 @@ const SCRIPT: readonly Move[] = [
   "refresh_over_fee_cap",
   "policy_change_script_bound",
   "policy_change_redirect_recovery",
+  "policy_change_apply_redirect",
   "escape_early",
   "no_cosigner",
   "full_request",

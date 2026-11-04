@@ -194,6 +194,16 @@ export function validatePolicyChange(current: Policy, changes: object): Policy {
   for (const key of keys) {
     if (!(CHANGEABLE_FIELDS as readonly string[]).includes(key)) fail("ERR_SCRIPT_BOUND", key);
   }
+  // Value types as the contract parses them: u64 fields are canonical decimal strings.
+  for (const [key, value] of Object.entries(changes)) {
+    const ok =
+      key === "fast_approval"
+        ? typeof value === "boolean"
+        : key === "recovery_address"
+          ? typeof value === "string"
+          : typeof value === "string" && isU64(value);
+    if (!ok) fail("ERR_POLICY_BOUNDS", `${key} has the wrong type or format`);
+  }
   const next = { ...current, ...(changes as PolicyChangeFields) } as Policy;
   validateAdjustable(next);
   return next;

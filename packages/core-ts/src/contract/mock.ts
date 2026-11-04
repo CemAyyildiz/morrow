@@ -355,6 +355,8 @@ export class MockContractClient implements ContractClient {
         this.emit(vault.vault_id, "op_voided", { op_id: other.op_id, by_op_id: op.op_id });
       }
     }
+    // A change pending when the Vault closes can never apply: the clawing Guardian vetoes it.
+    if (vault.pending_change) this.vetoChange(vault, vault.pending_change.change_id);
     if (vault.state !== "clawed_back") {
       vault.state = "clawed_back";
       this.emit(vault.vault_id, "vault_clawed_back", {
@@ -397,18 +399,20 @@ export class MockContractClient implements ContractClient {
     const change = this.change(changeId);
     const vault = this.activeVault(change.vault_id);
     if (change.state !== "pending") this.fail("ERR_BAD_OP_STATE");
-    if (this.guardianOf(vault)) {
-      change.state = "vetoed";
-      change.vetoed_by = this.caller;
-      this.emit(vault.vault_id, "policy_change_vetoed", { change_id: changeId, by: this.caller });
-    } else if (this.caller === vault.owner_account) {
+    // The Owner first: an Owner who is also a Guardian withdraws, with an envelope.
+    if (this.caller === vault.owner_account) {
       this.checkEnvelope(envelope);
       change.state = "withdrawn";
-      this.emit(vault.vault_id, "policy_change_withdrawn", { change_id: changeId });
+      vault.pending_change = null;
+      this.emit(vault.vault_id, "policy_change_withdrawn", {
+        change_id: changeId,
+        envelope: envelope as Hex,
+      });
+    } else if (this.guardianOf(vault)) {
+      this.vetoChange(vault, changeId);
     } else {
       this.fail("ERR_UNAUTHORIZED");
     }
-    vault.pending_change = null;
   }
 
   async fastApprove(opId: U64): Promise<void> {
@@ -450,6 +454,10 @@ export class MockContractClient implements ContractClient {
 
   async getOp(opId: U64): Promise<SpendOp> {
     return clone(this.op(opId));
+  }
+
+  async getPolicyChange(changeId: U64): Promise<PolicyChange> {
+    return clone(this.change(changeId));
   }
 
   async getVaultKit(vaultId: U64): Promise<VaultKit> {
@@ -495,6 +503,15 @@ export class MockContractClient implements ContractClient {
 
   private op(opId: U64): SpendOp {
     return this.ops.get(opId) ?? this.fail("ERR_OP_NOT_FOUND");
+  }
+
+  /** A Guardian's veto (the caller's): settles the change and emits `policy_change_vetoed`. */
+  private vetoChange(vault: Vault, changeId: U64): void {
+    const change = this.change(changeId);
+    change.state = "vetoed";
+    change.vetoed_by = this.caller;
+    vault.pending_change = null;
+    this.emit(vault.vault_id, "policy_change_vetoed", { change_id: changeId, by: this.caller });
   }
 
   private change(changeId: U64): PolicyChange {

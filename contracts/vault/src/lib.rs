@@ -649,7 +649,8 @@ impl VaultContract {
 
     /// Any Guardian sends up to 5 coins from one source (the Vault Address by default, or the
     /// Allowance Address) to the Recovery Address in effect. The first Clawback voids every live
-    /// op and closes the Vault for good; later calls sweep late deposits.
+    /// op, vetoes a pending Policy Change, and closes the Vault for good; later calls sweep late
+    /// deposits.
     pub fn begin_clawback(
         &mut self,
         vault_id: U64,
@@ -718,6 +719,10 @@ impl VaultContract {
                     json!({ "op_id": U64(op_id_to_void), "by_op_id": U64(op_id) }),
                 );
             }
+        }
+        // A change pending when the Vault closes can never apply: the clawing Guardian vetoes it.
+        if let Some(change) = vault.pending_change.clone() {
+            self.veto_change(change, caller.clone());
         }
         if vault.state != VaultState::ClawedBack {
             if let Some(stored) = self.vaults.get_mut(&vault_id.0) {
@@ -876,26 +881,22 @@ impl VaultContract {
         let change = self.pending_change(change_id);
         let vault = self.active_vault(change.vault_id.0).clone();
         let caller = env::predecessor_account_id();
-        let is_guardian = vault
-            .policy
-            .guardians
-            .iter()
-            .any(|g| g.guardian_account == caller);
-        if is_guardian {
-            self.settle_change(change, PolicyChangeState::Vetoed, Some(caller.clone()));
-            self.emit(
-                vault.vault_id.0,
-                "policy_change_vetoed",
-                json!({ "change_id": change_id, "by": caller }),
-            );
-        } else if caller == vault.owner_account {
+        // The Owner first: an Owner who is also a Guardian withdraws, with an envelope.
+        if caller == vault.owner_account {
             check_envelope(envelope.as_deref()).unwrap_or_else(|r| reject(&r));
             self.settle_change(change, PolicyChangeState::Withdrawn, None);
             self.emit(
                 vault.vault_id.0,
                 "policy_change_withdrawn",
-                json!({ "change_id": change_id }),
+                json!({ "change_id": change_id, "envelope": envelope }),
             );
+        } else if vault
+            .policy
+            .guardians
+            .iter()
+            .any(|g| g.guardian_account == caller)
+        {
+            self.veto_change(change, caller);
         } else {
             fail(ErrorCode::Unauthorized);
         }
@@ -935,6 +936,13 @@ impl VaultContract {
             .get(&op_id.0)
             .cloned()
             .unwrap_or_else(|| fail(ErrorCode::OpNotFound))
+    }
+
+    pub fn get_policy_change(&self, change_id: U64) -> PolicyChange {
+        self.changes
+            .get(&change_id.0)
+            .cloned()
+            .unwrap_or_else(|| fail(ErrorCode::ChangeNotFound))
     }
 
     pub fn get_vault(&self, vault_id: U64) -> Vault {
@@ -1052,6 +1060,17 @@ impl VaultContract {
             fail(ErrorCode::BadOpState);
         }
         change
+    }
+
+    /// A Guardian's veto: settles the change and emits `policy_change_vetoed`.
+    fn veto_change(&mut self, change: PolicyChange, by: AccountId) {
+        let (vault_id, change_id) = (change.vault_id.0, change.change_id);
+        self.settle_change(change, PolicyChangeState::Vetoed, Some(by.clone()));
+        self.emit(
+            vault_id,
+            "policy_change_vetoed",
+            json!({ "change_id": change_id, "by": by }),
+        );
     }
 
     /// Moves a pending change to its final state and clears it from its Vault.

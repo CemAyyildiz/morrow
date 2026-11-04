@@ -52,7 +52,8 @@ const fakeHash = (n: number) => n.toString(16).padStart(64, "0");
 interface Included {
   hash: string;
   kind: "rejected" | "withdrawal" | "policy_change";
-  op_id: string | null;
+  /** A withdrawal's op id or a Policy Change's change id (see `kind`). */
+  id: string | null;
   vault_id: string | null;
   code: string | null;
 }
@@ -113,7 +114,7 @@ export class DryRunChain {
             : null;
       if (kind !== null && typeof value === "string") {
         const vaultId = (plan.args as { vault_id?: string }).vault_id ?? null;
-        this.included.push({ hash, kind, op_id: value, vault_id: vaultId, code: null });
+        this.included.push({ hash, kind, id: value, vault_id: vaultId, code: null });
       }
       return { kind: "accepted", hash, value, logs: [] };
     } catch (error) {
@@ -121,7 +122,7 @@ export class DryRunChain {
         this.included.push({
           hash,
           kind: "rejected",
-          op_id: null,
+          id: null,
           vault_id: null,
           code: error.code,
         });
@@ -138,8 +139,6 @@ export class DryRunChain {
 
   /** Clawback op per Vault, as the simulated watcher made it. */
   readonly clawbacks = new Map<string, string>();
-  /** Change ids the simulated watcher vetoed. */
-  readonly vetoed = new Set<string>();
 
   /**
    * The simulated watcher, as the Guardian of a Challenge Vault: vetoes every pending Policy
@@ -151,9 +150,12 @@ export class DryRunChain {
         const vault = await this.mock.getVault(vaultId).catch(() => null);
         if (!vault || vault.state === "clawed_back") return null;
         const pending = vault.pending_change;
+        // A failed veto must not stop the Clawback below; the next tick tries again.
         if (pending) {
-          await this.mock.asCaller(GUARDIAN).vetoPolicyChange(pending.change_id);
-          this.vetoed.add(pending.change_id);
+          await this.mock
+            .asCaller(GUARDIAN)
+            .vetoPolicyChange(pending.change_id)
+            .catch(() => undefined);
         }
         const requested = this.included.some(
           (i) => i.kind === "withdrawal" && i.vault_id === vaultId,
@@ -175,31 +177,30 @@ export class DryRunChain {
   /**
    * The fake Attempt Log: every included call in discovery order (oldest first), numbered from 1.
    * A request carries the Clawback op that voided it; the mock builds no Bitcoin bytes, so there
-   * is no Clawback txid. A Policy Change carries `vetoed` once the watcher vetoed it.
+   * is no Clawback txid. A Policy Change carries its state as the mock contract holds it.
    */
-  feedEntries(): LogEntryView[] {
-    return this.included.map((i, index) => {
+  async feedEntries(): Promise<LogEntryView[]> {
+    const views: LogEntryView[] = [];
+    for (const [index, i] of this.included.entries()) {
       const clawback =
         i.kind === "withdrawal" && i.vault_id !== null ? this.clawbacks.get(i.vault_id) : undefined;
-      const outcome =
-        i.kind === "policy_change" && i.op_id !== null
-          ? this.vetoed.has(i.op_id)
-            ? "vetoed"
-            : "pending"
-          : null;
-      return {
+      const change =
+        i.kind === "policy_change" && i.id !== null ? await this.mock.getPolicyChange(i.id) : null;
+      views.push({
         n: index + 1,
         type: i.kind,
         tx_hash: i.hash,
-        op_id: i.op_id,
+        op_id: i.kind === "withdrawal" ? i.id : null,
+        change_id: i.kind === "policy_change" ? i.id : null,
         vault_id: i.vault_id,
         code: i.code,
         clawback_op_id: clawback ?? null,
         clawback_txid: null,
         clawback_broadcast: i.kind === "withdrawal" ? false : null,
-        outcome,
-      };
-    });
+        outcome: change?.state ?? null,
+      });
+    }
+    return views;
   }
 }
 
@@ -222,6 +223,8 @@ async function dispatch(mock: MockContractClient, plan: CallPlan): Promise<unkno
       return mock.refresh(args as never);
     case "propose_policy_change":
       return mock.proposePolicyChange(args as never);
+    case "apply_policy_change":
+      return mock.applyPolicyChange(args.change_id as string);
     default:
       throw new Error(`unknown method ${plan.method}`);
   }

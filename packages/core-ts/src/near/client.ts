@@ -6,6 +6,7 @@ import type {
   BeginClawbackArgs,
   CreateVaultArgs,
   Hex,
+  PolicyChange,
   ProposePolicyChangeArgs,
   RefreshArgs,
   RequestWithdrawalArgs,
@@ -177,6 +178,10 @@ export class NearContractClient implements ContractClient {
 
   getOp(opId: U64): Promise<SpendOp> {
     return this.view("get_op", { op_id: opId });
+  }
+
+  getPolicyChange(changeId: U64): Promise<PolicyChange> {
+    return this.view("get_policy_change", { change_id: changeId });
   }
 
   getVaultKit(vaultId: U64): Promise<VaultKit> {

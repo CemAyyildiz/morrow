@@ -585,5 +585,33 @@ pub mod tests {
             let fields = parse_change(&sent).unwrap();
             assert_eq!(near_sdk::serde_json::to_value(&fields).unwrap(), sent);
         }
+
+        #[test]
+        fn every_changeable_field_round_trips_and_takes_effect() {
+            let before = near_sdk::serde_json::to_value(standard_policy()).unwrap();
+            for field in CHANGEABLE_FIELDS {
+                let value = match field {
+                    "delay_ns" => json!((2 * DAY_NS).to_string()),
+                    "recovery_address" => json!(NEW_RECOVERY),
+                    "allowance_limit_sats" => json!("5"),
+                    "fee_cap_sats" => json!("20000"),
+                    "policy_change_delay_ns" => json!((8 * DAY_NS).to_string()),
+                    "fast_approval" => json!(true),
+                    "fast_approval_floor_ns" => json!((20 * MINUTE_NS).to_string()),
+                    other => panic!("no test value for {other}"),
+                };
+                let sent = json!({ field: value.clone() });
+                let fields = parse_change(&sent).unwrap();
+                assert_eq!(
+                    near_sdk::serde_json::to_value(&fields).unwrap(),
+                    sent,
+                    "{field}"
+                );
+                let next = fields.apply_to(&standard_policy()).unwrap();
+                let after = near_sdk::serde_json::to_value(next).unwrap();
+                assert_ne!(before[field], value, "{field}");
+                assert_eq!(after[field], value, "{field}");
+            }
+        }
     }
 }

@@ -88,7 +88,12 @@ describe("logViews", () => {
       clawback_op_id: "8",
       clawback_broadcast: true,
     });
-    expect(views[2]).toMatchObject({ type: "policy_change", op_id: "7", tx_hash: "h3" });
+    expect(views[2]).toMatchObject({
+      type: "policy_change",
+      op_id: null,
+      change_id: "7",
+      tx_hash: "h3",
+    });
   });
 });
 

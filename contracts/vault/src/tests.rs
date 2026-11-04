@@ -342,9 +342,14 @@ mod withdrawals_support {
 
     /// An active signet Vault owned by owner.testnet with Guardians emma.testnet and backup.testnet.
     pub fn active_vault() -> (VaultContract, U64) {
+        active_vault_with(standard_policy())
+    }
+
+    /// `active_vault` with another Policy.
+    pub fn active_vault_with(policy: Policy) -> (VaultContract, U64) {
         let mut contract = testnet_contract(vec![]);
         context("owner.testnet", MIN_VAULT_STORAGE);
-        let id = create(&mut contract, standard_policy());
+        let id = create(&mut contract, policy);
         let mut point = [0x11u8; 64];
         point[63] = 1;
         let key = format!("secp256k1:{}", bs58::encode(point).into_string());
@@ -1508,13 +1513,18 @@ mod policy_change {
 
         let view = near_sdk::serde_json::to_value(contract.get_vault(id)).unwrap();
         assert_eq!(
-            view["pending_change"]["changes"],
-            json!({ "recovery_address": NEW_RECOVERY })
+            view["pending_change"],
+            json!({
+                "change_id": "1",
+                "vault_id": id.0.to_string(),
+                "changes": { "recovery_address": NEW_RECOVERY },
+                "proposed_at": NOW.to_string(),
+                "effective_at": (NOW + WEEK).to_string(),
+                "state": "pending",
+                "vetoed_by": null,
+            })
         );
-        assert_eq!(
-            view["pending_change"]["effective_at"],
-            (NOW + WEEK).to_string()
-        );
+        assert_eq!(contract.get_policy_change(change_id), pending);
 
         let event = contract.events_since(U64(0), 100).pop().unwrap();
         assert_eq!(event.kind, "policy_change_proposed");
@@ -1677,7 +1687,10 @@ mod policy_change {
         assert_eq!(stored.vetoed_by, None);
         let event = contract.events_since(U64(0), 100).pop().unwrap();
         assert_eq!(event.kind, "policy_change_withdrawn");
-        assert_eq!(event.data, json!({ "change_id": "1" }));
+        assert_eq!(
+            event.data,
+            json!({ "change_id": "1", "envelope": envelope() })
+        );
 
         expect_panic("ERR_BAD_ENVELOPE", || {
             let (mut contract, id) = active_vault();
@@ -1703,13 +1716,39 @@ mod policy_change {
     }
 
     #[test]
-    fn a_clawback_during_a_pending_change_pays_the_address_in_effect() {
+    fn a_clawback_during_a_pending_change_pays_the_address_in_effect_and_vetoes_it() {
         let (mut contract, id) = active_vault();
         let change_id = redirect(&mut contract, id);
         assert_eq!(
             claw_destination(&mut contract, id, NOW + WEEK - 1),
             RECOVERY_SIGNET
         );
+        assert_eq!(contract.get_vault(id).pending_change, None);
+        let settled = contract.get_policy_change(change_id);
+        assert_eq!(settled.state, PolicyChangeState::Vetoed);
+        assert_eq!(
+            settled.vetoed_by.as_ref().map(|a| a.as_str()),
+            Some("emma.testnet")
+        );
+        let vetoed: Vec<_> = contract
+            .events_since(U64(0), 100)
+            .into_iter()
+            .filter(|e| e.kind == "policy_change_vetoed")
+            .map(|e| e.data)
+            .collect();
+        assert_eq!(
+            vetoed,
+            vec![json!({ "change_id": "1", "by": "emma.testnet" })]
+        );
+        // A later Clawback finds nothing left to veto.
+        at_time("emma.testnet", NOW + WEEK);
+        contract.begin_clawback(id, vec![utxo(8, 100_000)], 2, None);
+        let count = contract
+            .events_since(U64(0), 100)
+            .iter()
+            .filter(|e| e.kind == "policy_change_vetoed")
+            .count();
+        assert_eq!(count, 1);
         expect_panic("ERR_CLAWED_BACK", move || {
             at_time("anyone.testnet", NOW + WEEK);
             contract.apply_policy_change(change_id);
@@ -1798,6 +1837,128 @@ mod policy_change {
             let (mut contract, id) = active_vault();
             claw_destination(&mut contract, id, NOW);
             redirect(&mut contract, id);
+        });
+    }
+}
+
+mod policy_change_more {
+    use super::withdrawals_support::*;
+    use super::*;
+    use crate::core::policy::tests::guardian;
+    use crate::core::policy::GuardianKind;
+    use near_sdk::serde_json::json;
+
+    const WEEK: u64 = 7 * DAY_NS;
+
+    fn expect_panic(expected: &str, f: impl FnOnce() + std::panic::UnwindSafe) {
+        let message = panic_message(f);
+        assert!(
+            message.contains(expected),
+            "expected {expected}, got {message}"
+        );
+    }
+
+    fn propose(contract: &mut VaultContract, id: U64, changes: Value) -> U64 {
+        as_caller("owner.testnet");
+        contract.propose_policy_change(id, changes, envelope())
+    }
+
+    #[test]
+    fn get_policy_change_needs_a_known_id() {
+        expect_panic("ERR_CHANGE_NOT_FOUND", || {
+            let (contract, _) = active_vault();
+            contract.get_policy_change(U64(1));
+        });
+    }
+
+    #[test]
+    fn an_owner_who_is_also_a_guardian_withdraws_with_an_envelope() {
+        let owner_guardian = || Policy {
+            guardians: vec![
+                guardian("22", "owner.testnet", GuardianKind::BackupDevice),
+                guardian("33", "emma.testnet", GuardianKind::TrustedContact),
+            ],
+            ..standard_policy()
+        };
+        expect_panic("ERR_BAD_ENVELOPE", move || {
+            let (mut contract, id) = active_vault_with(owner_guardian());
+            let change_id = propose(&mut contract, id, json!({ "fee_cap_sats": "20000" }));
+            contract.veto_policy_change(change_id, None);
+        });
+        let (mut contract, id) = active_vault_with(owner_guardian());
+        let change_id = propose(&mut contract, id, json!({ "fee_cap_sats": "20000" }));
+        contract.veto_policy_change(change_id, Some(envelope()));
+        let settled = contract.get_policy_change(change_id);
+        assert_eq!(settled.state, PolicyChangeState::Withdrawn);
+        assert_eq!(settled.vetoed_by, None);
+    }
+
+    #[test]
+    fn a_guardian_of_another_vault_cannot_veto() {
+        expect_panic("ERR_UNAUTHORIZED", || {
+            let (mut contract, id) = active_vault();
+            context("carol.testnet", MIN_VAULT_STORAGE);
+            create(
+                &mut contract,
+                Policy {
+                    guardians: vec![guardian("55", "carol.testnet", GuardianKind::BackupDevice)],
+                    ..standard_policy()
+                },
+            );
+            let change_id = propose(&mut contract, id, json!({ "fee_cap_sats": "20000" }));
+            as_caller("carol.testnet");
+            contract.veto_policy_change(change_id, None);
+        });
+    }
+
+    #[test]
+    fn a_multi_field_change_applies_every_field() {
+        let (mut contract, id) = active_vault();
+        let change_id = propose(
+            &mut contract,
+            id,
+            json!({
+                "delay_ns": (10 * DAY_NS).to_string(),
+                "policy_change_delay_ns": (14 * DAY_NS).to_string(),
+            }),
+        );
+        at_time("anyone.testnet", NOW + WEEK);
+        contract.apply_policy_change(change_id);
+        let policy = contract.get_vault(id).policy;
+        assert_eq!(policy.delay_ns, U64(10 * DAY_NS));
+        assert_eq!(policy.policy_change_delay_ns, U64(14 * DAY_NS));
+        // The next change waits the new, longer Policy Change Delay.
+        at_time("owner.testnet", NOW + WEEK);
+        let next =
+            contract.propose_policy_change(id, json!({ "fee_cap_sats": "20000" }), envelope());
+        assert_eq!(
+            contract.get_policy_change(next).effective_at,
+            U64(NOW + WEEK + 14 * DAY_NS)
+        );
+    }
+
+    #[test]
+    fn an_applied_fee_cap_and_allowance_take_effect_in_later_calls() {
+        let coin = || vec![utxo(1, 1_000_000)];
+        // Control: the Standard Fee Cap lets a 100 sat/vB Refresh through.
+        let (mut control, control_id) = active_vault();
+        as_caller("owner.testnet");
+        control.refresh(control_id, coin(), 100, envelope(), None);
+
+        let (mut contract, id) = active_vault();
+        let change_id = propose(
+            &mut contract,
+            id,
+            json!({ "fee_cap_sats": "10000", "allowance_limit_sats": "0" }),
+        );
+        at_time("anyone.testnet", NOW + WEEK);
+        contract.apply_policy_change(change_id);
+        let policy = contract.get_vault(id).policy;
+        assert_eq!(policy.fee_cap_sats, U64(10_000));
+        assert_eq!(policy.allowance_limit_sats, U64(0));
+        expect_panic("ERR_FEE_TOO_HIGH", move || {
+            at_time("owner.testnet", NOW + WEEK);
+            contract.refresh(id, coin(), 100, envelope(), None);
         });
     }
 }

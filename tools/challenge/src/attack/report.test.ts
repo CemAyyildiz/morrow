@@ -47,6 +47,7 @@ const EMPTY: AttackReport = {
     unexpected: [],
     clawback_missing: [],
     veto_missing: [],
+    redirects_vetoed: 1,
     not_deployed: [],
     not_deployed_note: null,
     stopped_reason: null,

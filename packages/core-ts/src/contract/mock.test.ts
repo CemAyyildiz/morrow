@@ -204,6 +204,67 @@ describe("MockContractClient: lifecycles", () => {
     const kinds = (await mock.eventsSince("0", 100)).map((e) => e.kind);
     expect(kinds).toContain("policy_change_vetoed");
     expect(kinds).toContain("policy_change_withdrawn");
+    expect(await mock.getPolicyChange(vetoed)).toMatchObject({ state: "vetoed", vetoed_by: EMMA });
+    expect(await mock.getPolicyChange(withdrawn)).toMatchObject({
+      state: "withdrawn",
+      vetoed_by: null,
+    });
+    const last = (await mock.eventsSince("0", 100)).at(-1);
+    expect(last).toMatchObject({
+      kind: "policy_change_withdrawn",
+      data: { change_id: withdrawn, envelope: ENVELOPE },
+    });
+    await expectCode(mock.getPolicyChange("99"), "ERR_CHANGE_NOT_FOUND");
+  });
+
+  it("an Owner who is also a Guardian withdraws, and needs an envelope", async () => {
+    const guardians = [
+      {
+        guardian_key: `02${"22".repeat(32)}`,
+        guardian_account: OWNER,
+        kind: "backup_device" as const,
+      },
+      {
+        guardian_key: `02${"33".repeat(32)}`,
+        guardian_account: EMMA,
+        kind: "trusted_contact" as const,
+      },
+    ];
+    const { mock, vaultId } = await setup({ guardians });
+    const change = { vault_id: vaultId, changes: { fee_cap_sats: "50000" }, envelope: ENVELOPE };
+    const changeId = await mock.proposePolicyChange(change);
+    await expectCode(mock.vetoPolicyChange(changeId), "ERR_BAD_ENVELOPE");
+    await mock.vetoPolicyChange(changeId, ENVELOPE);
+    expect((await mock.getPolicyChange(changeId)).state).toBe("withdrawn");
+  });
+
+  it("a Clawback vetoes a pending change as the clawing Guardian", async () => {
+    const { mock, vaultId } = await setup();
+    const changeId = await mock.proposePolicyChange({
+      vault_id: vaultId,
+      changes: { fee_cap_sats: "50000" },
+      envelope: ENVELOPE,
+    });
+    await mock.asCaller(BACKUP).beginClawback({
+      vault_id: vaultId,
+      utxos: [utxo(1)],
+      fee_rate_sat_vb: 2,
+    });
+    expect((await mock.getVault(vaultId)).pending_change).toBeNull();
+    expect(await mock.getPolicyChange(changeId)).toMatchObject({
+      state: "vetoed",
+      vetoed_by: BACKUP,
+    });
+    const events = await mock.eventsSince("0", 100);
+    expect(events.map((e) => e.kind).slice(-3)).toEqual([
+      "policy_change_vetoed",
+      "vault_clawed_back",
+      "op_frozen",
+    ]);
+    expect(events.find((e) => e.kind === "policy_change_vetoed")?.data).toEqual({
+      change_id: changeId,
+      by: BACKUP,
+    });
   });
 
   it("a Trusted Contact fast approval lowers executable_at to now + floor", async () => {

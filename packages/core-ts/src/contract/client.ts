@@ -3,6 +3,7 @@ import type {
   BeginClawbackArgs,
   CreateVaultArgs,
   Hex,
+  PolicyChange,
   ProposePolicyChangeArgs,
   RefreshArgs,
   RequestWithdrawalArgs,
@@ -43,7 +44,10 @@ export interface ContractClient {
   beginClawback(args: BeginClawbackArgs): Promise<U64>;
   /** `sign_input`. Owner for withdrawal/allowance/refresh ops, Guardian for clawback ops. */
   signInput(opId: U64, inputIndex: number): Promise<Hex>;
-  /** `veto_policy_change`. Any Guardian, or the Owner withdrawing their own change (envelope required). */
+  /**
+   * `veto_policy_change`. The Owner withdraws their own change (envelope required, even when the
+   * Owner is also a Guardian); any other Guardian vetoes it.
+   */
   vetoPolicyChange(changeId: U64, envelope?: Hex): Promise<void>;
   /** `fast_approve`. Trusted Contact Guardians only, when the Policy enables Fast Approval. */
   fastApprove(opId: U64): Promise<void>;
@@ -54,6 +58,8 @@ export interface ContractClient {
   getVault(vaultId: U64): Promise<Vault>;
   /** `get_op`. */
   getOp(opId: U64): Promise<SpendOp>;
+  /** `get_policy_change`. Any change ever proposed, pending or settled. */
+  getPolicyChange(changeId: U64): Promise<PolicyChange>;
   /** `get_vault_kit`. Only for active (or clawed back) Vaults. */
   getVaultKit(vaultId: U64): Promise<VaultKit>;
   /** `events_since`. Events with `seq > cursor`, ascending, at most `limit` (≤ 100). */
@@ -77,6 +83,7 @@ export const CONTRACT_METHODS = {
   applyPolicyChange: "apply_policy_change",
   getVault: "get_vault",
   getOp: "get_op",
+  getPolicyChange: "get_policy_change",
   getVaultKit: "get_vault_kit",
   eventsSince: "events_since",
 } as const satisfies Record<keyof ContractClient, string>;

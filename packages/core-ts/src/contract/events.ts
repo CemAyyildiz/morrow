@@ -53,7 +53,8 @@ export interface EventData {
     envelope: string;
   };
   policy_change_vetoed: { change_id: U64; by: AccountId };
-  policy_change_withdrawn: { change_id: U64 };
+  /** `envelope`: the Owner's 160-hex Watcher Envelope sent with the withdrawal. */
+  policy_change_withdrawn: { change_id: U64; envelope: string };
   policy_change_applied: { change_id: U64 };
   /** The Owner cancelled a Frozen Refresh before every input was signed. */
   refresh_cancelled: { op_id: U64; by: AccountId };

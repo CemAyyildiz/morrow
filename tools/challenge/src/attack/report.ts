@@ -8,7 +8,15 @@ import { existsSync } from "node:fs";
 import { mkdir, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
+import type { PolicyChangeOutcome } from "../attempts.js";
 import type { Category } from "./plan.js";
+
+/**
+ * What the veto wait saw for a round's redirect: the change's outcome, `unread` (no longer
+ * pending, but the feed never showed how it settled) or `unreadable` (the Vault, or the change
+ * id of an accepted redirect, could not be read).
+ */
+export type RedirectOutcome = PolicyChangeOutcome | "unread" | "unreadable";
 
 /** The network a report was produced against. `mock` is the dry run. */
 export type ReportNetwork = "mock" | "regtest" | "signet" | "testnet4" | "bitcoin";
@@ -68,8 +76,10 @@ export interface AttemptRecord {
   window_result: "own_code" | "clawed_back" | null;
   tx_hash: string | null;
   explorer: string | null;
-  /** For an accepted Withdrawal Request: its op id and Vault id, for log matching. */
+  /** For an accepted Withdrawal Request: its op id, for log matching. */
   op_id: string | null;
+  /** For an accepted Policy Change: its change id, for log matching. */
+  change_id: string | null;
   vault_id: string | null;
   /** The matched Attempt Log entry number, once found. */
   log_entry: number | null;
@@ -99,11 +109,11 @@ export interface RoundReport {
   /** The accepted Recovery Address redirect's change id, when one was accepted. */
   policy_change_id: string | null;
   /**
-   * What the veto wait saw: `vetoed` or `withdrawn` (it can never apply), `applied`, `pending`
-   * at the wait's end, `unread` (settled, but the feed showed no outcome) or `unreadable`.
-   * Null when no redirect was accepted.
+   * The redirect's end (see `RedirectOutcome`). Only `vetoed` proves the veto; `withdrawn` (another
+   * holder of the published Owner Key took it back) neither proves nor fails it; anything else
+   * fails the run. Null when no redirect was accepted.
    */
-  policy_change_outcome: string | null;
+  policy_change_outcome: RedirectOutcome | null;
 }
 
 export interface AttackerAddress {
@@ -128,8 +138,10 @@ export interface ReportSummary {
   unexpected: number[];
   /** Rounds whose Clawback was not seen within the wait. */
   clawback_missing: number[];
-  /** Rounds whose accepted Recovery Address redirect was not vetoed within the wait. */
+  /** Rounds whose accepted Recovery Address redirect neither was vetoed nor withdrawn. */
   veto_missing: number[];
+  /** Accepted redirects the watcher vetoed; a passing run needs at least one. */
+  redirects_vetoed: number;
   not_deployed: Category[];
   not_deployed_note: string | null;
   stopped_reason: string | null;

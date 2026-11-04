@@ -20,7 +20,7 @@ import {
   type VaultKit,
 } from "@morrow/core-ts";
 import { boxSeal } from "@morrow/core-ts/envelope";
-import type { AttemptEntry } from "../attempts.js";
+import type { AttemptEntry, PolicyChangeOutcome } from "../attempts.js";
 import type { PublicRound } from "../store.js";
 import { buildOwnerSpend, p2wpkhAddress, type OwnerSpendPath } from "./bitcoin.js";
 import type { CallPlan, CallResult, NearPort } from "./near.js";
@@ -42,6 +42,7 @@ import {
   type AttemptRecord,
   type AttackerAddress,
   type HeaderNetwork,
+  type RedirectOutcome,
   type RoundReport,
 } from "./report.js";
 
@@ -75,16 +76,18 @@ export interface LogEntryView {
   n: number;
   type: "rejected" | "withdrawal" | "policy_change";
   tx_hash: string | null;
-  /** A withdrawal's op id or a Policy Change's change id (see `type`). */
+  /** A withdrawal's op id. */
   op_id: string | null;
+  /** A Policy Change's change id (a separate counter from op ids). */
+  change_id: string | null;
   vault_id: string | null;
   /** A rejected entry's `ERR_*` code, else its raw failure kind. */
   code: string | null;
   clawback_op_id: string | null;
   clawback_txid: string | null;
   clawback_broadcast: boolean | null;
-  /** A Policy Change's outcome (`pending`, `vetoed`, `withdrawn`, `applied`); else null. */
-  outcome: string | null;
+  /** A Policy Change's outcome; null for other entries. */
+  outcome: PolicyChangeOutcome | null;
 }
 
 export interface AttemptsFeed {
@@ -102,6 +105,7 @@ export function logViews(entries: readonly AttemptEntry[]): LogEntryView[] {
         type: "rejected",
         tx_hash: entry.tx_hash,
         op_id: null,
+        change_id: null,
         vault_id: null,
         code: entry.code ?? entry.failure,
         ...none,
@@ -113,6 +117,7 @@ export function logViews(entries: readonly AttemptEntry[]): LogEntryView[] {
         type: "withdrawal",
         tx_hash: entry.tx_hash,
         op_id: entry.op_id,
+        change_id: null,
         vault_id: entry.vault_id,
         code: null,
         clawback_op_id: entry.clawback_op_id,
@@ -125,7 +130,8 @@ export function logViews(entries: readonly AttemptEntry[]): LogEntryView[] {
         n: entry.n,
         type: "policy_change",
         tx_hash: entry.tx_hash,
-        op_id: entry.change_id,
+        op_id: null,
+        change_id: entry.change_id,
         vault_id: entry.vault_id,
         code: null,
         ...none,
@@ -264,6 +270,8 @@ interface RoundContext {
   requestOutcome: string | null;
   /** The Recovery Address this run's accepted redirect proposed. */
   redirectedTo: string | null;
+  /** An accepted redirect whose veto has not been awaited yet. */
+  vetoDue: boolean;
 }
 
 type StopKind = "allowance" | "other";
@@ -274,6 +282,8 @@ export class AttackRun {
   private readonly publicKeys = new Set<string>();
   private readonly attackerAddresses = new Set<string>();
   private readonly attacked = new Set<number>();
+  /** Attempt ids of the Recovery Address redirects. */
+  private readonly redirectIds = new Set<number>();
   private readonly challengeRounds: number[] = [];
   private readonly destinationRandom: () => number;
   private nextId = 1;
@@ -382,8 +392,9 @@ export class AttackRun {
       .filter((r) => r.clawback_seen === false)
       .map((r) => r.challenge_round);
     const vetoMissing = this.rounds
-      .filter((r) => r.policy_change_id !== null && !VETO_ENDS.has(r.policy_change_outcome ?? ""))
+      .filter((r) => r.policy_change_outcome !== null && !VETO_ENDS.has(r.policy_change_outcome))
       .map((r) => r.challenge_round);
+    const redirectsVetoed = this.rounds.filter((r) => r.policy_change_outcome === "vetoed").length;
     // A clean stop: the key ran out of allowance after at least one whole round.
     const stopOk =
       this.stoppedReason === null || (this.stopKind === "allowance" && this.completedRounds >= 1);
@@ -396,7 +407,8 @@ export class AttackRun {
       unreadableBalances.length === 0 &&
       missing.length === 0 &&
       clawbackMissing.length === 0 &&
-      vetoMissing.length === 0;
+      vetoMissing.length === 0 &&
+      redirectsVetoed >= 1;
 
     return {
       header: {
@@ -433,6 +445,7 @@ export class AttackRun {
         unexpected: ids((a) => a.unexpected),
         clawback_missing: clawbackMissing,
         veto_missing: vetoMissing,
+        redirects_vetoed: redirectsVetoed,
         not_deployed: notDeployed(categories),
         not_deployed_note: notDeployedNote(categories),
         stopped_reason: this.stoppedReason,
@@ -514,15 +527,17 @@ export class AttackRun {
           i += 1;
         }
         done += await this.runWindow(batch, ctx, round);
-        continue;
+      } else {
+        if (await this.runAttempt(attempt, ctx, round)) done += 1;
+        i += 1;
       }
-      if (await this.runAttempt(attempt, ctx, round)) done += 1;
-      // The redirect must be vetoed before the round goes on (a Clawback would freeze it pending).
-      if (attempt.move === "policy_change_redirect_recovery" && ctx.redirectedTo !== null) {
+      // An accepted redirect must be vetoed before the round goes on; the apply attempt that
+      // races the veto goes first.
+      if (ctx.vetoDue && scripted[i]?.move !== "policy_change_apply_redirect") {
         await this.awaitVeto(ctx);
       }
-      i += 1;
     }
+    if (ctx.vetoDue) await this.awaitVeto(ctx);
 
     // A request that went in (ours, or a stranger's holding the coin) must be clawed back. The
     // check needs no key, so it runs even after an allowance stop.
@@ -603,6 +618,7 @@ export class AttackRun {
       ownOpId: null,
       requestOutcome: null,
       redirectedTo: null,
+      vetoDue: false,
     };
   }
 
@@ -736,6 +752,9 @@ export class AttackRun {
           changes: { recovery_address: destination() },
           envelope: envelope(),
         });
+      case "policy_change_apply_redirect":
+        if (ctx.report.policy_change_id === null) return null;
+        return call("apply_policy_change", { change_id: ctx.report.policy_change_id });
       case "policy_change_after_clawback":
         return call("propose_policy_change", {
           vault_id: ctx.vaultId,
@@ -766,6 +785,7 @@ export class AttackRun {
       tx_hash: null,
       explorer: null,
       op_id: null,
+      change_id: null,
       vault_id: null,
       log_entry: null,
       off_log: null,
@@ -796,12 +816,10 @@ export class AttackRun {
         record.actual = "accepted";
         record.actual_class = "accepted";
         record.expected_match = attempt.expected.includes("accepted");
-        const idCategory =
-          attempt.category === "withdrawal_request" || attempt.category === "policy_change";
-        if (idCategory && typeof result.value === "string") {
-          // A withdrawal's op id or a Policy Change's change id.
-          record.op_id = result.value;
-          record.vault_id = ctx.vaultId;
+        if (typeof result.value === "string") {
+          if (attempt.category === "withdrawal_request") record.op_id = result.value;
+          if (attempt.category === "policy_change") record.change_id = result.value;
+          if (record.op_id !== null || record.change_id !== null) record.vault_id = ctx.vaultId;
         }
       }
       // Accepted where a refusal was expected.
@@ -846,10 +864,16 @@ export class AttackRun {
         ctx.report.request_op_id = record.op_id;
       }
     }
-    if (attempt.move === "policy_change_redirect_recovery" && record.actual_class === "accepted") {
-      ctx.report.policy_change_id = record.op_id;
-      const changes = (plan.args as { changes?: { recovery_address?: string } }).changes;
-      ctx.redirectedTo = changes?.recovery_address ?? null;
+    if (attempt.move === "policy_change_redirect_recovery") {
+      this.redirectIds.add(record.id);
+      if (record.actual_class === "accepted") {
+        const changes = (plan.args as { changes?: { recovery_address?: string } }).changes;
+        ctx.redirectedTo = changes?.recovery_address ?? null;
+        ctx.report.policy_change_id = record.change_id;
+        // Accepted, but with no change id to follow: the veto cannot be checked.
+        if (record.change_id === null) ctx.report.policy_change_outcome = "unreadable";
+        else ctx.vetoDue = true;
+      }
     }
     this.attempts.push(record);
   }
@@ -952,6 +976,7 @@ export class AttackRun {
    * other end lands in `veto_missing`, which fails the run.
    */
   private async awaitVeto(ctx: RoundContext): Promise<void> {
+    ctx.vetoDue = false;
     const changeId = ctx.report.policy_change_id;
     if (changeId === null) return;
     const deadline = this.ports.clock.now() + this.clawbackWaitMs;
@@ -970,7 +995,8 @@ export class AttackRun {
       if (vault && !pending) {
         const views = await this.ports.feed.entries().catch(() => [] as LogEntryView[]);
         const entry = views.find(
-          (v) => v.type === "policy_change" && v.op_id === changeId && v.vault_id === ctx.vaultId,
+          (v) =>
+            v.type === "policy_change" && v.change_id === changeId && v.vault_id === ctx.vaultId,
         );
         if (entry?.outcome && entry.outcome !== "pending") {
           ctx.report.policy_change_outcome = entry.outcome;
@@ -1054,12 +1080,28 @@ export class AttackRun {
       const views = await this.ports.feed.entries().catch(() => [] as LogEntryView[]);
       for (const attempt of pending()) {
         const hit = views.find((v) => matches(attempt, v));
-        if (hit) reconcile(attempt, hit);
+        if (!hit) continue;
+        const wasUnreadable = attempt.actual_class === "unreadable";
+        reconcile(attempt, hit);
+        if (wasUnreadable) this.followReconciledRedirect(attempt, hit);
       }
       if (pending().length === 0) return;
       if (this.ports.clock.now() >= deadline) return;
       await this.ports.clock.sleep(LOG_POLL_MS);
     }
+  }
+
+  /**
+   * A redirect whose answer was unreadable but that the log shows accepted: its veto was never
+   * awaited, so the round takes the change id and outcome the log shows (`pending` fails).
+   */
+  private followReconciledRedirect(attempt: AttemptRecord, view: LogEntryView): void {
+    if (!this.redirectIds.has(attempt.id) || attempt.actual_class !== "accepted") return;
+    const round = this.rounds.find((r) => r.round === attempt.round);
+    if (!round || round.policy_change_outcome !== null) return;
+    round.policy_change_id = view.change_id;
+    round.policy_change_outcome =
+      view.change_id === null ? "unreadable" : (view.outcome ?? "unread");
   }
 
   private async readAttackerBalances(): Promise<AttackerAddress[]> {
@@ -1104,8 +1146,8 @@ export class AttackRun {
   }
 }
 
-/** Ends of an accepted redirect that can never apply. */
-const VETO_ENDS = new Set(["vetoed", "withdrawn"]);
+/** Ends of an accepted redirect that do not fail the run (only `vetoed` proves the veto). */
+const VETO_ENDS: ReadonlySet<RedirectOutcome> = new Set(["vetoed", "withdrawn"]);
 
 /** A coin that is not the Vault's, for refusals whose inputs do not matter. */
 export const DECOY_COIN: Outpoint = { txid: "ef".repeat(32), vout: 7, value_sats: "100000" };
@@ -1130,10 +1172,12 @@ function matches(attempt: AttemptRecord, view: LogEntryView): boolean {
       : attempt.category === "policy_change"
         ? "policy_change"
         : null;
+  const id = idType === "withdrawal" ? attempt.op_id : attempt.change_id;
+  const viewId = idType === "withdrawal" ? view.op_id : view.change_id;
   return (
     view.type === idType &&
-    attempt.op_id !== null &&
-    attempt.op_id === view.op_id &&
+    id !== null &&
+    id === viewId &&
     attempt.vault_id !== null &&
     attempt.vault_id === view.vault_id
   );
@@ -1152,10 +1196,9 @@ function reconcile(attempt: AttemptRecord, view: LogEntryView): void {
     attempt.actual_class = "accepted";
     attempt.expected_match = attempt.expected.includes("accepted");
     attempt.unexpected = !attempt.expected_match;
-    if (view.type === "withdrawal" || view.type === "policy_change") {
-      attempt.op_id = view.op_id;
-      attempt.vault_id = view.vault_id;
-    }
+    attempt.op_id = view.op_id;
+    attempt.change_id = view.change_id;
+    attempt.vault_id = view.vault_id;
   }
   attempt.note = `${attempt.note ?? "unreadable answer"}; outcome read from Attempt Log entry ${view.n}`;
 }

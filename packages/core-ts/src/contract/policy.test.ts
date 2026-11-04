@@ -1,9 +1,11 @@
+import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import { MorrowContractError, parseContractError } from "./errors.js";
 import {
   DAY_NS,
   HOUR_NS,
   MINUTE_NS,
+  CHANGEABLE_FIELDS,
   isPlausibleAddress,
   validatePolicy,
   validatePolicyChange,
@@ -100,6 +102,35 @@ describe("validatePolicyChange", () => {
         "ERR_SCRIPT_BOUND",
       );
     }
+  });
+
+  it("refuses the value types and formats the contract refuses", () => {
+    for (const changes of [
+      { delay_ns: 172_800_000_000_000 },
+      { delay_ns: "0172800000000000" },
+      { delay_ns: "+172800000000000" },
+      { fee_cap_sats: "18446744073709551616" },
+      { allowance_limit_sats: null },
+      { fast_approval: "true" },
+      { fast_approval: 1 },
+      { recovery_address: 5 },
+    ]) {
+      expect(code(() => validatePolicyChange(signetPolicy(), changes))).toBe("ERR_POLICY_BOUNDS");
+    }
+    expect(
+      validatePolicyChange(signetPolicy(), { allowance_limit_sats: "0" }).allowance_limit_sats,
+    ).toBe("0");
+  });
+
+  it("whitelists exactly the contract's CHANGEABLE_FIELDS", () => {
+    const rust = readFileSync(
+      new URL("../../../../contracts/vault/src/core/policy.rs", import.meta.url),
+      "utf8",
+    );
+    const list = /pub const CHANGEABLE_FIELDS: \[&str; \d+\] = \[([^\]]*)\]/.exec(rust)?.[1];
+    expect(list).toBeDefined();
+    const fields = [...(list as string).matchAll(/"([a-z_]+)"/g)].map((m) => m[1]);
+    expect(fields).toEqual([...CHANGEABLE_FIELDS]);
   });
 });
 

@@ -1,12 +1,14 @@
 import { createHash } from "node:crypto";
 import {
   BitcoinBackendError,
+  MorrowContractError,
   WITNESS_TEMPLATES,
   parseNearKey,
   type NearKey,
   type Utxo,
 } from "@morrow/core-ts";
 import { describe, expect, it } from "vitest";
+import type { PolicyChangeOutcome } from "../attempts.js";
 import type { PublicRound } from "../store.js";
 import { DRY_RUN_FUNCTION_CALL_KEY, FakeBitcoin, dryRunPorts } from "./dry-run.js";
 import type { CallPlan, CallResult, NearPort } from "./near.js";
@@ -30,7 +32,7 @@ const DRY: AttackParams = {
   dryRun: true,
   toolCommit: null,
 };
-const SHORT: AttackParams = { ...DRY, n: 12, rounds: 1, logWaitMs: 1, clawbackWaitMs: 1 };
+const SHORT: AttackParams = { ...DRY, n: 13, rounds: 1, logWaitMs: 1, clawbackWaitMs: 1 };
 const KEY = DRY_RUN_FUNCTION_CALL_KEY;
 const ALT_KEY =
   "ed25519:GHMRn2eeRLkLSi4WEBqPhZ3FruDBxBiiRkS1Tnch12BiQ2LeVe6kW6diDdvLHwEtmZMnwSSCdVAUD1PALV8MrPi";
@@ -122,9 +124,13 @@ describe("dry run", () => {
       },
     };
     const { report } = await runAttack(ports, SHORT);
-    expect(batches).toEqual([["begin_execute", "sign_input", "request_withdrawal"]]);
+    expect(batches).toEqual([
+      ["apply_policy_change"],
+      ["begin_execute", "sign_input", "request_withdrawal"],
+    ]);
     const window = report.attempts.filter((a) => a.window_result !== null);
     expect(window.map((a) => [a.actual, a.window_result])).toEqual([
+      ["ERR_CHANGE_NOT_EFFECTIVE", "own_code"],
       ["ERR_NOT_EXECUTABLE", "own_code"],
       ["ERR_BAD_OP_STATE", "own_code"],
       ["ERR_OUTPOINT_RESERVED", "own_code"],
@@ -136,8 +142,21 @@ describe("Recovery Address redirect (TH-12)", () => {
   const isRedirect = (a: { method: string | null; args: unknown }) =>
     a.method === "propose_policy_change" &&
     Object.hasOwn((a.args as { changes: object }).changes, "recovery_address");
+  const redirectTo = (a: { args: unknown }) =>
+    (a.args as { changes: { recovery_address: string } }).changes.recovery_address;
 
-  it("is accepted, then vetoed by the watcher before the round goes on", async () => {
+  /** Dry-run ports whose feed rewrites Policy Change entries. */
+  async function dryFeed(map: (v: LogEntryView) => LogEntryView) {
+    const ports = await dryRunPorts();
+    const inner = ports.feed;
+    ports.feed = {
+      entries: async () =>
+        (await inner.entries()).map((v) => (v.type === "policy_change" ? map(v) : v)),
+    };
+    return ports;
+  }
+
+  it("is accepted, raced by an apply, then vetoed by the watcher before the round goes on", async () => {
     const ports = await dryRunPorts();
     const { report, exitCode } = await runAttack(ports, DRY);
     expect(exitCode).toBe(0);
@@ -146,20 +165,25 @@ describe("Recovery Address redirect (TH-12)", () => {
     for (const attempt of redirects) {
       expect([attempt.actual, attempt.expected_match]).toEqual(["accepted", true]);
       expect(attempt.log_entry).not.toBeNull();
-      const to = (attempt.args as { changes: { recovery_address: string } }).changes
-        .recovery_address;
-      expect(report.summary.attacker_addresses.map((a) => a.address)).toContain(to);
+      expect(attempt.op_id).toBeNull();
+      expect(report.summary.attacker_addresses.map((a) => a.address)).toContain(
+        redirectTo(attempt),
+      );
       const round = report.rounds.find((r) => r.round === attempt.round)!;
-      expect(round.policy_change_id).toBe(attempt.op_id);
+      expect(round.policy_change_id).toBe(attempt.change_id);
       expect(round.policy_change_outcome).toBe("vetoed");
+      // The very next attempt tries to apply it, and the contract refuses.
+      const apply = report.attempts.find((a) => a.id === attempt.id + 1)!;
+      expect(apply.method).toBe("apply_policy_change");
+      expect(apply.args).toEqual({ change_id: attempt.change_id });
+      expect([apply.actual, apply.expected_match]).toEqual(["ERR_CHANGE_NOT_EFFECTIVE", true]);
+      expect(apply.window_result).toBe("own_code");
     }
     expect(report.summary.veto_missing).toEqual([]);
-    // The Clawback paid the Recovery Address set at creation, never the redirect.
+    expect(report.summary.redirects_vetoed).toBe(report.rounds.length);
     const vault = await ports.chain.mock.getVault("1");
     expect(vault.pending_change).toBeNull();
-    expect(vault.policy.recovery_address).not.toBe(
-      (redirects[0]!.args as { changes: { recovery_address: string } }).changes.recovery_address,
-    );
+    expect(vault.policy.recovery_address).not.toBe(redirectTo(redirects[0]!));
   });
 
   it("a change still pending at the wait's end fails the run", async () => {
@@ -176,6 +200,7 @@ describe("Recovery Address redirect (TH-12)", () => {
     expect(exitCode).toBe(1);
     expect(report.rounds[0]?.policy_change_outcome).toBe("pending");
     expect(report.summary.veto_missing).toEqual([1]);
+    expect(report.summary.redirects_vetoed).toBe(0);
   });
 
   it("an applied redirect fails the run", async () => {
@@ -202,20 +227,148 @@ describe("Recovery Address redirect (TH-12)", () => {
     expect(report.summary.veto_missing).toEqual([1]);
   });
 
+  it("no longer pending but never settled in the feed: unread, and the run fails", async () => {
+    const ports = await dryFeed((v) => ({ ...v, outcome: "pending" }));
+    const { report, exitCode } = await runAttack(ports, SHORT);
+    expect(exitCode).toBe(1);
+    expect(report.rounds[0]?.policy_change_outcome).toBe("unread");
+    expect(report.summary.veto_missing).toEqual([1]);
+  });
+
+  it("a Vault that cannot be read during the wait: unreadable, and the run fails", async () => {
+    const ports = await dryRunPorts();
+    const getVault = ports.near.getVault;
+    let proposed = false;
+    const call = ports.near.call;
+    ports.near = {
+      ...ports.near,
+      call: async (key, plan) => {
+        if (isRedirect(plan)) proposed = true;
+        return call(key, plan);
+      },
+      getVault: async (id) => {
+        if (proposed) throw new Error("RPC down");
+        return getVault(id);
+      },
+    };
+    const { report, exitCode } = await runAttack(ports, SHORT);
+    expect(exitCode).toBe(1);
+    expect(report.rounds[0]?.policy_change_outcome).toBe("unreadable");
+    expect(report.summary.veto_missing).toEqual([1]);
+  });
+
+  it("accepted with no readable change id: unreadable, and the run fails", async () => {
+    const ports = await dryWith((plan, inner) =>
+      isRedirect(plan) ? inner().then((r) => ({ ...r, value: null }) as CallResult) : undefined,
+    );
+    const { report, exitCode } = await runAttack(ports, SHORT);
+    expect(exitCode).toBe(1);
+    expect(report.rounds[0]?.policy_change_id).toBeNull();
+    expect(report.rounds[0]?.policy_change_outcome).toBe("unreadable");
+    expect(report.attempts.some((a) => a.method === "apply_policy_change")).toBe(false);
+  });
+
+  it("an unreadable redirect the log shows accepted takes its change id and outcome from the log", async () => {
+    const ports = await dryWith((plan, inner) =>
+      isRedirect(plan)
+        ? inner().then((r) => ({ kind: "unreadable", hash: r.hash, error: "timeout after send" }))
+        : undefined,
+    );
+    const { report } = await runAttack(ports, SHORT);
+    const redirect = report.attempts.find(isRedirect)!;
+    expect(redirect.actual).toBe("accepted");
+    expect(redirect.change_id).toBe("1");
+    // The veto was never awaited in the round; the log shows the watcher's later veto.
+    expect(report.rounds[0]?.policy_change_id).toBe("1");
+    expect(report.rounds[0]?.policy_change_outcome).toBe("vetoed");
+  });
+
+  it("an unreadable redirect the log shows still pending fails the run", async () => {
+    const ports = await dryWith((plan, inner) =>
+      isRedirect(plan)
+        ? inner().then((r) => ({ kind: "unreadable", hash: r.hash, error: "timeout after send" }))
+        : undefined,
+    );
+    const inner = ports.feed;
+    ports.feed = {
+      entries: async () =>
+        (await inner.entries()).map((v) =>
+          v.type === "policy_change" ? { ...v, outcome: "pending" } : v,
+        ),
+    };
+    const { report, exitCode } = await runAttack(ports, SHORT);
+    expect(exitCode).toBe(1);
+    expect(report.rounds[0]?.policy_change_outcome).toBe("pending");
+    expect(report.summary.veto_missing).toEqual([1]);
+  });
+
+  it("withdrawn neither proves the veto nor fails the round", async () => {
+    const ports = await dryFeed((v) => (v.change_id === "1" ? { ...v, outcome: "withdrawn" } : v));
+    const { report, exitCode } = await runAttack(ports, DRY);
+    expect(report.rounds[0]?.policy_change_outcome).toBe("withdrawn");
+    expect(report.summary.veto_missing).toEqual([]);
+    expect(report.summary.redirects_vetoed).toBe(report.rounds.length - 1);
+    expect(exitCode).toBe(0);
+
+    // With no vetoed redirect at all the run cannot pass.
+    const only = await runAttack(await dryFeed((v) => ({ ...v, outcome: "withdrawn" })), SHORT);
+    expect(only.report.summary.veto_missing).toEqual([]);
+    expect(only.report.summary.redirects_vetoed).toBe(0);
+    expect(only.exitCode).toBe(1);
+  });
+
+  it("a run with no accepted redirect does not pass", async () => {
+    const ports = await dryRunPorts();
+    const propose = ports.chain.mock.proposePolicyChange.bind(ports.chain.mock);
+    // Another visitor's change is always pending: every redirect is refused.
+    ports.chain.mock.proposePolicyChange = async (args) => {
+      if (Object.hasOwn(args.changes, "recovery_address")) {
+        throw new MorrowContractError("ERR_CHANGE_PENDING");
+      }
+      return propose(args);
+    };
+    const { report, exitCode } = await runAttack(ports, SHORT);
+    expect(report.attempts.find(isRedirect)?.actual).toBe("ERR_CHANGE_PENDING");
+    expect(report.attempts.find(isRedirect)?.expected_match).toBe(true);
+    expect(report.summary.missing_hashes).toEqual([]);
+    expect(report.summary.veto_missing).toEqual([]);
+    expect(report.summary.redirects_vetoed).toBe(0);
+    expect(exitCode).toBe(1);
+  });
+
+  it("matches a Policy Change by change id + Vault id when the feed has no tx hash yet", async () => {
+    const ports = await dryFeed((v) => ({ ...v, tx_hash: null }));
+    const { report, exitCode } = await runAttack(ports, SHORT);
+    const redirect = report.attempts.find(isRedirect)!;
+    expect(redirect.log_entry).not.toBeNull();
+    expect(report.summary.missing_hashes).toEqual([]);
+    expect(exitCode).toBe(0);
+  });
+
+  it("a dry-run veto that throws does not stop the Clawback", async () => {
+    const ports = await dryRunPorts();
+    ports.chain.mock.vetoPolicyChange = async () => {
+      throw new Error("veto failed");
+    };
+    const { report } = await runAttack(ports, SHORT);
+    expect(report.rounds[0]?.clawback_seen).toBe(true);
+    expect(report.rounds[0]?.policy_change_outcome).toBe("pending");
+  });
+
   it("live: reads the veto from the feed once the change is no longer pending", async () => {
     let feedReads = 0;
     const near = minimalNear({
       call: async (_key, plan): Promise<CallResult> =>
-        plan.method === "propose_policy_change" &&
-        isRedirect({ method: plan.method, args: plan.args })
+        isRedirect(plan)
           ? { kind: "accepted", hash: "5".repeat(64), value: "4", logs: [] }
           : { kind: "refused", hash: "1".repeat(64), code: "ERR_CLAWED_BACK", failure: "x" },
     });
-    const entry = (outcome: string): LogEntryView => ({
+    const entry = (outcome: PolicyChangeOutcome): LogEntryView => ({
       n: 1,
       type: "policy_change",
       tx_hash: "5".repeat(64),
-      op_id: "4",
+      op_id: null,
+      change_id: "4",
       vault_id: "1",
       code: null,
       clawback_op_id: null,
@@ -236,6 +389,7 @@ describe("Recovery Address redirect (TH-12)", () => {
     expect(redirect.log_entry).toBe(1);
     expect(report.rounds[0]?.policy_change_outcome).toBe("vetoed");
     expect(report.summary.veto_missing).toEqual([]);
+    expect(report.summary.redirects_vetoed).toBe(1);
   });
 });
 
@@ -601,7 +755,7 @@ describe("Bitcoin Owner-Key-only spends", () => {
           ...extra,
         },
       }),
-      { ...HAND, n: 8 },
+      { ...HAND, n: 9 },
     ).execute();
     const pick = (category: string) => report.attempts.find((a) => a.category === category)!;
     return { report, escape: pick("bitcoin_escape"), noCosigner: pick("bitcoin_no_cosigner") };
