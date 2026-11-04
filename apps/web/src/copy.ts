@@ -408,6 +408,78 @@ export const copy = {
     },
     residual: (delay: string) =>
       `This Vault has no Auto-Clawback Guardian, so a Recovery Address change is stopped only by a Guardian veto within ${delay}.`,
+    /**
+     * The in-browser address recompute (story 6.2): the script `get_vault_kit` publishes,
+     * decoded and hashed here, against what `get_vault` states.
+     */
+    recompute: {
+      action: "Recompute",
+      reading: "Reading the Vault Kit",
+      intro:
+        "Recompute the Vault Address in this browser: decode the script get_vault_kit publishes, hash it with sha256 and encode the P2WSH address, then check it against get_vault.",
+      failed: "Could not read the Vault Kit",
+      failedBody:
+        "The NEAR RPC did not answer get_vault_kit with a Vault Kit. Nothing was computed.",
+      retry: "Retry",
+      noScript: "This Vault has no script yet, so there is nothing to recompute.",
+      vaultAddress: "Vault Address",
+      allowanceAddress: "Allowance Address",
+      allowanceToggle: "Recompute the Allowance Address",
+      addressCheck: "Address check",
+      scriptCheck: "Script check",
+      match: "Match",
+      noMatch: "No match",
+      matches: (what: string) => `matches the funded ${what}`,
+      noMatchText: (what: string) => `does not match the funded ${what}`,
+      recomputed: "Recomputed in this browser",
+      funded: (what: string) => `Funded ${what}, from get_vault`,
+      scriptOk: (guardians: number, blocks: string) =>
+        `The script encodes the Owner key, the Co-signer key, ${plural(guardians, "Guardian key")} in Policy order and the Escape Timelock of ${blocks}, as get_vault states them.`,
+      scriptBad: (element: string) =>
+        `${element}: the script does not encode the keys and timelock get_vault states.`,
+      atByte: (at: number) => `at byte ${at}`,
+      differs: (name: string) => `${name} differs`,
+      missingElement: (name: string) => `${name} is missing`,
+      extra: (name: string) => `${name} is more than the template has`,
+      unreadableKeys: "The keys get_vault states could not be read as keys",
+      flip: "Flip a byte",
+      reset: "Reset",
+      flipHint: (at: number) =>
+        `Flip a byte changes byte ${at}, the last byte of the Owner key, by XOR 0x01. Select any byte below to flip it.`,
+      flippedNote: (count: number) => `${plural(count, "byte")} flipped in this browser only.`,
+      paths: "Paths",
+      pathNames: { withdrawal: "Withdrawal", clawback: "Clawback", escape: "Escape" },
+      pathRules: (guardians: number, blocks: string) => ({
+        withdrawal: "Owner + Co-signer",
+        clawback: `Co-signer + 1 of ${plural(guardians, "Guardian")}`,
+        escape: `Owner after the CSV of ${blocks}`,
+      }),
+      decoded: (size: number) => `Decoded script · ${plural(size, "byte")}`,
+      bytes: "Bytes · select one to flip it",
+      rowDiffers: "differs from the template",
+      bytesLabel: "Script bytes",
+      byteLabel: (at: number, hex: string, flipped: boolean) =>
+        `Byte ${at}: ${hex}${flipped ? ", flipped" : ""}`,
+      offset: (at: number) => String(at).padStart(3, "0"),
+      roles: {
+        owner: "Owner key",
+        cosigner: "Co-signer key",
+        guardian: (n: number, account: string) =>
+          account === "" ? `Guardian key ${n}` : `Guardian key ${n} · ${account}`,
+        threshold: "1 Guardian signature needed",
+        guardianCount: (count: number) => `${plural(count, "Guardian key")} in all`,
+        timelock: (blocks: string) => `Escape Timelock · ${blocks}`,
+      },
+      matchesShort: (what: string) => `the recomputed address matches the funded ${what}`,
+      noMatchShort: (what: string) => `the recomputed address does not match the funded ${what}`,
+      scriptOkShort: "the script encodes the keys and timelock get_vault states",
+      announce: (what: string, address: string, script: string) =>
+        `${what} recomputed: ${address}. Script check: ${script}.`,
+      announceFlip: (at: number, address: string, script: string) =>
+        `Byte ${at} flipped: ${address}. Script check: ${script}.`,
+      announceReset: (address: string, script: string) =>
+        `Reset to the published script: ${address}. Script check: ${script}.`,
+    },
   },
 
   placeholder: "This screen is not part of this build.",

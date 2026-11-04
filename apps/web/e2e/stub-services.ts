@@ -3,8 +3,8 @@
 // - NEAR RPC: `view_access_key_list` of the contract with one function-call key (a locked
 //   contract), `call_function get_vault` (Delay, Owner Account, watcher key) and the signer's
 //   `state` (threshold 11 of 16). For the Proof Page (proof-fixture.ts): `view_account` (the
-//   code hash), the full `get_vault` of Vault #7, ERR_VAULT_NOT_FOUND for other ids, and
-//   `events_since` over a fixed log. For "Try with these keys": `view_access_key` (a nonce per
+//   code hash), the full `get_vault` and `get_vault_kit` of Vault #7, ERR_VAULT_NOT_FOUND for
+//   other ids, and `events_since` over a fixed log. For "Try with these keys": `view_access_key` (a nonce per
 //   key), `block` (final) and `send_tx`, which checks the ed25519 signature over sha256 of the
 //   borsh transaction, records it (`GET /__sent?public_key=`), and answers `request_withdrawal`
 //   with an op id and its `withdrawal_requested` log, `begin_execute` with ERR_NOT_EXECUTABLE.
@@ -34,7 +34,13 @@ import {
   VAULT_SATS,
   attemptsAt,
 } from "./challenge-fixture.ts";
-import { CODE_HASH, PROOF_EVENTS, PROOF_VAULT, PROOF_VAULT_ID } from "./proof-fixture.ts";
+import {
+  CODE_HASH,
+  PROOF_EVENTS,
+  PROOF_KIT,
+  PROOF_VAULT,
+  PROOF_VAULT_ID,
+} from "./proof-fixture.ts";
 import {
   BACKEND_PORT,
   CHALLENGE_PORT,
@@ -122,6 +128,9 @@ function rpcResult(params: Record<string, unknown> | undefined): unknown {
     // The Proof Page's Vault, in full (the challenge Vault "42" keeps its short shape).
     if (params.method_name === "get_vault" && args.vault_id === PROOF_VAULT_ID) {
       return viewResult(PROOF_VAULT);
+    }
+    if (params.method_name === "get_vault_kit" && args.vault_id === PROOF_VAULT_ID) {
+      return viewResult(PROOF_KIT);
     }
     if (params.method_name === "get_vault" && args.vault_id !== VAULT_ID) {
       return VAULT_NOT_FOUND;

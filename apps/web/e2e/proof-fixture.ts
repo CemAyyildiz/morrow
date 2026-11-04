@@ -1,5 +1,6 @@
 // What the stub NEAR RPC serves for the Proof Page (e2e only): Vault #7 with its full
-// `get_vault` view, a contract-global `events_since` log, and the contract's `view_account`.
+// `get_vault` view and its `get_vault_kit` (real scripts and addresses), a contract-global
+// `events_since` log, and the contract's `view_account`.
 // Shared by stub-services.ts and proof.spec.ts so the spec can check the exact values. Times
 // are fixed instants: the spec runs the page on a fake clock in UTC.
 import { createHash } from "node:crypto";
@@ -14,8 +15,54 @@ const HOUR_NS = 3_600_000_000_000n;
 export const PROOF_VAULT_ID = "7";
 export const PROOF_RECOVERY = "tb1qproofrecoveryaddress00000000000000000000";
 export const PROOF_NEW_RECOVERY = "tb1qproofnewrecoveryaddress000000000000000000";
-export const PROOF_VAULT_ADDRESS = "tb1qproofvaultaddress000000000000000000000000000000000000";
-export const PROOF_ALLOWANCE_ADDRESS = "tb1qproofallowanceaddress00000000000000000000000000000000";
+
+const OWNER_KEY = `02${"7a".repeat(32)}`;
+const COSIGNERS = { vault: `02${"c3".repeat(32)}`, allowance: `03${"d4".repeat(32)}` };
+const GUARDIAN_KEYS = [`02${"a1".repeat(32)}`, `03${"b2".repeat(32)}`];
+export const PROOF_TIMELOCK = 26_280;
+
+/**
+ * The Vault Script for these keys, the contract's `build_vault_script` (core/script.rs) for
+ * 2 Guardians and a 2-byte timelock: OP_IF <owner> OP_CHECKSIGVERIFY <cosigner> OP_CHECKSIG
+ * OP_ELSE OP_IF <cosigner> OP_CHECKSIGVERIFY OP_1 <g1> <g2> OP_2 OP_CHECKMULTISIG OP_ELSE
+ * <26,280> OP_CHECKSEQUENCEVERIFY OP_DROP <owner> OP_CHECKSIG OP_ENDIF OP_ENDIF.
+ */
+export function vaultScriptHex(owner: string, cosigner: string, guardians = GUARDIAN_KEYS) {
+  const push = (key: string) => `21${key}`;
+  return [
+    "63",
+    push(owner),
+    "ad",
+    push(cosigner),
+    "ac",
+    "67",
+    "63",
+    push(cosigner),
+    "ad",
+    "51",
+    ...guardians.map(push),
+    "52",
+    "ae",
+    "67",
+    "02a866",
+    "b2",
+    "75",
+    push(owner),
+    "ac",
+    "68",
+    "68",
+  ].join("");
+}
+
+export const PROOF_VAULT_SCRIPT = vaultScriptHex(OWNER_KEY, COSIGNERS.vault);
+export const PROOF_ALLOWANCE_SCRIPT = vaultScriptHex(OWNER_KEY, COSIGNERS.allowance);
+/**
+ * The P2WSH addresses of those scripts on signet, computed with core-ts `p2wshAddress` and
+ * bitcoinjs-lib `payments.p2wsh` (they agree): the page must recompute exactly these.
+ */
+export const PROOF_VAULT_ADDRESS = "tb1q586enhd0tphtzqk2gsvfk9t8d5zwc33h0d37zv5e03l4xcu5x2msqyf28s";
+export const PROOF_ALLOWANCE_ADDRESS =
+  "tb1qdm2jljxm64tlgdkrg7fcjwqwxvd6t059d7hc7khmq774kmhawknqsaqpcz";
 /** The contract's deployed code hash (base58 of 32 bytes). */
 export const CODE_HASH = base58(createHash("sha256").update("morrow-e2e-wasm").digest());
 
@@ -40,11 +87,11 @@ export const CHANGE = {
 export const PROOF_VAULT = {
   vault_id: PROOF_VAULT_ID,
   owner_account: "proof-owner.testnet",
-  owner_key: `02${"7a".repeat(32)}`,
+  owner_key: OWNER_KEY,
   policy: {
     delay_ns: (24n * HOUR_NS).toString(),
     policy_change_delay_ns: (7n * 24n * HOUR_NS).toString(),
-    escape_timelock_blocks: 26_280,
+    escape_timelock_blocks: PROOF_TIMELOCK,
     recovery_address: PROOF_RECOVERY,
     allowance_limit_sats: "100000",
     fee_cap_sats: "20000",
@@ -52,12 +99,12 @@ export const PROOF_VAULT = {
     fast_approval_floor_ns: HOUR_NS.toString(),
     guardians: [
       {
-        guardian_key: `02${"a1".repeat(32)}`,
+        guardian_key: GUARDIAN_KEYS[0] as string,
         guardian_account: "alice.testnet",
         kind: "trusted_contact",
       },
       {
-        guardian_key: `03${"b2".repeat(32)}`,
+        guardian_key: GUARDIAN_KEYS[1] as string,
         guardian_account: "watcher.morrow.testnet",
         kind: "auto_clawback",
       },
@@ -66,11 +113,27 @@ export const PROOF_VAULT = {
     watcher_x25519_pk: WATCHER_X25519_PK,
   },
   state: "active",
-  cosigner_pubkeys: { vault: `02${"c3".repeat(32)}`, allowance: `03${"d4".repeat(32)}` },
+  cosigner_pubkeys: COSIGNERS,
   addresses: { vault: PROOF_VAULT_ADDRESS, allowance: PROOF_ALLOWANCE_ADDRESS },
   storage_balance: "5000000000000000000000",
   created_at: PROOF_CREATED_AT,
   pending_change: CHANGE,
+};
+
+/** `get_vault_kit` of Vault #7: its real scripts, so the recomputed addresses truly match. */
+export const PROOF_KIT = {
+  kit_version: 1,
+  btc_network: "signet",
+  vault_script_hex: PROOF_VAULT_SCRIPT,
+  allowance_script_hex: PROOF_ALLOWANCE_SCRIPT,
+  addresses: { vault: PROOF_VAULT_ADDRESS, allowance: PROOF_ALLOWANCE_ADDRESS },
+  escape_timelock_blocks: PROOF_TIMELOCK,
+  cosigner_pubkeys: COSIGNERS,
+  witness_templates: [
+    { path: "withdrawal", slots: [] },
+    { path: "clawback", slots: [] },
+    { path: "escape", slots: [] },
+  ],
 };
 
 interface StubEvent {

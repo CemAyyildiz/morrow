@@ -3,9 +3,11 @@ import { poll } from "./live";
 import {
   PROOF_POLL_MS,
   proofRpc,
+  readKit,
   readProof,
   type ProofAnswer,
   type ProofFacts,
+  type ProofKit,
   type ScanHolder,
 } from "./proof";
 
@@ -88,4 +90,54 @@ export function useProof(
   // Another Vault's answer is never shown for this one.
   const state = held?.vaultId === vaultId ? held.state : { kind: "loading" as const };
   return { state, retry };
+}
+
+/** Where the Vault Kit of the Vault on screen stands. */
+export type KitState =
+  { kind: "idle" } | { kind: "loading" } | { kind: "ok"; kit: ProofKit } | { kind: "failed" };
+
+/**
+ * The Vault Kit of `vaultId`, read once, when `read` is first called (Recompute), never polled:
+ * the scripts of an active Vault never change. A failed read is asked again by the next `read`.
+ * It starts over for another Vault, and an open read is aborted on unmount or Vault change.
+ */
+export function useVaultKit(
+  rpcUrl: string | null,
+  contractId: string,
+  vaultId: string,
+): { state: KitState; read: () => Promise<ProofKit | null> } {
+  const [held, setHeld] = useState<{ key: string; state: KitState } | null>(null);
+  const key = `${rpcUrl ?? ""} ${contractId} ${vaultId}`;
+  const open = useRef<{ key: string; promise: Promise<ProofKit | null> } | null>(null);
+  const controller = useRef<AbortController | null>(null);
+  const kept = held?.key === key ? held.state : null;
+  const state: KitState = kept ?? { kind: "idle" };
+
+  useEffect(
+    () => () => {
+      controller.current?.abort();
+      controller.current = null;
+      open.current = null;
+    },
+    [key],
+  );
+
+  const read = useCallback(async (): Promise<ProofKit | null> => {
+    if (kept?.kind === "ok") return kept.kit;
+    if (open.current?.key === key) return open.current.promise;
+    if (rpcUrl === null) return null;
+    const abort = new AbortController();
+    controller.current = abort;
+    setHeld({ key, state: { kind: "loading" } });
+    const promise = readKit(proofRpc(rpcUrl, contractId, abort.signal), vaultId).then((answer) => {
+      if (abort.signal.aborted) return null;
+      open.current = null;
+      setHeld({ key, state: answer.kind === "ok" ? answer : { kind: "failed" } });
+      return answer.kind === "ok" ? answer.kit : null;
+    });
+    open.current = { key, promise };
+    return promise;
+  }, [kept, key, rpcUrl, contractId, vaultId]);
+
+  return { state, read };
 }

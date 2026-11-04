@@ -1,8 +1,8 @@
 /**
  * The browser-safe part of core-ts: pure modules only (explorer links, error codes with their
  * meanings, event kinds and types, transaction failure reading) plus what "Try with these keys"
- * needs: NEAR transaction signing, the Watcher Envelope and SegWit address checks, built on
- * @noble and @scure. Nothing here may import near-api-js, libsodium or bitcoinjs-lib, directly
+ * needs: NEAR transaction signing, the Watcher Envelope and SegWit address checks, plus the Proof
+ * Page's Vault Script decoding and P2WSH address recompute, built on @noble and @scure. Nothing here may import near-api-js, libsodium or bitcoinjs-lib, directly
  * or through another module: `browser.test.ts` walks the import graph and allows only those
  * small pure packages, and the web build fails if a heavy one reaches its bundle.
  */
@@ -30,9 +30,11 @@ export type {
   Policy,
   PolicyChange,
   PolicyChangeFields,
+  ScriptPath,
   SpendOpKind,
   U64,
   Vault,
+  VaultKit,
   VaultState,
 } from "./contract/types.js";
 export { failureKind, txFailure, type TxFailure } from "./xray/failure.js";
@@ -61,3 +63,19 @@ export {
   type SegwitAddress,
   type SegwitAddressProblem,
 } from "./bitcoin/browser-address.js";
+export {
+  compareScripts,
+  decodeScript,
+  encodeScriptNumber,
+  opcodeName,
+  p2wshAddress,
+  sameOp,
+  scriptNumber,
+  scriptPaths,
+  vaultScriptTemplate,
+  type ScriptDifference,
+  type ScriptOp,
+  type VaultScriptElement,
+  type VaultScriptRole,
+  type VaultScriptTemplate,
+} from "./bitcoin/browser-script.js";

@@ -55,6 +55,7 @@ describe("@morrow/core-ts/browser", () => {
     for (const specifier of bare) expect(packageOf(specifier)).toMatch(ALLOWED_PACKAGES);
     expect(modules.sort()).toEqual([
       "bitcoin/browser-address.ts",
+      "bitcoin/browser-script.ts",
       "browser.ts",
       "contract/errors.ts",
       "contract/events.ts",
@@ -177,5 +178,20 @@ describe("@morrow/core-ts/browser", () => {
         "signet",
       ).ok,
     ).toBe(true);
+    expect(
+      browser.p2wshAddress(
+        Uint8Array.from(
+          Buffer.from(
+            "210279be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798ac",
+            "hex",
+          ),
+        ),
+        "signet",
+      ),
+    ).toBe("tb1qrp33g0q5c5txsp9arysrx4k6zdkfs4nce4xj0gdcccefvpysxf3q0sl5k7");
+    expect(browser.decodeScript(Uint8Array.of(0x63, 0x68)).map((op) => op.name)).toEqual([
+      "OP_IF",
+      "OP_ENDIF",
+    ]);
   });
 });

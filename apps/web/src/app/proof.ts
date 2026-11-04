@@ -1,17 +1,30 @@
 // The Proof Page's chain reads (story 6.1): `get_vault`, `events_since` (paged from the Vault's
 // `created_at`), RPC `view_account` (the contract's `code_hash`) and `view_access_key_list`
 // (its full-access keys), all over the configured NEAR RPC, plus the pure mapping and the
-// generated guarantee and trust statements. Nothing is cached anywhere but in this page's
+// generated guarantee and trust statements. Story 6.2 adds `get_vault_kit`, read once per Vault
+// on Recompute, and the in-browser address recompute and tamper check of its scripts. Nothing is cached anywhere but in this page's
 // memory, and nothing here invents a value: what cannot be read is said to be unreadable.
-import type {
-  BtcNetwork as CoreBtcNetwork,
-  Guardian,
-  GuardianKind,
-  Policy,
-  PolicyChange,
-  PolicyChangeFields,
-  Vault,
-  VaultState,
+import {
+  compareScripts,
+  decodeScript,
+  p2wshAddress,
+  sameOp,
+  scriptNumber,
+  scriptPaths,
+  vaultScriptTemplate,
+  type BtcNetwork as CoreBtcNetwork,
+  type Guardian,
+  type GuardianKind,
+  type Policy,
+  type PolicyChange,
+  type PolicyChangeFields,
+  type ScriptOp,
+  type ScriptPath,
+  type Vault,
+  type VaultKit,
+  type VaultScriptElement,
+  type VaultScriptRole,
+  type VaultState,
 } from "@morrow/core-ts/browser";
 import { copy } from "@/copy";
 import { absoluteTime, formatDuration, nsToMs, viewResult } from "./challenge";
@@ -871,4 +884,274 @@ export function canonicalVaultId(digits: string): string | null {
   if (!/^\d{1,20}$/.test(digits)) return null;
   const value = BigInt(digits);
   return value > 18_446_744_073_709_551_615n ? null : value.toString();
+}
+
+// get_vault_kit and the address recompute (story 6.2)
+
+/** The `get_vault_kit` fields the recompute reads; the witness templates are not read. */
+export type ProofKit = Omit<VaultKit, "witness_templates">;
+
+const isScriptHex = (value: unknown): value is string =>
+  isHex(value) && value.length > 0 && value.length % 2 === 0;
+
+/** The `get_vault_kit` view (`contracts/vault` `VaultKit`); null when it has another shape. */
+export function parseKit(value: unknown): ProofKit | null {
+  if (!isRecord(value) || value.kit_version !== 1) return null;
+  if (!BTC_NETWORKS.includes(value.btc_network as CoreBtcNetwork)) return null;
+  if (!isScriptHex(value.vault_script_hex) || !isScriptHex(value.allowance_script_hex)) return null;
+  const blocks = value.escape_timelock_blocks;
+  if (typeof blocks !== "number" || !Number.isSafeInteger(blocks) || blocks < 0) return null;
+  const addresses = parsePair(value.addresses);
+  const cosigners = parsePair(value.cosigner_pubkeys);
+  if (!addresses || !cosigners || !isHex(cosigners.vault) || !isHex(cosigners.allowance)) {
+    return null;
+  }
+  return {
+    kit_version: 1,
+    btc_network: value.btc_network as CoreBtcNetwork,
+    vault_script_hex: value.vault_script_hex,
+    allowance_script_hex: value.allowance_script_hex,
+    addresses,
+    escape_timelock_blocks: blocks,
+    cosigner_pubkeys: cosigners,
+  };
+}
+
+export type KitAnswer = { kind: "ok"; kit: ProofKit } | { kind: "failed" };
+
+/**
+ * Reads `get_vault_kit` of `vaultId`. Any failure (the RPC, a contract error such as
+ * ERR_VAULT_NOT_ACTIVE, another shape) is one answer: the kit could not be read.
+ */
+export async function readKit(rpc: ProofRpc, vaultId: string): Promise<KitAnswer> {
+  const answer = await rpc.view("get_vault_kit", { vault_id: vaultId });
+  const kit = answer.kind === "ok" ? parseKit(answer.value) : null;
+  return kit === null ? { kind: "failed" } : { kind: "ok", kit };
+}
+
+/** Which of the Vault's two scripts: the Vault Address's or the Allowance Address's. */
+export type ScriptSource = "vault" | "allowance";
+
+/** Lowercase even-length hex as bytes (the kit's scripts are checked by `parseKit`). */
+function bytesOf(hex: string): Uint8Array {
+  const bytes = new Uint8Array(hex.length / 2);
+  for (let i = 0; i < bytes.length; i++) bytes[i] = parseInt(hex.slice(2 * i, 2 * i + 2), 16);
+  return bytes;
+}
+
+const hexOf = (bytes: Uint8Array) =>
+  Array.from(bytes, (byte) => byte.toString(16).padStart(2, "0")).join("");
+
+/** One row of the decoded script: one element, where it sits and what it is for. */
+export interface ScriptRow {
+  index: number;
+  /** Its first byte in the script. */
+  offset: number;
+  size: number;
+  /** The opcode name: `OP_CHECKSIG`, `OP_PUSHBYTES_33`. */
+  name: string;
+  /** The pushed bytes in full, hex; null for an opcode without data. */
+  data: string | null;
+  /** The number a small push or OP_N encodes, when it is the Vault Script's number. */
+  number: number | null;
+  /** What the template's element at this place is for, while the bytes line up with it. */
+  kind: VaultScriptRole | null;
+  /** Whose key or which number, from the rebuilt template: `Owner key`. */
+  role: string | null;
+  /** The path it is on, from the script's own IF / ELSE structure. */
+  path: ScriptPath | null;
+  /** `IF`, `ELSE IF`, `ELSE` or `ENDIF` for the structure's opcodes. */
+  branch: string | null;
+  /** Not the template's element at this place. */
+  differs: boolean;
+  /** One of its bytes is flipped. */
+  flipped: boolean;
+}
+
+/** The script check: the decoded script against the template rebuilt from `get_vault`. */
+export type ScriptCheck =
+  | { ok: true }
+  /** `element` names the first differing element (`Owner key`), at byte `at`. */
+  | { ok: false; element: string; at: number | null };
+
+/** What the recompute of one script found. Every value is computed here, from the kit's bytes. */
+export interface Recomputed {
+  source: ScriptSource;
+  network: CoreBtcNetwork;
+  /** The script hashed: the kit's, with the flipped bytes flipped. */
+  bytes: Uint8Array;
+  flipped: readonly number[];
+  rows: ScriptRow[];
+  /** The P2WSH address of `bytes`, computed in the browser. */
+  address: string;
+  /** The address `get_vault` states for this script. */
+  funded: string;
+  addressMatch: boolean;
+  scriptCheck: ScriptCheck;
+  /** The byte Flip a byte flips: the last byte of the Owner key's push. */
+  flipTarget: number;
+}
+
+/** Whose key or which number a template element is: `Owner key`, `Guardian key · alice`. */
+function roleOf(element: VaultScriptElement, vault: Vault): string | null {
+  const r = copy.proof.recompute.roles;
+  switch (element.role) {
+    case "owner_key":
+      return r.owner;
+    case "cosigner_key":
+      return r.cosigner;
+    case "guardian_key": {
+      const guardian = vault.policy.guardians[element.guardian ?? -1];
+      return r.guardian((element.guardian ?? 0) + 1, guardian?.guardian_account ?? "");
+    }
+    case "threshold":
+      return r.threshold;
+    case "guardian_count":
+      return r.guardianCount(vault.policy.guardians.length);
+    case "timelock":
+      return r.timelock(blocksOf(vault.policy.escape_timelock_blocks));
+    default:
+      return null;
+  }
+}
+
+/** The template of `source` from `get_vault`'s keys and timelock; null when a key is unreadable. */
+function templateOf(kit: ProofKit, vault: Vault, source: ScriptSource) {
+  try {
+    return vaultScriptTemplate(
+      vault.owner_key,
+      kit.cosigner_pubkeys[source],
+      vault.policy.guardians.map((guardian) => guardian.guardian_key),
+      vault.policy.escape_timelock_blocks,
+    );
+  } catch {
+    return null;
+  }
+}
+
+/** What the first differing element is called in the script check. */
+function elementName(
+  element: VaultScriptElement | undefined,
+  actual: ScriptOp | null,
+  vault: Vault,
+): string {
+  const r = copy.proof.recompute;
+  if (!element) return r.extra(actual?.name ?? "");
+  const role = roleOf(element, vault);
+  const name = role ?? element.op.name;
+  return actual === null ? r.missingElement(name) : r.differs(name);
+}
+
+const BRANCHES: Record<ScriptPath, string> = {
+  withdrawal: "IF",
+  clawback: "ELSE IF",
+  escape: "ELSE",
+};
+
+/**
+ * Recomputes the `source` script of the kit in the browser, with the bytes at `flipped` XOR
+ * 0x01: decodes it element by element, hashes it to its P2WSH address and checks both the
+ * address against `get_vault`'s and the script against the template rebuilt from `get_vault`'s
+ * Owner key, Guardian keys (in Policy order) and Escape Timelock with the kit's Co-signer key.
+ * Null when `get_vault` states no address to check against. Pure.
+ */
+export function recompute(
+  kit: ProofKit,
+  vault: Vault,
+  flipped: readonly number[] = [],
+  source: ScriptSource = "vault",
+): Recomputed | null {
+  if (vault.addresses === null) return null;
+  const original = bytesOf(source === "vault" ? kit.vault_script_hex : kit.allowance_script_hex);
+  const bytes = original.slice();
+  const flips = [...new Set(flipped)].filter((at) => at >= 0 && at < bytes.length);
+  for (const at of flips) bytes[at] = (bytes[at] as number) ^ 0x01;
+
+  const ops = decodeScript(bytes);
+  const paths = scriptPaths(ops);
+  const template = templateOf(kit, vault, source);
+  const elements = template?.elements ?? [];
+  const difference = template
+    ? compareScripts(
+        ops,
+        elements.map((e) => e.op),
+      )
+    : null;
+
+  const rows = ops.map((op, index): ScriptRow => {
+    const element = elements[index];
+    // Labels follow the template only while the bytes line up with it.
+    const aligned = element !== undefined && element.op.offset === op.offset;
+    const path = paths[index] ?? null;
+    const isBranch = op.kind === "op" && [0x63, 0x64, 0x67, 0x68].includes(op.opcode);
+    const same = aligned && sameOp(op, element.op);
+    const number =
+      aligned && ["threshold", "guardian_count", "timelock"].includes(element.role)
+        ? scriptNumber(op)
+        : null;
+    return {
+      index,
+      offset: op.offset,
+      size: op.size,
+      name: op.name,
+      data: op.kind === "push" ? hexOf(op.data) : null,
+      number,
+      kind: aligned ? element.role : null,
+      role: aligned ? roleOf(element, vault) : null,
+      path,
+      branch: isBranch ? (op.opcode === 0x68 || path === null ? "ENDIF" : BRANCHES[path]) : null,
+      differs: template !== null && !same,
+      flipped: flips.some((at) => at >= op.offset && at < op.offset + op.size),
+    };
+  });
+
+  // Flip a byte targets the Owner key's last byte, found in the kit's own script.
+  const originalOps = decodeScript(original);
+  const ownerAt = elements.findIndex((e) => e.role === "owner_key");
+  const owner = ownerAt >= 0 ? originalOps[ownerAt] : undefined;
+  const firstPush = originalOps.find((op) => op.kind === "push");
+  const target = owner?.kind === "push" ? owner : firstPush;
+  const flipTarget = target ? target.offset + target.size - 1 : 0;
+
+  const address = p2wshAddress(bytes, kit.btc_network);
+  const funded = vault.addresses[source];
+  let scriptCheck: ScriptCheck;
+  if (template === null) {
+    scriptCheck = { ok: false, element: copy.proof.recompute.unreadableKeys, at: null };
+  } else if (difference === null) {
+    scriptCheck = { ok: true };
+  } else {
+    scriptCheck = {
+      ok: false,
+      element: elementName(elements[difference.index], difference.actual, vault),
+      at: difference.actual?.offset ?? difference.expected?.offset ?? null,
+    };
+  }
+  return {
+    source,
+    network: kit.btc_network,
+    bytes,
+    flipped: flips,
+    rows,
+    address,
+    funded,
+    addressMatch: address === funded,
+    scriptCheck,
+    flipTarget,
+  };
+}
+
+/** What the visitor just did to a recomputed script. */
+export type RecomputeEvent =
+  { kind: "recompute" } | { kind: "flip"; at: number } | { kind: "reset" };
+
+/** The line the live region reads after a recompute, a flip or a reset. */
+export function recomputeAnnouncement(result: Recomputed, event: RecomputeEvent): string {
+  const r = copy.proof.recompute;
+  const what = result.source === "vault" ? r.vaultAddress : r.allowanceAddress;
+  const address = result.addressMatch ? r.matchesShort(what) : r.noMatchShort(what);
+  const script = result.scriptCheck.ok ? r.scriptOkShort : result.scriptCheck.element;
+  if (event.kind === "flip") return r.announceFlip(event.at, address, script);
+  if (event.kind === "reset") return r.announceReset(address, script);
+  return r.announce(what, address, script);
 }

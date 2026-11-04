@@ -8,8 +8,11 @@ import {
   PROOF_NOW,
   PROOF_RECOVERY,
   PROOF_EVENTS,
+  PROOF_KIT,
   PROOF_VAULT,
   PROOF_VAULT_ADDRESS,
+  PROOF_VAULT_SCRIPT,
+  vaultScriptHex,
 } from "./proof-fixture.ts";
 import { CHALLENGE_URL, LIVE_WEB_URL, RPC_URL, WATCHER_URL } from "./services.ts";
 
@@ -19,6 +22,7 @@ import { CHALLENGE_URL, LIVE_WEB_URL, RPC_URL, WATCHER_URL } from "./services.ts
 
 const ORANGE = "rgb(255, 122, 26)";
 const ALARM = "rgb(255, 107, 91)";
+const OK = "rgb(126, 226, 168)";
 
 const isPhone = (info: TestInfo) => info.project.name === "phone";
 /** Every request to the stub NEAR RPC. */
@@ -125,6 +129,16 @@ async function open(page: Page, path: string, minutes: number | undefined = 2) {
 }
 
 const region = (page: Page, name: string) => page.getByRole("region", { name, exact: true });
+
+/** The text of every element in main with an orange background. */
+const orangeElements = (page: Page) =>
+  page.evaluate(
+    (color) =>
+      Array.from(document.querySelectorAll<HTMLElement>("main *"))
+        .filter((el) => getComputedStyle(el).backgroundColor === color)
+        .map((el) => el.textContent?.trim() ?? ""),
+    ORANGE,
+  );
 
 /** Every check of Vault #7's proof, as the stub RPC serves it. */
 async function expectVaultSeven(page: Page) {
@@ -248,15 +262,8 @@ test.describe("Proof Page", () => {
     ]);
     expect(await fired()).toEqual([]);
 
-    // No primary action yet: nothing orange.
-    const orange = await page.evaluate(
-      (color) =>
-        Array.from(document.querySelectorAll<HTMLElement>("main *")).filter(
-          (el) => getComputedStyle(el).backgroundColor === color,
-        ).length,
-      ORANGE,
-    );
-    expect(orange).toBe(0);
+    // One primary action: the Address card's Recompute, the only orange on the page.
+    expect(await orangeElements(page)).toEqual(["Recompute"]);
 
     // Two columns of cards on desktop, one under 900 px.
     const columns = await page
@@ -536,5 +543,280 @@ test.describe("Proof Page with the challenge feed", () => {
       "The Challenge feed is not answering",
     );
     await expect(region(page, "Open a Vault by id").getByLabel("Vault id")).toBeVisible();
+  });
+});
+
+test.describe("Address recompute", () => {
+  const addresses = (page: Page) => region(page, "Addresses");
+  const recomputeButton = (page: Page) =>
+    addresses(page).getByRole("button", { name: "Recompute", exact: true });
+  const vaultView = (page: Page) => page.getByTestId("recompute-vault");
+  const live = (page: Page) => page.getByTestId("live-region");
+  /** Every RPC view method the page called. */
+  const methods = (requests: Request[]) =>
+    requests
+      .filter((r) => r.url().startsWith(RPC_URL) && r.method() === "POST")
+      .map((r) => (r.postDataJSON() as { params: Record<string, string> }).params.method_name);
+
+  async function expectGreen(page: Page) {
+    const view = vaultView(page);
+    const address = view.getByTestId("address-check");
+    await expect(address).toHaveAttribute("data-match", "true");
+    await expect(address.getByTestId("address-check-text")).toHaveText(
+      `${PROOF_VAULT_ADDRESS} matches the funded Vault Address ${PROOF_VAULT_ADDRESS}`,
+    );
+    await expect(address.getByTestId("address-check-text")).toHaveCSS("color", OK);
+    await expect(address.getByText("Match", { exact: true })).toBeVisible();
+    const script = view.getByTestId("script-check");
+    await expect(script).toHaveAttribute("data-match", "true");
+    await expect(script.getByTestId("script-check-text")).toHaveText(
+      "The script encodes the Owner key, the Co-signer key, 2 Guardian keys in Policy order and the Escape Timelock of 26,280 blocks, as get_vault states them.",
+    );
+    await expect(script.getByTestId("script-check-text")).toHaveCSS("color", OK);
+    await expect(view.locator("[data-testid=script-row][data-differs=true]")).toHaveCount(0);
+  }
+
+  async function expectRed(page: Page, element: string) {
+    const view = vaultView(page);
+    const address = view.getByTestId("address-check");
+    await expect(address).toHaveAttribute("data-match", "false");
+    const text = address.getByTestId("address-check-text");
+    await expect(text).toContainText(
+      `does not match the funded Vault Address ${PROOF_VAULT_ADDRESS}`,
+    );
+    await expect(text).toHaveCSS("color", ALARM);
+    // The differing address is shown in full: a P2WSH address on signet, not the funded one.
+    const recomputed = (await view.getByTestId("address-recomputed").textContent()) ?? "";
+    expect(recomputed).toMatch(/^tb1q[02-9ac-hj-np-z]{58}$/);
+    expect(recomputed).not.toBe(PROOF_VAULT_ADDRESS);
+    await expect(text).toContainText(recomputed);
+    await expect(address.getByText("No match", { exact: true })).toBeVisible();
+    const script = view.getByTestId("script-check");
+    await expect(script).toHaveAttribute("data-match", "false");
+    await expect(script.getByTestId("script-check-text")).toContainText(element);
+    await expect(script.getByTestId("script-check-text")).toHaveCSS("color", ALARM);
+  }
+
+  test("Recompute decodes the script with its three paths and matches the funded Vault Address", async ({
+    page,
+  }) => {
+    const { requests, fired } = await open(page, "/proof/7");
+    await expect(page.getByTestId("proof-code-hash")).toHaveText(CODE_HASH);
+    // Nothing is claimed, and the kit is not read, before Recompute runs.
+    await expect(page.getByTestId("recompute-vault")).toHaveCount(0);
+    await expect(addresses(page)).not.toContainText("matches the funded");
+    expect(methods(requests)).not.toContain("get_vault_kit");
+
+    await recomputeButton(page).click();
+    await expectGreen(page);
+    expect(methods(requests).filter((m) => m === "get_vault_kit")).toHaveLength(1);
+
+    // The three paths, labelled.
+    const paths = vaultView(page).getByTestId("script-paths");
+    await expect(paths.locator("[data-path=withdrawal]")).toHaveText("WithdrawalOwner + Co-signer");
+    await expect(paths.locator("[data-path=clawback]")).toHaveText(
+      "ClawbackCo-signer + 1 of 2 Guardians",
+    );
+    await expect(paths.locator("[data-path=escape]")).toHaveText(
+      "EscapeOwner after the CSV of 26,280 blocks",
+    );
+    // One monospace row per element, with its offset, keys in full, role and path.
+    const rows = vaultView(page).getByTestId("script-row");
+    await expect(rows).toHaveCount(22);
+    await expect(rows.first()).toContainText("OP_IF");
+    await expect(rows.first()).toContainText("IF · Withdrawal");
+    const owner = vaultView(page).locator("[data-testid=script-row][data-offset='1']");
+    await expect(owner).toContainText(PROOF_VAULT.owner_key);
+    await expect(owner).toContainText("Owner key · Withdrawal");
+    await expect(
+      vaultView(page).locator("[data-testid=script-row][data-path=clawback]"),
+    ).toHaveCount(9);
+    await expect(vaultView(page).getByTestId("script-rows")).toContainText(
+      "Guardian key 2 · watcher.morrow.testnet · Clawback",
+    );
+    await expect(vaultView(page).getByTestId("script-rows")).toContainText(
+      "Escape Timelock · 26,280 blocks · Escape",
+    );
+    await expect(vaultView(page).getByTestId("script-rows")).toHaveCSS("font-family", /Geist Mono/);
+    // Every script byte, in order.
+    const hex = await vaultView(page)
+      .getByTestId("script-byte")
+      .evaluateAll((els) => els.map((el) => el.textContent).join(""));
+    expect(hex).toBe(PROOF_VAULT_SCRIPT);
+    await expect(live(page)).toHaveText(
+      "Vault Address recomputed: the recomputed address matches the funded Vault Address. Script check: the script encodes the keys and timelock get_vault states.",
+    );
+
+    // Still one orange primary; Flip and Reset are secondary (off hover, which tints it).
+    // The button's colour transition back from hover takes a moment: poll.
+    await page.mouse.move(0, 0);
+    await expect.poll(() => orangeElements(page)).toEqual(["Recompute"]);
+    await expect(page.locator("main [data-variant=primary]")).toHaveCount(1);
+    expect(await fired()).toEqual([]);
+  });
+
+  test("Flip a byte turns both checks red with text, Reset brings back the green match", async ({
+    page,
+  }) => {
+    const { fired } = await open(page, "/proof/7");
+    await recomputeButton(page).click();
+    await expectGreen(page);
+
+    const flip = vaultView(page).getByRole("button", { name: "Flip a byte" });
+    await flip.click();
+    await expectRed(page, "Owner key differs at byte 1");
+    // The Owner key's last byte (34), 7a XOR 01, in a highlighted labelled row.
+    const byte = vaultView(page).locator("[data-testid=script-byte][data-offset='34']");
+    await expect(byte).toHaveText("7b");
+    await expect(byte).toHaveAttribute("aria-pressed", "true");
+    const owner = vaultView(page).locator("[data-testid=script-row][data-offset='1']");
+    await expect(owner).toHaveAttribute("data-flipped", "true");
+    await expect(owner).toContainText(`02${"7a".repeat(31)}7b`);
+    await expect(owner).toContainText("Owner key");
+    await expect(owner).toContainText("differs from the template");
+    await expect(live(page)).toContainText(
+      "Byte 34 flipped: the recomputed address does not match the funded Vault Address. Script check: Owner key differs.",
+    );
+    // The pressed button is spent; focus moved on to Reset.
+    await expect(flip).toBeDisabled();
+    const reset = vaultView(page).getByRole("button", { name: "Reset" });
+    await expect(reset).toBeFocused();
+
+    await reset.click();
+    await expectGreen(page);
+    await expect(byte).toHaveText("7a");
+    await expect(live(page)).toContainText("Reset to the published script");
+    expect(await fired()).toEqual([]);
+  });
+
+  test("clicking a byte flips it; the byte view is reachable by keyboard", async ({ page }) => {
+    await open(page, "/proof/7");
+    await recomputeButton(page).click();
+    await expectGreen(page);
+
+    const byte40 = vaultView(page).locator("[data-testid=script-byte][data-offset='40']");
+    await expect(byte40).toHaveText("c3");
+    await byte40.click();
+    await expect(byte40).toHaveText("c2");
+    await expectRed(page, "Co-signer key differs at byte 36");
+    await expect(
+      vaultView(page).locator("[data-testid=script-row][data-offset='36']"),
+    ).toHaveAttribute("data-flipped", "true");
+    // Selecting it again flips it back.
+    await byte40.click();
+    await expectGreen(page);
+
+    // One Tab stop for the bytes; arrows move, Enter flips.
+    const box = await byte40.boundingBox();
+    expect(Math.round(box?.height ?? 0)).toBeGreaterThanOrEqual(44);
+    await byte40.focus();
+    await page.keyboard.press("ArrowRight");
+    const byte41 = vaultView(page).locator("[data-testid=script-byte][data-offset='41']");
+    await expect(byte41).toBeFocused();
+    await expect(byte41).toHaveAttribute("tabindex", "0");
+    await expect(byte40).toHaveAttribute("tabindex", "-1");
+    await page.keyboard.press("Enter");
+    await expect(byte41).toHaveAttribute("aria-pressed", "true");
+    await expectRed(page, "Co-signer key differs");
+    await page.keyboard.press("Home");
+    await expect(
+      vaultView(page).locator("[data-testid=script-byte][data-offset='0']"),
+    ).toBeFocused();
+  });
+
+  test("a tampered kit fails the script check by name and the address check", async ({ page }) => {
+    const otherOwner = `03${"99".repeat(32)}`;
+    await routeRpc(page, (params, args) =>
+      params.method_name === "get_vault_kit" && args.vault_id === "7"
+        ? viewOk({
+            ...PROOF_KIT,
+            vault_script_hex: vaultScriptHex(otherOwner, PROOF_VAULT.cosigner_pubkeys.vault),
+          })
+        : undefined,
+    );
+    await open(page, "/proof/7");
+    await recomputeButton(page).click();
+    await expectRed(page, "Owner key differs at byte 1");
+    await expect(
+      vaultView(page).locator("[data-testid=script-row][data-offset='1']"),
+    ).toContainText(otherOwner);
+  });
+
+  test("a kit read that fails says so, with a retry that reads it", async ({ page }) => {
+    let fail = true;
+    await routeRpc(page, (params) =>
+      params.method_name === "get_vault_kit" && fail
+        ? { error: { name: "HANDLER_ERROR", cause: { name: "TIMEOUT_ERROR", info: {} } } }
+        : undefined,
+    );
+    await open(page, "/proof/7");
+    await recomputeButton(page).click();
+    const failed = page.getByTestId("recompute-failed");
+    await expect(failed).toContainText("Could not read the Vault Kit");
+    await expect(vaultView(page)).toHaveCount(0);
+    await expect(live(page)).toHaveText("Could not read the Vault Kit");
+    fail = false;
+    await failed.getByRole("button", { name: "Retry" }).click();
+    await expectGreen(page);
+    await expect(failed).toHaveCount(0);
+  });
+
+  test("a Vault without keys has no script: Recompute is unavailable and says why", async ({
+    page,
+  }) => {
+    await routeRpc(
+      page,
+      vaultSeven({
+        ...PROOF_VAULT,
+        state: "pending_keys",
+        addresses: null,
+        cosigner_pubkeys: null,
+        pending_change: null,
+      }),
+    );
+    const { requests } = await open(page, "/proof/7");
+    await expect(page.getByTestId("recompute-unavailable")).toHaveText(
+      "This Vault has no script yet, so there is nothing to recompute.",
+    );
+    await expect(addresses(page).getByRole("button")).toHaveCount(0);
+    expect(await orangeElements(page)).toEqual([]);
+    expect(methods(requests)).not.toContain("get_vault_kit");
+  });
+
+  test("the Allowance Address gets the same recompute in a collapsed second row", async ({
+    page,
+  }) => {
+    await open(page, "/proof/7");
+    const toggle = addresses(page).getByRole("button", { name: "Recompute the Allowance Address" });
+    await expect(toggle).toHaveAttribute("aria-expanded", "false");
+    await expect(page.getByTestId("recompute-allowance")).toHaveCount(0);
+    await toggle.click();
+    await expect(toggle).toHaveAttribute("aria-expanded", "true");
+    const view = page.getByTestId("recompute-allowance");
+    await expect(view.getByTestId("address-check")).toHaveAttribute("data-match", "true");
+    await expect(view.getByTestId("address-check-text")).toHaveText(
+      `${PROOF_ALLOWANCE_ADDRESS} matches the funded Allowance Address ${PROOF_ALLOWANCE_ADDRESS}`,
+    );
+    await expect(view.getByTestId("script-check")).toHaveAttribute("data-match", "true");
+    await expect(view.locator("[data-testid=script-row][data-offset='36']")).toContainText(
+      PROOF_VAULT.cosigner_pubkeys.allowance,
+    );
+    // Its own Flip a byte; the Vault's view is not touched.
+    await view.getByRole("button", { name: "Flip a byte" }).click();
+    await expect(view.getByTestId("address-check")).toHaveAttribute("data-match", "false");
+    await expect(page.getByTestId("recompute-vault")).toHaveCount(0);
+    await toggle.click();
+    await expect(page.getByTestId("recompute-allowance")).toBeHidden();
+  });
+
+  test("with reduced motion the checks and rows change without a transition", async ({ page }) => {
+    await page.emulateMedia({ reducedMotion: "reduce" });
+    await open(page, "/proof/7");
+    await recomputeButton(page).click();
+    await expectGreen(page);
+    const durations = await vaultView(page)
+      .locator("[data-testid=script-row], [data-testid=address-check], [data-testid=script-byte]")
+      .evaluateAll((els) => [...new Set(els.map((el) => getComputedStyle(el).transitionDuration))]);
+    expect(durations).toEqual(["0s"]);
   });
 });

@@ -29,13 +29,14 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { copy } from "@/copy";
 import { cn } from "@/lib/utils";
 import { PageHeader } from "@/shell/PageHeader";
+import { AddressRecompute } from "./ScriptView";
 
 const p = copy.proof;
 
 // The Proof Page (story 6.1): a Vault's real rules, read live from the chain with no sign-in,
 // no wallet and no server cache, every 30 s. `/proof/<id>` shows that Vault; bare `/proof`
 // shows the live Challenge Vault while a round is open, otherwise a form to open one by id.
-// No primary action yet: 6.2 adds Recompute to the Address card.
+// The Address card's Recompute (story 6.2, ScriptView.tsx) is the page's one primary action.
 export function ProofView({ vaultId }: { vaultId: string | null }) {
   const { challenge, challengeStatus, config } = useAppData();
   if (vaultId !== null) return <VaultProof vaultId={vaultId} config={config} />;
@@ -339,17 +340,26 @@ function ProofBody({ facts, now, config }: { facts: ProofFacts; now: number; con
             </Rows>
           </Section>
           <Section id="address" title={p.sections.addresses}>
-            {vault.addresses === null ? (
-              <p className="text-[14px] text-muted">{p.rows.notActive}</p>
+            {vault.addresses === null || vault.state === "pending_keys" ? (
+              <>
+                <p className="text-[14px] text-muted">{p.rows.notActive}</p>
+                {/* No kit without keys: Recompute is unavailable, and says why. */}
+                <p data-testid="recompute-unavailable" className="mt-2 text-[14px] text-muted">
+                  {p.recompute.noScript}
+                </p>
+              </>
             ) : (
-              <Rows>
-                <Row label={p.rows.vaultAddress} mono>
-                  {vault.addresses.vault}
-                </Row>
-                <Row label={p.rows.allowanceAddress} mono>
-                  {vault.addresses.allowance}
-                </Row>
-              </Rows>
+              <>
+                <Rows>
+                  <Row label={p.rows.vaultAddress} mono>
+                    {vault.addresses.vault}
+                  </Row>
+                  <Row label={p.rows.allowanceAddress} mono>
+                    {vault.addresses.allowance}
+                  </Row>
+                </Rows>
+                <AddressRecompute key={vault.vault_id} vault={vault} config={config} />
+              </>
             )}
           </Section>
           <Section id="trust" title={p.sections.trust} intro={p.trustIntro}>
