@@ -13,6 +13,7 @@
     "test": "pnpm -r test",
     "check:hygiene": "node .github/scripts/check-hygiene.mjs",
     "check:lanes": "node .github/scripts/check-lanes.mjs",
+    "check:readme": "node .github/scripts/check-readme.mjs",
     "test:ci-scripts": "node --test .github/scripts/*.test.mjs"
   },
   "devDependencies": {

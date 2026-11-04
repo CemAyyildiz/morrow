@@ -68,7 +68,15 @@ jobs:
         env:
           MORROW_REGTEST_RPC: http://morrow:morrow@127.0.0.1:18443
         run: pnpm --filter @morrow/challenge test
-      - run: make demo
+      - name: Judge Mode
+        id: judge
+        shell: bash
+        run: |
+          set -o pipefail
+          make demo 2>&1 | tee judge.log
+      - name: README expected lines in the Judge Mode log
+        if: ${{ !cancelled() && steps.judge.outcome != 'skipped' }}
+        run: node .github/scripts/check-readme.mjs --log judge.log
       - if: always()
         run: make regtest-down
 
@@ -84,6 +92,7 @@ jobs:
           node-version-file: .nvmrc
       - run: node --test .github/scripts/*.test.mjs
       - run: node .github/scripts/check-hygiene.mjs
+      - run: node .github/scripts/check-readme.mjs
       - name: Lane ownership
         if: github.event_name == 'pull_request'
         env:
