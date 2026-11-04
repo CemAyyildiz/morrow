@@ -842,17 +842,16 @@ describe("Bitcoin Owner-Key-only spends", () => {
 });
 
 describe("not deployed (live mix)", () => {
-  it("lists spend_allowance and never sends it; Policy Changes go out live (Story 5.1)", async () => {
+  it("lists nothing: Allowance spends (Story 5.2) and Policy Changes (Story 5.1) go out live", async () => {
     const report = await new AttackRun(handPorts(), {
       ...HAND,
       n: 20,
       dryRun: false,
     }).execute();
-    expect(report.summary.not_deployed).toEqual(["spend_allowance"]);
-    expect(report.summary.not_deployed_note).toContain("Story 5.2");
-    expect(report.summary.not_deployed_note).not.toContain("Story 5.1");
+    expect(report.summary.not_deployed).toEqual([]);
+    expect(report.summary.not_deployed_note).toBeNull();
     const methods = new Set(report.attempts.map((a) => a.method));
-    expect(methods.has("spend_allowance")).toBe(false);
+    expect(methods.has("spend_allowance")).toBe(true);
     expect(methods.has("propose_policy_change")).toBe(true);
   });
 

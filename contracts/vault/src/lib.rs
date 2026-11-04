@@ -9,7 +9,7 @@ use crate::core::address::{p2wsh_script_pubkey, script_pubkey};
 use crate::core::errors::{ErrorCode, Rejection};
 use crate::core::policy::{
     is_compressed_key, parse_change, validate_policy, BtcNetwork, Policy, PolicyChange,
-    PolicyChangeState,
+    PolicyChangeState, DAY_NS,
 };
 use crate::core::script::{
     build_vault_script, compress_derived_key, hex, parse_key, witness_templates, WitnessTemplate,
@@ -531,6 +531,110 @@ impl VaultContract {
             vault_id.0,
             "op_frozen",
             json!({ "op_id": U64(op_id), "kind": "refresh", "envelope": envelope, "fee_sats": U64(built.fee_sats) }),
+        );
+        self.index_op(vault_id.0, op_id);
+        self.flush_and_charge(vault_id.0, storage_before);
+        op
+    }
+
+    /// Spends coins at the Allowance Address with no Delay, while the rolling 24-hour total of
+    /// allowance spends stays within `allowance_limit_sats` (a limit of 0 refuses every spend).
+    /// The payment is built and frozen at once: change goes back to the Allowance Address, RBF
+    /// is set on every input, and the fee is ≤ min(Fee Cap, 5% of the amount). The Owner then
+    /// signs it through `sign_input` on the allowance path.
+    #[allow(clippy::too_many_arguments)]
+    pub fn spend_allowance(
+        &mut self,
+        vault_id: U64,
+        amount_sats: U64,
+        destination: String,
+        fee_rate_sat_vb: u32,
+        utxos: Vec<Outpoint>,
+        envelope: String,
+    ) -> SpendOp {
+        let storage_before = env::storage_usage();
+        let vault = self.owner_action(vault_id.0, Some(&envelope)).clone();
+        let network = vault.policy.btc_network;
+        let destination_script =
+            script_pubkey(&destination, network).unwrap_or_else(|r| reject(&r));
+        let amount = amount_sats.0;
+        if amount == 0 {
+            reject(&Rejection::with(
+                ErrorCode::InsufficientFunds,
+                "amount must be positive",
+            ));
+        }
+        // The limit comes before the coins: on a limit of 0 nothing else is even looked at.
+        let limit = vault.policy.allowance_limit_sats.0;
+        let window_sats = self
+            .allowance_window(vault_id.0)
+            .checked_add(amount)
+            .filter(|total| limit != 0 && *total <= limit)
+            .unwrap_or_else(|| fail(ErrorCode::AllowanceLimit));
+        check_inputs(&utxos).unwrap_or_else(|r| reject(&r));
+        self.check_unreserved(&utxos);
+
+        let (_, allowance_script) =
+            vault_scripts(&vault).unwrap_or_else(|| fail(ErrorCode::BadKey));
+        let change_to = p2wsh_script_pubkey(&allowance_script);
+        // The stored Allowance Address must be the very change output the builder pays.
+        let stored = vault
+            .addresses
+            .as_ref()
+            .and_then(|a| script_pubkey(&a.allowance, network).ok());
+        if stored.as_ref() != Some(&change_to) {
+            fail(ErrorCode::BadKey);
+        }
+        let built = build_payment(&PaymentPlan {
+            inputs: &utxos,
+            amount_sats: amount,
+            destination: &destination_script,
+            change_to: &change_to,
+            fee_rate_sat_vb,
+            fee_cap_sats: withdrawal_fee_cap(vault.policy.fee_cap_sats.0, amount),
+            witness_script: &allowance_script,
+        })
+        .unwrap_or_else(|r| reject(&r));
+
+        let op_id = self.next_op_id;
+        self.next_op_id += 1;
+        for utxo in &utxos {
+            self.reservations.insert(utxo.key(), op_id);
+        }
+        let op = SpendOp {
+            op_id: U64(op_id),
+            vault_id,
+            kind: SpendOpKind::Allowance,
+            source: SpendSource::Allowance,
+            state: SpendOpState::Frozen,
+            amount_sats,
+            destination: destination.clone(),
+            fee_rate_sat_vb,
+            utxos,
+            created_at: U64(env::block_timestamp()),
+            executable_at: None,
+            unsigned_tx_hex: Some(hex(&built.unsigned)),
+            sighashes: built.sighashes.iter().map(|s| hex(s)).collect(),
+            signatures: vec![None; built.sighashes.len()],
+            witness_template: witness_templates()
+                .into_iter()
+                .find(|t| t.path == "withdrawal"),
+        };
+        self.ops.insert(op_id, op.clone());
+        self.emit(
+            vault_id.0,
+            "op_frozen",
+            json!({ "op_id": U64(op_id), "kind": "allowance", "envelope": envelope, "fee_sats": U64(built.fee_sats) }),
+        );
+        self.emit(
+            vault_id.0,
+            "allowance_spent",
+            json!({
+                "op_id": U64(op_id),
+                "amount_sats": amount_sats,
+                "destination": destination,
+                "window_sats": U64(window_sats),
+            }),
         );
         self.index_op(vault_id.0, op_id);
         self.flush_and_charge(vault_id.0, storage_before);
@@ -1118,6 +1222,28 @@ impl VaultContract {
                 fail(ErrorCode::RefreshTooSoon);
             }
         }
+    }
+
+    /// The rolling 24-hour Allowance total: the amounts (fees not counted) of this Vault's
+    /// allowance ops that are Frozen or Signed and were created after `now − 24 h`. Ops are
+    /// indexed in creation order, so the scan runs newest first and stops at the window's edge.
+    fn allowance_window(&self, vault_id: u64) -> u64 {
+        let since = env::block_timestamp().saturating_sub(DAY_NS);
+        let Some(ids) = self.vault_ops.get(&vault_id) else {
+            return 0;
+        };
+        let mut total: u64 = 0;
+        for op in ids.iter().rev().filter_map(|id| self.ops.get(id)) {
+            if op.created_at.0 <= since {
+                break;
+            }
+            if op.kind == SpendOpKind::Allowance
+                && matches!(op.state, SpendOpState::Frozen | SpendOpState::Signed)
+            {
+                total = total.saturating_add(op.amount_sats.0);
+            }
+        }
+        total
     }
 
     fn index_op(&mut self, vault_id: u64, op_id: u64) {

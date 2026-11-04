@@ -32,6 +32,7 @@ pub enum ErrorCode {
     ChangePending,
     ChangeNotFound,
     ChangeNotEffective,
+    AllowanceLimit,
 }
 
 impl ErrorCode {
@@ -67,6 +68,7 @@ impl ErrorCode {
             Self::ChangePending => "ERR_CHANGE_PENDING",
             Self::ChangeNotFound => "ERR_CHANGE_NOT_FOUND",
             Self::ChangeNotEffective => "ERR_CHANGE_NOT_EFFECTIVE",
+            Self::AllowanceLimit => "ERR_ALLOWANCE_LIMIT",
         }
     }
 }

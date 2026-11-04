@@ -424,3 +424,107 @@ describe("MockContractClient: lifecycles", () => {
     await expectCode(mock.beginExecute(opId, ENVELOPE), "ERR_FEE_TOO_HIGH");
   });
 });
+
+describe("MockContractClient: Spending Allowance (matches the contract)", () => {
+  const spend = (vaultId: string, n: number, amount: string, value = 100_000) => ({
+    vault_id: vaultId,
+    amount_sats: amount,
+    destination: DESTINATION,
+    fee_rate_sat_vb: 2,
+    utxos: [utxo(n, value)],
+    envelope: ENVELOPE,
+  });
+
+  it("freezes an allowance op from the Allowance Address and emits allowance_spent", async () => {
+    const { mock, vaultId } = await setup({ allowance_limit_sats: "100000" });
+    const op = await mock.spendAllowance(spend(vaultId, 1, "60000"));
+    expect(op).toMatchObject({
+      kind: "allowance",
+      source: "allowance",
+      state: "frozen",
+      amount_sats: "60000",
+      destination: DESTINATION,
+      executable_at: null,
+    });
+    const events = (await mock.eventsSince("2", 100)).map((e) => [e.kind, e.data]);
+    expect(events).toEqual([
+      [
+        "op_frozen",
+        { op_id: op.op_id, kind: "allowance", envelope: ENVELOPE, fee_sats: expect.any(String) },
+      ],
+      [
+        "allowance_spent",
+        { op_id: op.op_id, amount_sats: "60000", destination: DESTINATION, window_sats: "60000" },
+      ],
+    ]);
+    await mock.signInput(op.op_id, 0);
+    expect((await mock.getOp(op.op_id)).state).toBe("signed");
+  });
+
+  it("only the Owner signs an allowance op", async () => {
+    const { mock, vaultId } = await setup();
+    const op = await mock.spendAllowance(spend(vaultId, 1, "60000"));
+    await expectCode(mock.asCaller(EMMA).signInput(op.op_id, 0), "ERR_UNAUTHORIZED");
+  });
+
+  it("a refused spend leaves no op, no op id and no reservation", async () => {
+    const { mock, vaultId } = await setup();
+    const events = (await mock.eventsSince("0", 100)).length;
+    await expectCode(
+      mock.spendAllowance({ ...spend(vaultId, 1, "60000"), fee_rate_sat_vb: 100 }),
+      "ERR_FEE_TOO_HIGH",
+    );
+    await expectCode(mock.getOp("1"), "ERR_OP_NOT_FOUND");
+    expect((await mock.eventsSince("0", 100)).length).toBe(events);
+    // The same coin is free, and the next op takes the id the refused one did not spend.
+    expect(await mock.requestWithdrawal(withdrawal(vaultId, 1, "50000"))).toBe("1");
+    // Nothing counts toward the window either.
+    expect((await mock.spendAllowance(spend(vaultId, 2, "100000", 200_000))).state).toBe("frozen");
+  });
+
+  it("the window counts frozen and signed spends created after now - 24 h", async () => {
+    const { mock, vaultId } = await setup({ allowance_limit_sats: "100000" });
+    const first = await mock.spendAllowance(spend(vaultId, 1, "60000"));
+    await mock.signInput(first.op_id, 0);
+    mock.advance(DAY_NS - 1n);
+    await expectCode(mock.spendAllowance(spend(vaultId, 2, "50000")), "ERR_ALLOWANCE_LIMIT");
+    expect((await mock.spendAllowance(spend(vaultId, 2, "40000"))).state).toBe("frozen");
+    mock.advance(1n);
+    // The first spend has left the window; the 40,000 one has not.
+    await expectCode(mock.spendAllowance(spend(vaultId, 3, "60001")), "ERR_ALLOWANCE_LIMIT");
+    await mock.spendAllowance(spend(vaultId, 3, "60000"));
+    const last = (await mock.eventsSince("0", 100)).at(-1);
+    expect(last?.kind === "allowance_spent" && last.data.window_sats).toBe("100000");
+  });
+
+  it("a limit of 0 refuses every spend before looking at the coins", async () => {
+    const { mock, vaultId } = await setup({ allowance_limit_sats: "0" });
+    for (const utxos of [[], [utxo(1), utxo(1)], [1, 2, 3, 4, 5, 6].map((n) => utxo(n))]) {
+      await expectCode(
+        mock.spendAllowance({ ...spend(vaultId, 1, "1"), utxos }),
+        "ERR_ALLOWANCE_LIMIT",
+      );
+    }
+  });
+
+  it("checks the destination and a positive amount before the limit", async () => {
+    const { mock, vaultId } = await setup({ allowance_limit_sats: "0" });
+    await expectCode(
+      mock.spendAllowance({ ...spend(vaultId, 1, "1"), destination: "bc1qnotsignet" }),
+      "ERR_BAD_ADDRESS",
+    );
+    await expectCode(mock.spendAllowance(spend(vaultId, 1, "0")), "ERR_INSUFFICIENT_FUNDS");
+  });
+
+  it("a Clawback voids a frozen allowance op", async () => {
+    const { mock, vaultId } = await setup();
+    const op = await mock.spendAllowance(spend(vaultId, 1, "60000"));
+    await mock.asCaller(EMMA).beginClawback({
+      vault_id: vaultId,
+      utxos: [utxo(1, 100_000)],
+      fee_rate_sat_vb: 2,
+      source: "allowance",
+    });
+    expect((await mock.getOp(op.op_id)).state).toBe("voided");
+  });
+});

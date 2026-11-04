@@ -21,6 +21,7 @@ export const EVENT_KINDS = [
   "policy_change_withdrawn",
   "policy_change_applied",
   "refresh_cancelled",
+  "allowance_spent",
 ] as const;
 
 export type EventKind = (typeof EVENT_KINDS)[number];
@@ -58,6 +59,11 @@ export interface EventData {
   policy_change_applied: { change_id: U64 };
   /** The Owner cancelled a Frozen Refresh before every input was signed. */
   refresh_cancelled: { op_id: U64; by: AccountId };
+  /**
+   * An Allowance spend was accepted and frozen (it follows its `op_frozen`). `window_sats`: the
+   * rolling 24-hour Allowance total including this spend, fees not counted.
+   */
+  allowance_spent: { op_id: U64; amount_sats: U64; destination: string; window_sats: U64 };
 }
 
 export type MorrowEvent = {

@@ -241,22 +241,29 @@ export class MockContractClient implements ContractClient {
     const vault = this.ownerAction(args.vault_id, args.envelope);
     assertAddress(args.destination, vault.policy.btc_network);
     const amount = assertU64(args.amount_sats, "amount_sats");
+    if (amount <= 0n) this.fail("ERR_INSUFFICIENT_FUNDS", "amount must be positive");
+    // The limit comes before the coins: on a limit of 0 nothing else is even looked at.
     const limit = BigInt(vault.policy.allowance_limit_sats);
-    const windowStart = this.nowNs - DAY_NS;
-    const spent = [...this.ops.values()]
-      .filter(
-        (o) =>
-          o.vault_id === vault.vault_id &&
-          o.kind === "allowance" &&
-          (o.state === "frozen" || o.state === "signed") &&
-          BigInt(o.created_at) > windowStart,
-      )
-      .reduce((sum, o) => sum + BigInt(o.amount_sats), 0n);
-    if (limit === 0n || spent + amount > limit) this.fail("ERR_ALLOWANCE_LIMIT");
+    const window = this.allowanceWindow(vault.vault_id) + amount;
+    if (limit === 0n || window > limit) this.fail("ERR_ALLOWANCE_LIMIT");
     this.checkInputs(args.utxos, false);
     this.checkFunds(args.utxos, amount);
     const op = this.newOp(vault, "allowance", "pending", args.amount_sats, args.destination, args);
-    this.freeze(vault, op, args.envelope);
+    op.source = "allowance";
+    try {
+      this.freeze(vault, op, args.envelope);
+    } catch (error) {
+      // The contract reverts a refused call: no op, no reservation, no op id spent.
+      this.ops.delete(op.op_id);
+      this.nextOpId--;
+      throw error;
+    }
+    this.emit(vault.vault_id, "allowance_spent", {
+      op_id: op.op_id,
+      amount_sats: op.amount_sats,
+      destination: op.destination,
+      window_sats: window.toString(),
+    });
     return clone(op);
   }
 
@@ -545,6 +552,23 @@ export class MockContractClient implements ContractClient {
 
   private guardianOf(vault: Vault): Guardian | undefined {
     return vault.policy.guardians.find((g) => g.guardian_account === this.caller);
+  }
+
+  /**
+   * The rolling 24-hour Allowance total: amounts (fees not counted) of this Vault's allowance ops
+   * that are frozen or signed and were created after `now - 24 h`.
+   */
+  private allowanceWindow(vaultId: U64): bigint {
+    const since = this.nowNs - DAY_NS;
+    return [...this.ops.values()]
+      .filter(
+        (o) =>
+          o.vault_id === vaultId &&
+          o.kind === "allowance" &&
+          (o.state === "frozen" || o.state === "signed") &&
+          BigInt(o.created_at) > since,
+      )
+      .reduce((sum, o) => sum + BigInt(o.amount_sats), 0n);
   }
 
   private checkInputs(utxos: Outpoint[], forClawback: boolean): void {

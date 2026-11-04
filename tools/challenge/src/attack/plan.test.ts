@@ -103,17 +103,20 @@ describe("CATEGORIES", () => {
 });
 
 describe("notDeployed", () => {
-  it("lists only spend_allowance for the live mix", () => {
+  it("is empty for the live mix: every category is deployed", () => {
     expect(LIVE_METHODS).toContain("refresh");
     expect(LIVE_METHODS).toContain("propose_policy_change");
-    expect(notDeployed(live)).toEqual(["spend_allowance"]);
+    expect(LIVE_METHODS).toContain("spend_allowance");
+    expect(notDeployed(live)).toEqual([]);
     expect(notDeployed(all)).toEqual([]);
   });
   it("writes a plain-words note naming the methods and stories", () => {
-    const note = notDeployedNote(live);
+    const missing = liveCategories(LIVE_METHODS.filter((m) => m !== "spend_allowance"));
+    const note = notDeployedNote(missing);
     expect(note).toContain("Allowance spend (spend_allowance, Story 5.2)");
     expect(note).not.toContain("propose_policy_change");
     expect(note).not.toContain("refresh");
+    expect(notDeployedNote(live)).toBeNull();
     expect(notDeployedNote(all)).toBeNull();
   });
 });

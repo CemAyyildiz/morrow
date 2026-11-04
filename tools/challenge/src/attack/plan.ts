@@ -36,7 +36,7 @@ export interface CategoryInfo {
   story?: string;
 }
 
-/** In report order: the not-deployed one comes out as spend_allowance. */
+/** In report order. */
 export const CATEGORIES: Record<Category, CategoryInfo> = {
   withdrawal_request: { method: "request_withdrawal", label: "Withdrawal Request" },
   early_execute: { method: "begin_execute", label: "Execute before the Delay" },
@@ -79,6 +79,7 @@ export const LIVE_METHODS: readonly string[] = [
   "top_up_storage",
   "refresh",
   "propose_policy_change",
+  "spend_allowance",
 ];
 
 /** Categories the live mix may send: Bitcoin spends always, contract calls when deployed. */
@@ -157,7 +158,8 @@ const AFTER_CLAWBACK = ["ERR_CLAWED_BACK", "ERR_VAULT_NOT_ACTIVE"] as const;
 export const MOVES: Record<Move, MoveInfo> = {
   clawback_as_owner: { category: "clawback", phase: "pre", expected: ["ERR_UNAUTHORIZED"] },
   bad_envelope: { category: "withdrawal_request", phase: "pre", expected: ["ERR_BAD_ENVELOPE"] },
-  // The Allowance is not deployed live yet: in the dry run the mock contract gives its code.
+  // The Challenge Vault's Allowance limit is 0: the live contract (Story 5.2) and the dry run's
+  // mock refuse every spend before looking at the coins.
   allowance_over_limit: {
     category: "spend_allowance",
     phase: "pre",

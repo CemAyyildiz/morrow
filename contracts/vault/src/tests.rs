@@ -320,7 +320,10 @@ mod activation {
 
 mod withdrawals_support {
     use super::*;
+    use crate::core::script::from_hex;
     use crate::core::spend::Outpoint;
+    use near_sdk::mock::MockAction;
+    use near_sdk::test_utils::get_created_receipts;
 
     pub fn envelope() -> String {
         "ab".repeat(80)
@@ -372,6 +375,63 @@ mod withdrawals_support {
             .predecessor_account_id(caller.parse().unwrap())
             .block_timestamp(timestamp)
             .build());
+    }
+
+    pub fn expect_panic(expected: &str, f: impl FnOnce() + std::panic::UnwindSafe) {
+        let message = panic_message(f);
+        assert!(
+            message.contains(expected),
+            "expected {expected}, got {message}"
+        );
+    }
+
+    /// The outputs of an unsigned transaction in hex: (value, scriptPubKey).
+    pub fn outputs(unsigned_hex: &str) -> Vec<(u64, Vec<u8>)> {
+        crate::core::tx::test_support::outputs(&from_hex(unsigned_hex).unwrap())
+    }
+
+    pub fn signing_mpc(byte: u8) -> MpcSignature {
+        MpcSignature {
+            big_r: MpcPoint {
+                affine_point: format!("02{}", format!("{byte:02x}").repeat(32)),
+            },
+            s: MpcScalar {
+                scalar: format!("{byte:02x}").repeat(32),
+            },
+        }
+    }
+
+    /// An active Vault whose Vault and Allowance Co-signer keys differ, so the two addresses do.
+    pub fn two_address_vault() -> (VaultContract, U64) {
+        let mut contract = testnet_contract(vec![]);
+        context("owner.testnet", MIN_VAULT_STORAGE);
+        let id = create(&mut contract, standard_policy());
+        let key = |byte: u8| {
+            let mut point = [byte; 64];
+            point[63] = 1;
+            format!("secp256k1:{}", bs58::encode(point).into_string())
+        };
+        contract.on_keys_derived(id, Ok(key(0x11)), Ok(key(0x55)));
+        let addresses = contract.get_vault(id).addresses.unwrap();
+        assert_ne!(addresses.vault, addresses.allowance);
+        (contract, id)
+    }
+
+    pub fn sign_paths() -> Vec<String> {
+        get_created_receipts()
+            .into_iter()
+            .flat_map(|r| r.actions)
+            .filter_map(|action| match action {
+                MockAction::FunctionCallWeight {
+                    method_name, args, ..
+                } if method_name == b"sign" => {
+                    let args: near_sdk::serde_json::Value =
+                        near_sdk::serde_json::from_slice(&args).unwrap();
+                    Some(args["request"]["path"].as_str().unwrap().to_string())
+                }
+                _ => None,
+            })
+            .collect()
     }
 }
 
@@ -863,25 +923,10 @@ mod refresh {
     use crate::core::address::p2wsh_script_pubkey;
     use crate::core::script::from_hex;
     use crate::core::spend::{Outpoint, SpendOpKind, SpendOpState, SpendSource};
-    use near_sdk::mock::MockAction;
-    use near_sdk::test_utils::get_created_receipts;
-
-    fn expect_panic(expected: &str, f: impl FnOnce() + std::panic::UnwindSafe) {
-        let message = panic_message(f);
-        assert!(
-            message.contains(expected),
-            "expected {expected}, got {message}"
-        );
-    }
 
     fn refresh(contract: &mut VaultContract, id: U64, utxos: Vec<Outpoint>, rate: u32) -> SpendOp {
         as_caller("owner.testnet");
         contract.refresh(id, utxos, rate, envelope(), None)
-    }
-
-    /// The outputs of an unsigned transaction in hex: (value, scriptPubKey).
-    fn outputs(unsigned_hex: &str) -> Vec<(u64, Vec<u8>)> {
-        crate::core::tx::test_support::outputs(&from_hex(unsigned_hex).unwrap())
     }
 
     fn vault_script_pubkey(contract: &VaultContract, id: U64) -> Vec<u8> {
@@ -995,17 +1040,6 @@ mod refresh {
         // Signed is terminal: the reservation is released.
         let next = request(&mut contract, id, vec![utxo(1, 150_000)], 100_000);
         assert_eq!(contract.get_op(next).state, SpendOpState::Pending);
-    }
-
-    fn signing_mpc(byte: u8) -> MpcSignature {
-        MpcSignature {
-            big_r: MpcPoint {
-                affine_point: format!("02{}", format!("{byte:02x}").repeat(32)),
-            },
-            s: MpcScalar {
-                scalar: format!("{byte:02x}").repeat(32),
-            },
-        }
     }
 
     #[test]
@@ -1287,22 +1321,6 @@ mod refresh {
         });
     }
 
-    /// An active Vault whose Vault and Allowance Co-signer keys differ, so the two addresses do.
-    fn two_address_vault() -> (VaultContract, U64) {
-        let mut contract = testnet_contract(vec![]);
-        context("owner.testnet", MIN_VAULT_STORAGE);
-        let id = create(&mut contract, standard_policy());
-        let key = |byte: u8| {
-            let mut point = [byte; 64];
-            point[63] = 1;
-            format!("secp256k1:{}", bs58::encode(point).into_string())
-        };
-        contract.on_keys_derived(id, Ok(key(0x11)), Ok(key(0x55)));
-        let addresses = contract.get_vault(id).addresses.unwrap();
-        assert_ne!(addresses.vault, addresses.allowance);
-        (contract, id)
-    }
-
     fn refresh_from(
         contract: &mut VaultContract,
         id: U64,
@@ -1311,23 +1329,6 @@ mod refresh {
     ) -> SpendOp {
         as_caller("owner.testnet");
         contract.refresh(id, utxos, 2, envelope(), Some(source))
-    }
-
-    fn sign_paths() -> Vec<String> {
-        get_created_receipts()
-            .into_iter()
-            .flat_map(|r| r.actions)
-            .filter_map(|action| match action {
-                MockAction::FunctionCallWeight {
-                    method_name, args, ..
-                } if method_name == b"sign" => {
-                    let args: near_sdk::serde_json::Value =
-                        near_sdk::serde_json::from_slice(&args).unwrap();
-                    Some(args["request"]["path"].as_str().unwrap().to_string())
-                }
-                _ => None,
-            })
-            .collect()
     }
 
     #[test]
@@ -1452,6 +1453,521 @@ mod refresh {
                 vec![utxo(1, 150_000)],
                 SpendSource::Allowance,
             );
+        });
+    }
+}
+
+mod allowance {
+    use super::withdrawals_support::*;
+    use super::*;
+    use crate::core::address::p2wsh_script_pubkey;
+    use crate::core::script::from_hex;
+    use crate::core::spend::{Outpoint, SpendOpKind, SpendOpState, SpendSource};
+
+    fn spend(contract: &mut VaultContract, id: U64, utxos: Vec<Outpoint>, amount: u64) -> SpendOp {
+        as_caller("owner.testnet");
+        contract.spend_allowance(id, U64(amount), DESTINATION.into(), 2, utxos, envelope())
+    }
+
+    fn spend_at(
+        contract: &mut VaultContract,
+        id: U64,
+        utxos: Vec<Outpoint>,
+        amount: u64,
+        at: u64,
+    ) -> SpendOp {
+        at_time("owner.testnet", at);
+        contract.spend_allowance(id, U64(amount), DESTINATION.into(), 2, utxos, envelope())
+    }
+
+    fn allowance_script_pubkey(contract: &VaultContract, id: U64) -> Vec<u8> {
+        let kit = contract.get_vault_kit(id);
+        p2wsh_script_pubkey(&from_hex(&kit.allowance_script_hex).unwrap())
+    }
+
+    fn destination_script_pubkey() -> Vec<u8> {
+        crate::core::address::script_pubkey(DESTINATION, BtcNetwork::Signet).unwrap()
+    }
+
+    fn with_limit(limit: u64) -> Policy {
+        Policy {
+            allowance_limit_sats: U64(limit),
+            ..standard_policy()
+        }
+    }
+
+    /// Runs `f` on a fresh two-address Vault and asserts it panics with `expected`.
+    fn rejects(expected: &str, f: impl FnOnce(&mut VaultContract, U64) + std::panic::UnwindSafe) {
+        expect_panic(expected, move || {
+            let (mut contract, id) = two_address_vault();
+            f(&mut contract, id);
+        });
+    }
+
+    /// Asserts a refused call left no op, no op id, no event and no reservation behind.
+    fn refused_and_stored_nothing(
+        contract: &mut VaultContract,
+        id: U64,
+        expected: &str,
+        coins: Vec<Outpoint>,
+        f: impl FnOnce(&mut VaultContract),
+    ) {
+        let next_op_id = contract.next_op_id;
+        let events = contract.events_since(U64(0), 100).len();
+        let message = panic_message(std::panic::AssertUnwindSafe(|| f(contract)));
+        assert!(
+            message.contains(expected),
+            "expected {expected}, got {message}"
+        );
+        assert_eq!(contract.next_op_id, next_op_id);
+        assert!(contract.ops.get(&next_op_id).is_none());
+        assert_eq!(contract.events_since(U64(0), 100).len(), events);
+        // The refused call's coins are free: a withdrawal takes them, with the next op id.
+        let total: u64 = coins.iter().map(|c| c.value_sats.0).sum();
+        let op = request(contract, id, coins, total);
+        assert_eq!(op, U64(next_op_id));
+    }
+
+    #[test]
+    fn freezes_a_payment_with_change_back_to_the_allowance_address() {
+        let (mut contract, id) = two_address_vault();
+        let storage_before = contract.get_vault(id).storage_balance.0;
+        let op = spend(
+            &mut contract,
+            id,
+            vec![utxo(1, 50_000), utxo(2, 30_000)],
+            60_000,
+        );
+
+        assert_eq!(op, contract.get_op(op.op_id));
+        assert_eq!(op.kind, SpendOpKind::Allowance);
+        assert_eq!(op.source, SpendSource::Allowance);
+        assert_eq!(op.state, SpendOpState::Frozen);
+        assert_eq!(op.amount_sats, U64(60_000));
+        assert_eq!(op.destination, DESTINATION);
+        assert_eq!(op.executable_at, None);
+        assert_eq!(op.created_at, U64(NOW));
+        assert_eq!(op.fee_rate_sat_vb, 2);
+        assert_eq!(op.sighashes.len(), 2);
+        assert_eq!(op.signatures, vec![None, None]);
+        assert_eq!(
+            op.witness_template.as_ref().map(|t| t.path.as_str()),
+            Some("withdrawal")
+        );
+        assert!(contract.get_vault(id).storage_balance.0 < storage_before);
+
+        let events = contract.events_since(U64(0), 100);
+        let frozen = &events[events.len() - 2];
+        assert_eq!(frozen.kind, "op_frozen");
+        assert_eq!(frozen.data["op_id"], op.op_id.0.to_string());
+        assert_eq!(frozen.data["kind"], "allowance");
+        assert_eq!(frozen.data["envelope"], envelope());
+        let fee: u64 = frozen.data["fee_sats"].as_str().unwrap().parse().unwrap();
+        assert!(fee > 0 && fee <= crate::core::tx::withdrawal_fee_cap(100_000, 60_000));
+        let spent = events.last().unwrap();
+        assert_eq!(spent.kind, "allowance_spent");
+        assert_eq!(spent.data["op_id"], op.op_id.0.to_string());
+        assert_eq!(spent.data["amount_sats"], "60000");
+        assert_eq!(spent.data["destination"], DESTINATION);
+        assert_eq!(spent.data["window_sats"], "60000");
+
+        let tx = op.unsigned_tx_hex.as_deref().unwrap();
+        assert!(tx.starts_with("02000000"), "version 2");
+        assert_eq!(tx.matches("fdffffff").count(), 2, "RBF on every input");
+        let change = allowance_script_pubkey(&contract, id);
+        let kit = contract.get_vault_kit(id);
+        assert_ne!(
+            change,
+            p2wsh_script_pubkey(&from_hex(&kit.vault_script_hex).unwrap())
+        );
+        assert_eq!(
+            outputs(tx),
+            vec![
+                (60_000, destination_script_pubkey()),
+                (80_000 - 60_000 - fee, change),
+            ]
+        );
+    }
+
+    #[test]
+    fn signs_with_the_allowance_script_not_the_vault_one() {
+        let (mut contract, id) = two_address_vault();
+        let coins = vec![utxo(1, 50_000), utxo(2, 30_000)];
+        let allowance = spend(&mut contract, id, coins.clone(), 60_000);
+        // A withdrawal of the same coins and amount from the Vault Address, once executable.
+        let (mut other, other_id) = two_address_vault();
+        let withdrawal = request(&mut other, other_id, coins, 60_000);
+        at_time(
+            "owner.testnet",
+            NOW + other.get_vault(other_id).policy.delay_ns.0,
+        );
+        let frozen = other.begin_execute(withdrawal, envelope());
+        assert_ne!(frozen.sighashes, allowance.sighashes);
+    }
+
+    #[test]
+    fn folds_dust_change_into_the_fee() {
+        let (mut contract, id) = two_address_vault();
+        let op = spend(&mut contract, id, vec![utxo(1, 60_500)], 60_000);
+        let tx = op.unsigned_tx_hex.as_deref().unwrap();
+        assert_eq!(outputs(tx), vec![(60_000, destination_script_pubkey())]);
+        let events = contract.events_since(U64(0), 100);
+        assert_eq!(events[events.len() - 2].data["fee_sats"], "500");
+    }
+
+    #[test]
+    fn the_rolling_window_refuses_a_spend_over_the_limit_and_stores_nothing() {
+        let (mut contract, id) = two_address_vault();
+        let first = spend(&mut contract, id, vec![utxo(1, 70_000)], 60_000);
+        let day = 24 * crate::core::policy::HOUR_NS;
+        for (n, at) in [(2, NOW), (3, NOW + day - 1)] {
+            refused_and_stored_nothing(
+                &mut contract,
+                id,
+                "ERR_ALLOWANCE_LIMIT",
+                vec![utxo(n, 70_000)],
+                |c| {
+                    spend_at(c, id, vec![utxo(n, 70_000)], 50_000, at);
+                },
+            );
+        }
+        // The first spend leaves the window at created_at + 24 h.
+        assert_eq!(first.created_at, U64(NOW));
+        let next = spend_at(&mut contract, id, vec![utxo(4, 70_000)], 50_000, NOW + day);
+        assert_eq!(next.state, SpendOpState::Frozen);
+        let event = contract.events_since(U64(0), 100).pop().unwrap();
+        assert_eq!(event.data["window_sats"], "50000");
+    }
+
+    #[test]
+    fn the_window_may_reach_the_limit_exactly() {
+        let (mut contract, id) = two_address_vault();
+        spend(&mut contract, id, vec![utxo(1, 70_000)], 60_000);
+        spend(&mut contract, id, vec![utxo(2, 50_000)], 40_000);
+        let event = contract.events_since(U64(0), 100).pop().unwrap();
+        assert_eq!(event.data["window_sats"], "100000");
+        expect_panic("ERR_ALLOWANCE_LIMIT", move || {
+            spend(&mut contract, id, vec![utxo(3, 50_000)], 1);
+        });
+    }
+
+    #[test]
+    fn a_signed_spend_still_counts() {
+        let (mut contract, id) = two_address_vault();
+        let op = spend(&mut contract, id, vec![utxo(1, 70_000)], 60_000);
+        contract.on_signed(op.op_id, 0, Ok(signing_mpc(0x11)));
+        assert_eq!(contract.get_op(op.op_id).state, SpendOpState::Signed);
+        expect_panic("ERR_ALLOWANCE_LIMIT", move || {
+            spend(&mut contract, id, vec![utxo(2, 70_000)], 50_000);
+        });
+    }
+
+    #[test]
+    fn cancelled_and_voided_spends_do_not_count() {
+        // A Clawback voids a Frozen spend but also closes the Vault, and an allowance op cannot
+        // be cancelled: set the state directly to show the window skips both.
+        for state in [SpendOpState::Cancelled, SpendOpState::Voided] {
+            let (mut contract, id) = two_address_vault();
+            let op = spend(&mut contract, id, vec![utxo(1, 70_000)], 60_000);
+            contract.ops.get_mut(&op.op_id.0).unwrap().state = state;
+            let next = spend(&mut contract, id, vec![utxo(2, 70_000)], 60_000);
+            assert_eq!(next.state, SpendOpState::Frozen);
+            let event = contract.events_since(U64(0), 100).pop().unwrap();
+            assert_eq!(event.data["window_sats"], "60000", "{state:?}");
+        }
+    }
+
+    #[test]
+    fn other_ops_do_not_count_toward_the_window() {
+        let (mut contract, id) = two_address_vault();
+        request(&mut contract, id, vec![utxo(1, 150_000)], 100_000);
+        as_caller("owner.testnet");
+        contract.refresh(
+            id,
+            vec![utxo(2, 150_000)],
+            2,
+            envelope(),
+            Some(SpendSource::Allowance),
+        );
+        let op = spend(&mut contract, id, vec![utxo(3, 120_000)], 100_000);
+        assert_eq!(op.state, SpendOpState::Frozen);
+    }
+
+    #[test]
+    fn a_limit_of_zero_refuses_every_spend_before_looking_at_the_coins() {
+        let bad_txid = Outpoint {
+            txid: "not-a-txid".into(),
+            ..utxo(1, 1)
+        };
+        for coins in [
+            vec![utxo(1, 150_000)],
+            vec![],
+            (1..=6).map(|n| utxo(n, 1)).collect(),
+            vec![utxo(1, 1), utxo(1, 1)],
+            vec![bad_txid],
+        ] {
+            for amount in [1, 60_000, u64::MAX] {
+                let coins = coins.clone();
+                expect_panic("ERR_ALLOWANCE_LIMIT", move || {
+                    let (mut contract, id) = active_vault_with(with_limit(0));
+                    spend(&mut contract, id, coins, amount);
+                });
+            }
+        }
+        // Coins a live withdrawal holds are not even checked.
+        expect_panic("ERR_ALLOWANCE_LIMIT", || {
+            let (mut contract, id) = active_vault_with(with_limit(0));
+            request(&mut contract, id, vec![utxo(1, 150_000)], 100_000);
+            spend(&mut contract, id, vec![utxo(1, 150_000)], 1);
+        });
+    }
+
+    #[test]
+    fn the_owner_signs_every_input_on_the_allowance_path() {
+        let (mut contract, id) = two_address_vault();
+        let op = spend(
+            &mut contract,
+            id,
+            vec![utxo(1, 50_000), utxo(2, 30_000)],
+            60_000,
+        );
+        // No Delay before signing.
+        for index in 0..2 {
+            assert!(matches!(
+                contract.sign_input(op.op_id, index),
+                near_sdk::PromiseOrValue::Promise(_)
+            ));
+        }
+        assert_eq!(
+            sign_paths(),
+            vec![format!("morrow/v1/{}/allowance", id.0); 2]
+        );
+        contract.on_signed(op.op_id, 0, Ok(signing_mpc(0x11)));
+        contract.on_signed(op.op_id, 1, Ok(signing_mpc(0x22)));
+        assert_eq!(contract.get_op(op.op_id).state, SpendOpState::Signed);
+        assert_eq!(
+            contract.events_since(U64(0), 100).pop().unwrap().kind,
+            "op_signed"
+        );
+        // Signed is terminal: its coins are free again.
+        let next = request(&mut contract, id, vec![utxo(1, 50_000)], 40_000);
+        assert_eq!(contract.get_op(next).state, SpendOpState::Pending);
+    }
+
+    #[test]
+    fn only_the_owner_signs_an_allowance_spend() {
+        for caller in ["emma.testnet", "stranger.testnet"] {
+            rejects("ERR_UNAUTHORIZED", move |contract, id| {
+                let op = spend(contract, id, vec![utxo(1, 70_000)], 60_000);
+                as_caller(caller);
+                let _ = contract.sign_input(op.op_id, 0);
+            });
+        }
+    }
+
+    #[test]
+    fn rejects_short_funds_zero_amounts_and_high_fees() {
+        rejects("ERR_INSUFFICIENT_FUNDS", |contract, id| {
+            spend(contract, id, vec![utxo(1, 60_000)], 60_000);
+        });
+        rejects("ERR_INSUFFICIENT_FUNDS", |contract, id| {
+            spend(contract, id, vec![utxo(1, 50_000)], 60_000);
+        });
+        rejects("ERR_INSUFFICIENT_FUNDS", |contract, id| {
+            spend(contract, id, vec![utxo(1, 50_000)], 0);
+        });
+        // 5% of the amount binds: 3,000 sats on 60,000.
+        rejects("ERR_FEE_TOO_HIGH", |contract, id| {
+            as_caller("owner.testnet");
+            contract.spend_allowance(
+                id,
+                U64(60_000),
+                DESTINATION.into(),
+                100,
+                vec![utxo(1, 150_000)],
+                envelope(),
+            );
+        });
+        // The Fee Cap binds: 10,000 sats on 900,000 (5% would be 45,000).
+        expect_panic("ERR_FEE_TOO_HIGH", || {
+            let (mut contract, id) = active_vault_with(Policy {
+                allowance_limit_sats: U64(1_000_000),
+                fee_cap_sats: U64(10_000),
+                ..standard_policy()
+            });
+            as_caller("owner.testnet");
+            contract.spend_allowance(
+                id,
+                U64(900_000),
+                DESTINATION.into(),
+                100,
+                vec![utxo(1, 1_000_000)],
+                envelope(),
+            );
+        });
+    }
+
+    #[test]
+    fn a_refused_spend_stores_no_op_and_reserves_nothing() {
+        let (mut contract, id) = two_address_vault();
+        let coins = vec![utxo(1, 150_000), utxo(2, 60_000)];
+        let again = coins.clone();
+        refused_and_stored_nothing(&mut contract, id, "ERR_FEE_TOO_HIGH", coins, move |c| {
+            as_caller("owner.testnet");
+            c.spend_allowance(id, U64(60_000), DESTINATION.into(), 100, again, envelope());
+        });
+        // Nothing counts toward the window either.
+        let op = spend(&mut contract, id, vec![utxo(3, 120_000)], 100_000);
+        assert_eq!(op.state, SpendOpState::Frozen);
+    }
+
+    #[test]
+    fn rejects_bad_inputs_and_reserved_coins() {
+        rejects("ERR_NO_INPUTS", |contract, id| {
+            spend(contract, id, vec![], 60_000);
+        });
+        rejects("ERR_TOO_MANY_INPUTS", |contract, id| {
+            spend(
+                contract,
+                id,
+                (1..=6).map(|n| utxo(n, 20_000)).collect(),
+                60_000,
+            );
+        });
+        rejects("ERR_OUTPOINT_RESERVED", |contract, id| {
+            spend(contract, id, vec![utxo(1, 50_000), utxo(1, 50_000)], 60_000);
+        });
+        rejects("ERR_OUTPOINT_RESERVED", |contract, id| {
+            request(contract, id, vec![utxo(1, 150_000)], 100_000);
+            spend(
+                contract,
+                id,
+                vec![utxo(2, 50_000), utxo(1, 150_000)],
+                60_000,
+            );
+        });
+        // A Frozen allowance spend holds its coins against a withdrawal and another spend.
+        rejects("ERR_OUTPOINT_RESERVED", |contract, id| {
+            spend(contract, id, vec![utxo(1, 50_000)], 20_000);
+            request(contract, id, vec![utxo(1, 50_000)], 20_000);
+        });
+        rejects("ERR_OUTPOINT_RESERVED", |contract, id| {
+            spend(contract, id, vec![utxo(1, 50_000)], 20_000);
+            spend(contract, id, vec![utxo(1, 50_000)], 20_000);
+        });
+    }
+
+    #[test]
+    fn only_the_owner_with_an_envelope_spends_on_an_active_vault() {
+        for caller in ["emma.testnet", "stranger.testnet"] {
+            rejects("ERR_UNAUTHORIZED", move |contract, id| {
+                as_caller(caller);
+                contract.spend_allowance(
+                    id,
+                    U64(60_000),
+                    DESTINATION.into(),
+                    2,
+                    vec![utxo(1, 70_000)],
+                    envelope(),
+                );
+            });
+        }
+        rejects("ERR_BAD_ENVELOPE", |contract, id| {
+            as_caller("owner.testnet");
+            contract.spend_allowance(
+                id,
+                U64(60_000),
+                DESTINATION.into(),
+                2,
+                vec![utxo(1, 70_000)],
+                "a".repeat(159),
+            );
+        });
+        rejects("ERR_CLAWED_BACK", |contract, id| {
+            as_caller("emma.testnet");
+            contract.begin_clawback(id, vec![utxo(1, 150_000)], 2, None);
+            spend(contract, id, vec![utxo(2, 70_000)], 60_000);
+        });
+        expect_panic("ERR_VAULT_NOT_ACTIVE", || {
+            let mut contract = testnet_contract(vec![]);
+            context("owner.testnet", MIN_VAULT_STORAGE);
+            let id = create(&mut contract, standard_policy());
+            spend(&mut contract, id, vec![utxo(1, 70_000)], 60_000);
+        });
+    }
+
+    #[test]
+    fn rejects_bad_destinations_and_a_wrong_allowance_address() {
+        rejects("ERR_BAD_ADDRESS", |contract, id| {
+            as_caller("owner.testnet");
+            contract.spend_allowance(
+                id,
+                U64(60_000),
+                "bc1qw508d6qejxtdg4y5r3zarvary0c5xw7kv8f3t4".into(),
+                2,
+                vec![utxo(1, 70_000)],
+                envelope(),
+            );
+        });
+        rejects("ERR_BAD_KEY", |contract, id| {
+            let vault = contract.get_vault(id).addresses.unwrap().vault;
+            contract
+                .vaults
+                .get_mut(&id.0)
+                .unwrap()
+                .addresses
+                .as_mut()
+                .unwrap()
+                .allowance = vault;
+            spend(contract, id, vec![utxo(1, 70_000)], 60_000);
+        });
+    }
+
+    #[test]
+    fn an_applied_limit_of_zero_refuses_later_spends() {
+        let (mut contract, id) = two_address_vault();
+        spend(&mut contract, id, vec![utxo(1, 70_000)], 60_000);
+        as_caller("owner.testnet");
+        let change_id = contract.propose_policy_change(
+            id,
+            near_sdk::serde_json::json!({ "allowance_limit_sats": "0" }),
+            envelope(),
+        );
+        // Still the old limit while the change waits.
+        spend(&mut contract, id, vec![utxo(2, 70_000)], 40_000);
+        let effective_at = contract.get_policy_change(change_id).effective_at.0;
+        at_time("anyone.testnet", effective_at);
+        contract.apply_policy_change(change_id);
+        expect_panic("ERR_ALLOWANCE_LIMIT", move || {
+            spend_at(&mut contract, id, vec![utxo(3, 70_000)], 1, effective_at);
+        });
+    }
+
+    #[test]
+    fn a_clawback_voids_a_frozen_spend_and_sweeps_the_allowance_address() {
+        let (mut contract, id) = two_address_vault();
+        let op = spend(&mut contract, id, vec![utxo(1, 70_000)], 60_000);
+        as_caller("emma.testnet");
+        let clawback =
+            contract.begin_clawback(id, vec![utxo(1, 70_000)], 2, Some(SpendSource::Allowance));
+        assert_eq!(contract.get_op(op.op_id).state, SpendOpState::Voided);
+        let sweep = contract.get_op(clawback);
+        assert_eq!(sweep.source, SpendSource::Allowance);
+        assert_eq!(sweep.state, SpendOpState::Frozen);
+        assert_eq!(
+            sweep.destination,
+            contract.get_vault(id).policy.recovery_address
+        );
+        let voided = contract
+            .events_since(U64(0), 100)
+            .into_iter()
+            .find(|e| e.kind == "op_voided")
+            .unwrap();
+        assert_eq!(voided.data["op_id"], op.op_id.0.to_string());
+        // A voided spend can no longer be signed.
+        expect_panic("ERR_CLAWED_BACK", move || {
+            as_caller("owner.testnet");
+            let _ = contract.sign_input(op.op_id, 0);
         });
     }
 }
