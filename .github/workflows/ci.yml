@@ -24,6 +24,8 @@ jobs:
       - run: cargo fmt --all --check
       - run: cargo clippy --workspace --all-targets -- -D warnings
       - run: cargo test --workspace
+      - name: Signer-discipline property suite (1,000 random hostile sequences)
+        run: cargo test -p morrow-vault --release property -- --nocapture
       - run: cargo build -p morrow-vault --target wasm32-unknown-unknown --release
 
   node:

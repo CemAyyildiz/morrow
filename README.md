@@ -43,6 +43,14 @@ Run one Scenario with its command, or all of them with `make demo`. The expected
 
 `make kill-near-demo` (not run in CI) runs S-5 with NEAR made unreachable on purpose, and prints `NEAR is gone: the contract cannot be reached` before the Escape.
 
+**Property suite.** "The contract never co-signs outside the Policy" is also checked against random hostile call sequences, not only examples. Each case runs up to 30 calls on the real contract in the NEAR unit-test environment: Owner, Guardians, a stranger and another Vault's Guardian call every spend and Policy method with bad envelopes, foreign or invalid addresses, empty, duplicate, reserved or fake coins, edge amounts and fee rates, and jump time to 1 ns around each `executable_at` and `effective_at`. After every call the suite checks three things. Every MPC sign request is for a legally frozen op, comes from an authorised caller, and carries the BIP143 sighash it recomputes itself; that transaction pays only what the Policy allows. No fee is above its cap. No Script-bound field changes, and a Policy field changes only through an applied Policy Change. CI runs it on every push:
+
+```sh
+cargo test -p morrow-vault --release property -- --nocapture
+```
+
+It prints `Property suite: <N> cases, seed <hex>, 0 violations` (by default `Property suite: 1000 cases, seed 0x6d6f72726f77, 0 violations`). `MORROW_PROPTEST_SEED=<hex>` replays another seed and `MORROW_PROPTEST_CASES=<n>` runs more cases. Meta-tests plant a bug for each check (a withdrawal frozen 1 ns early, a fee 1 sat over the cap, a changed Guardian list) and assert that the suite reports it.
+
 ## You hold the Owner keys: try to rob it
 
 S-3 is the attack, scripted. A scripted attacker holds the real Owner Key and Owner Account of a funded Vault and uses them to request a withdrawal to its own address.
