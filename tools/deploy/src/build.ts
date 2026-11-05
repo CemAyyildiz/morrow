@@ -1,6 +1,6 @@
 import { spawn } from "node:child_process";
 import { createHash } from "node:crypto";
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync, readFileSync, statSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { baseEncode } from "near-api-js";
@@ -51,8 +51,19 @@ export function readWasm(
       `${file} does not exist: run \`make wasm\` (or \`build --local\` and pass --wasm)`,
     );
   }
+  if (statSync(file).isDirectory()) throw new UsageError(`${file} is a directory, not a wasm file`);
   const code = new Uint8Array(readFileSync(file));
+  if (code.length === 0) throw new UsageError(`${file} is empty`);
   return { path: file, code, hash: codeHash(code) };
+}
+
+/** The Vault Contract crate version (`contracts/vault/Cargo.toml`), which `get_config` reports. */
+export function contractVersion(root = REPO_ROOT): string {
+  const toml = readFileSync(join(root, "contracts/vault/Cargo.toml"), "utf8");
+  const pkg = toml.split(/^\[/m).find((section) => section.startsWith("package]"));
+  const version = pkg?.match(/^version\s*=\s*"([^"]+)"/m)?.[1];
+  if (!version) throw new Error("contracts/vault/Cargo.toml has no [package] version");
+  return version;
 }
 
 export interface BuildCommand {

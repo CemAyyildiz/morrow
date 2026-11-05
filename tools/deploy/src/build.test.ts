@@ -10,11 +10,13 @@ import {
   RUST_IMAGE,
   build,
   buildCommand,
+  contractVersion,
   codeHash,
   localWasm,
   readWasm,
   reproducibleWasm,
 } from "./build.js";
+import { UsageError } from "./args.js";
 import { output } from "./test-helpers.js";
 
 describe("codeHash", () => {
@@ -35,11 +37,19 @@ describe("make wasm", () => {
   it("uses the same image, flags and target dir as this tool", () => {
     expect(makefile).toContain(`RUST_IMAGE := ${RUST_IMAGE}`);
     expect(makefile).toContain(`WASM_RUSTFLAGS := ${RUSTFLAGS}`);
+    expect(makefile).toContain(`WASM_TARGET_DIR ?= ${REPRODUCIBLE_TARGET_DIR}`);
     expect(target).toContain("--platform linux/amd64");
-    expect(target).toContain(`CARGO_TARGET_DIR=/work/${REPRODUCIBLE_TARGET_DIR}`);
+    expect(target).toContain("CARGO_TARGET_DIR=/work/$(WASM_TARGET_DIR)");
     expect(target).toContain(
       "cargo build -p morrow-vault --target wasm32-unknown-unknown --release --locked",
     );
+  });
+
+  it("runs as the calling user, with the image's toolchain and a writable CARGO_HOME", () => {
+    expect(target).toContain('--user "$$(id -u):$$(id -g)"');
+    expect(target).toContain("-e CARGO_HOME=/tmp/cargo-home");
+    expect(target).toContain("-e RUSTUP_TOOLCHAIN=1.97.1");
+    expect(target).toContain("rustup target add wasm32-unknown-unknown");
   });
 
   it("pins the image by digest", () => {
@@ -88,14 +98,14 @@ describe("build", () => {
       o.out,
       async (command) => {
         mkdirSync(dirname(command.wasm), { recursive: true });
-        writeFileSync(command.wasm, new Uint8Array());
+        writeFileSync(command.wasm, new TextEncoder().encode("abc"));
         return 0;
       },
       root,
     );
     expect(code).toBe(0);
     expect(o.lines).toContain(`Wasm: ${localWasm(root)}`);
-    expect(o.lines).toContain("code_hash: GKot5hBsd81kMupNCXHaqbhv3huEbxAFMLnpcX2hniwn");
+    expect(o.lines).toContain("code_hash: DYu3G8aGTMBW1WrTw76zxQJQU4DHLw9MLyy7peG4LKkY");
   });
 
   it("exits 1 when the build fails", async () => {
@@ -105,7 +115,28 @@ describe("build", () => {
   });
 });
 
+describe("contractVersion", () => {
+  it("reads the [package] version of contracts/vault/Cargo.toml", () => {
+    const root = mkdtempSync(join(tmpdir(), "morrow-deploy-"));
+    mkdirSync(join(root, "contracts/vault"), { recursive: true });
+    writeFileSync(
+      join(root, "contracts/vault/Cargo.toml"),
+      '[package]\nname = "morrow-vault"\nversion = "1.2.3"\n\n[dependencies]\nx = { version = "9" }\n',
+    );
+    expect(contractVersion(root)).toBe("1.2.3");
+    expect(contractVersion()).toMatch(/^\d+\.\d+\.\d+/);
+  });
+});
+
 describe("readWasm", () => {
+  it("refuses an empty file and a directory with a usage error", () => {
+    const dir = mkdtempSync(join(tmpdir(), "morrow-deploy-"));
+    writeFileSync(join(dir, "empty.wasm"), new Uint8Array());
+    expect(() => readWasm(join(dir, "empty.wasm"))).toThrow(UsageError);
+    expect(() => readWasm(join(dir, "empty.wasm"))).toThrow(/empty\.wasm is empty$/);
+    expect(() => readWasm(dir)).toThrow(`${dir} is a directory, not a wasm file`);
+  });
+
   it("names the missing file and how to build it", () => {
     expect(() => readWasm(undefined, "/nowhere")).toThrow(/does not exist: run `make wasm`/);
   });

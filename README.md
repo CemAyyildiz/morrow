@@ -136,11 +136,11 @@ What you trust:
 4. **T-4** The Owner keeps the Recovery Address key offline.
 5. **T-5** (only with Fast Approval) a Trusted Contact, who can shorten the Delay only to the Fast Approval Floor, does not collude with a thief. **T-6** (only with a Guardian Watcher) the Guardian Watcher stays live and uncompromised.
 
-The deployment is not locked yet. Until its account's full-access keys are deleted (Story 7.5), whoever deployed it can replace the contract code and void every guarantee above. The tooling that locks a deployment, and lets anyone check one, is in `tools/deploy`; see [Verify the deployment](#verify-the-deployment).
+The deployment is not locked yet. Until its account's access keys are deleted (Story 7.5), whoever deployed it can replace the contract code and void every guarantee above. The tooling that locks a deployment, and lets anyone check one, is in `tools/deploy`; see [Verify the deployment](#verify-the-deployment).
 
 ## Verify the deployment
 
-A locked Vault Contract account has no full-access keys, so nobody, the builder included, can replace its code or delete it. `tools/deploy verify` checks that from public NEAR data only: no keys and no funds. The locked testnet and mainnet account names will be filled in here once they are deployed (see What is not done yet).
+A locked Vault Contract account has no access keys at all, so nobody, the builder included, can replace its code, delete it, or sign anything as the contract. `tools/deploy verify` checks that from public NEAR data; the verifier needs no keys and no NEAR of their own. The locked testnet and mainnet account names will be filled in here once they are deployed (see What is not done yet).
 
 ```sh
 pnpm install --frozen-lockfile
@@ -148,7 +148,16 @@ make wasm   # builds the contract wasm in the pinned rust:1.97.1 Docker image, s
 pnpm --filter @morrow/deploy start verify --account <testnet-account> --account <mainnet-account>
 ```
 
-For each account, `verify` prints the deployed `code_hash` next to your local build's, `Locked: no full-access keys` (or how many remain), and `get_config` (MPC signer, allowed Bitcoin networks, creator allowlist, version). With several accounts it also checks that they all run the same code. It exits 0 only when every check passes, and it ends with `Deployment verified: <n> account(s), code_hash <hash>, locked`. Pass `--wasm <path>` to compare against another build. The account's network comes from its suffix (`.testnet` or `.near`), or from `--network testnet|mainnet`.
+For each account, `verify` reads everything at one final block and prints:
+
+- the block height;
+- the deployed `code_hash` next to your local build's;
+- `Locked: no access keys`, or every remaining key with its permission;
+- `get_config` (MPC signer, allowed Bitcoin networks, creator allowlist, version).
+
+`get_config` must follow the same rules `deploy` applies, and its version must equal `contracts/vault/Cargo.toml`'s. To also check the exact init, put `--signer`, `--networks` and `--creators` after that account's `--account`. With several accounts, `verify` also checks that they all run the same code. It exits 0 only when every check passes, and it ends with `Deployment verified: <n> account(s), code_hash <hash>, locked`.
+
+Pass `--wasm <path>` to compare against another build, and `hash --wasm <path>` prints any wasm file's `code_hash`. The account's network comes from its `.testnet` or `.near` suffix; any other account id needs `--network testnet|mainnet`. An `--rpc` that serves another network is refused. CI builds `make wasm` twice from clean target dirs and checks that both builds have the same `code_hash`.
 
 ### Operator: deploy and lock
 
@@ -156,17 +165,20 @@ These steps use a funded account that holds no contract yet. The key comes from 
 
 ```sh
 make wasm
-# 1. Dry run: prints the DeployContract + new(...) batch and the code_hash, sends nothing.
+# 1. Dry run: prints the DeployContract + new(...) batch and the read-only checks
+#    (the account exists, holds no contract, and its balance covers the storage stake). Sends nothing.
 pnpm --filter @morrow/deploy start deploy --account <account> --signer v1.signer-prod.testnet --networks signet
-# 2. Send it: one transaction, then a verify that does not yet require the lock.
+# 2. Send it: one transaction, then a verify against the init just sent that does not yet require the lock.
 pnpm --filter @morrow/deploy start deploy --account <account> --signer v1.signer-prod.testnet --networks signet --send
-# 3. Lock: re-checks the code_hash and get_config, deletes every full-access key in one transaction, then re-reads the keys.
-pnpm --filter @morrow/deploy start lock --account <account> --confirm <account>
+# 3. Lock: checks code_hash and get_config against this init, and prints the config, the keys to delete
+#    and the balance that can never be withdrawn afterwards. Then, in one transaction, it redeploys the
+#    verified wasm and deletes every access key, and re-reads the account.
+pnpm --filter @morrow/deploy start lock --account <account> --signer v1.signer-prod.testnet --networks signet --confirm <account>
 # 4. Check it the way a judge does.
-pnpm --filter @morrow/deploy start verify --account <account>
+pnpm --filter @morrow/deploy start verify --account <account> --signer v1.signer-prod.testnet --networks signet
 ```
 
-On mainnet, add `--network mainnet` and use `--signer v1.signer --networks bitcoin --creators <account>[,<account>]`. The tool refuses any other Bitcoin network, signer or an empty creator allowlist there. A testnet deployment cannot allow `bitcoin`. `build --local` builds with the host toolchain and the same flags, for a quick check; its `code_hash` differs from `make wasm`'s because the paths embedded in the wasm differ.
+On mainnet, add `--network mainnet` and use `--signer v1.signer --networks bitcoin --creators <account>[,<account>]`; every creator must be an existing mainnet account. The tool refuses any other Bitcoin network, any other signer, or an empty creator allowlist there. A testnet deployment cannot allow `bitcoin`. `build --local` builds with the host toolchain and the same flags, for a quick check; its `code_hash` differs from `make wasm`'s because the paths embedded in the wasm differ.
 
 ## Prior art
 

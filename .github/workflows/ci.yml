@@ -46,6 +46,35 @@ jobs:
       - run: pnpm --filter @morrow/web exec playwright install --with-deps chromium
       - run: pnpm --filter @morrow/web e2e
 
+  wasm:
+    name: Reproducible contract wasm (make wasm twice)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: make wasm WASM_TARGET_DIR=target/repro-a
+      - run: make wasm WASM_TARGET_DIR=target/repro-b
+      - name: Both builds have the same code_hash
+        shell: bash
+        run: |
+          set -euo pipefail
+          hash() {
+            pnpm --silent --filter @morrow/deploy start hash \
+              --wasm "$PWD/target/$1/wasm32-unknown-unknown/release/morrow_vault.wasm" |
+              sed -n 's/^code_hash: //p'
+          }
+          a=$(hash repro-a)
+          b=$(hash repro-b)
+          echo "code_hash (build 1): $a"
+          echo "code_hash (build 2): $b"
+          test -n "$a"
+          test "$a" = "$b"
+
   regtest:
     name: Regtest integration and Judge Mode
     runs-on: ubuntu-latest

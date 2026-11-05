@@ -1,5 +1,12 @@
 import { describe, expect, it } from "vitest";
-import { UsageError, parseDeploy, parseLock, parseVerify } from "./args.js";
+import {
+  UsageError,
+  assertRpcNetwork,
+  knownRpcNetwork,
+  parseDeploy,
+  parseLock,
+  parseVerify,
+} from "./args.js";
 
 const deployArgv = (overrides: Record<string, string> = {}, extra: string[] = []) => {
   const flags = {
@@ -107,26 +114,150 @@ describe("parseDeploy", () => {
   });
 });
 
+const LOCK_INIT = ["--signer", "v1.signer-prod.testnet", "--networks", "signet"];
+
 describe("parseLock", () => {
-  it("reads --confirm and needs --network mainnet for a mainnet account", () => {
-    expect(parseLock(["--account", "x.testnet", "--confirm", "x.testnet"])).toMatchObject({
+  it("reads --confirm and the expected init", () => {
+    expect(
+      parseLock(["--account", "x.testnet", "--confirm", "x.testnet", ...LOCK_INIT]),
+    ).toMatchObject({
       accountId: "x.testnet",
       network: "testnet",
       confirm: "x.testnet",
+      expected: {
+        signer_account: "v1.signer-prod.testnet",
+        allowed_networks: ["signet"],
+        creator_allowlist: [],
+      },
     });
-    expect(parseLock(["--account", "x.testnet"]).confirm).toBeUndefined();
-    expect(() => parseLock(["--account", "x.near", "--confirm", "x.near"])).toThrow(
+    expect(parseLock(["--account", "x.testnet", ...LOCK_INIT]).confirm).toBeUndefined();
+  });
+
+  it("requires the expected init, under the same rules as deploy", () => {
+    expect(() => parseLock(["--account", "x.testnet", "--confirm", "x.testnet"])).toThrow(
+      "--signer is required",
+    );
+    expect(() =>
+      parseLock([
+        "--account",
+        "x.near",
+        "--network",
+        "mainnet",
+        "--signer",
+        "v1.signer",
+        "--networks",
+        "bitcoin",
+      ]),
+    ).toThrow("--creators: a mainnet deployment needs a creator allowlist");
+  });
+
+  it("needs --network mainnet for a mainnet account", () => {
+    expect(() => parseLock(["--account", "x.near", "--confirm", "x.near", ...LOCK_INIT])).toThrow(
       "pass --network mainnet",
     );
+  });
+});
+
+describe("networks", () => {
+  it("needs --network for an id without a .testnet or .near suffix", () => {
+    const implicit = "a".repeat(64);
+    expect(() => parseVerify(["--account", implicit])).toThrow(
+      `--account ${implicit} names no network by its suffix: pass --network testnet|mainnet`,
+    );
+    expect(parseVerify(["--account", implicit, "--network", "testnet"]).targets[0]!.network).toBe(
+      "testnet",
+    );
+    expect(() => parseDeploy(deployArgv({ account: "vault.sputnik" }))).toThrow("names no network");
+  });
+
+  it("knows the public RPC hosts", () => {
+    expect(knownRpcNetwork("https://rpc.testnet.near.org")).toBe("testnet");
+    expect(knownRpcNetwork("https://free.rpc.fastnear.com/")).toBe("mainnet");
+    expect(knownRpcNetwork("http://127.0.0.1:3030")).toBeNull();
+    expect(() => knownRpcNetwork("not a url")).toThrow('--rpc: "not a url" is not a URL');
+  });
+
+  it("refuses an --rpc of another network, by host or by the RPC's chain_id", async () => {
+    const never = async () => {
+      throw new Error("not asked");
+    };
+    await expect(
+      assertRpcNetwork("https://rpc.mainnet.near.org", "testnet", never),
+    ).rejects.toThrow("--rpc https://rpc.mainnet.near.org serves mainnet, not testnet");
+    await expect(
+      assertRpcNetwork("https://rpc.testnet.near.org", "testnet", never),
+    ).resolves.toBeUndefined();
+    await expect(
+      assertRpcNetwork("http://127.0.0.1:3030", "mainnet", async () => "testnet"),
+    ).rejects.toThrow("serves testnet, not mainnet");
+    await expect(
+      assertRpcNetwork("http://127.0.0.1:3030", "testnet", async () => "testnet"),
+    ).resolves.toBeUndefined();
   });
 });
 
 describe("parseVerify", () => {
   it("takes several accounts, each on the network its suffix names", () => {
     expect(parseVerify(["--account", "a.testnet", "--account", "b.near"]).targets).toEqual([
-      { accountId: "a.testnet", network: "testnet", rpcUrl: "https://rpc.testnet.near.org" },
-      { accountId: "b.near", network: "mainnet", rpcUrl: "https://rpc.mainnet.near.org" },
+      {
+        accountId: "a.testnet",
+        network: "testnet",
+        rpcUrl: "https://rpc.testnet.near.org",
+        expected: undefined,
+      },
+      {
+        accountId: "b.near",
+        network: "mainnet",
+        rpcUrl: "https://rpc.mainnet.near.org",
+        expected: undefined,
+      },
     ]);
+  });
+
+  it("applies the init flags that follow an --account to that account", () => {
+    const { targets } = parseVerify([
+      "--account",
+      "a.testnet",
+      "--signer",
+      "v1.signer-prod.testnet",
+      "--networks",
+      "signet",
+      "--account",
+      "b.near",
+      "--signer",
+      "v1.signer",
+      "--networks",
+      "bitcoin",
+      "--creators",
+      "op.near",
+      "--account",
+      "c.testnet",
+    ]);
+    expect(targets.map((t) => t.expected)).toEqual([
+      {
+        signer_account: "v1.signer-prod.testnet",
+        allowed_networks: ["signet"],
+        creator_allowlist: [],
+      },
+      {
+        signer_account: "v1.signer",
+        allowed_networks: ["bitcoin"],
+        creator_allowlist: ["op.near"],
+      },
+      undefined,
+    ]);
+  });
+
+  it("checks the expected init with the deploy rules", () => {
+    expect(() =>
+      parseVerify(["--account", "b.near", "--signer", "v1.signer", "--networks", "signet"]),
+    ).toThrow("--networks: a mainnet deployment allows only bitcoin");
+    expect(() => parseVerify(["--account", "a.testnet", "--networks", "signet"])).toThrow(
+      "--signer is required",
+    );
+    expect(() => parseVerify(["--signer", "v1.signer", "--account", "a.testnet"])).toThrow(
+      "--signer must follow the --account it describes",
+    );
   });
 
   it("applies --rpc only to accounts of one network", () => {
