@@ -15,9 +15,10 @@ import { ClawbackRunner, guardianBroadcaster } from "./clawback/runner.js";
 import { NearFinalBlockClock, type ChainClock } from "./clock.js";
 import { loadConfig } from "./config.js";
 import { LooseningGuard, envelopeKeypair } from "./guard/handler.js";
+import { guardHealth } from "./guard/health.js";
 import { FileGuardStore } from "./guard/store.js";
 import { GuardTicker } from "./guard/ticker.js";
-import { createApiServer } from "./heartbeat.js";
+import { createApiServer, type GuardHealthSource } from "./heartbeat.js";
 import { createLogger } from "./log.js";
 import { EventLoop, type EventHandler } from "./loop.js";
 import { FileStore } from "./store.js";
@@ -89,6 +90,7 @@ let runner: ClawbackRunner | null = null;
 let challengeLoop: EventLoop | null = null;
 let guardLoop: EventLoop | null = null;
 let guardTicker: GuardTicker | null = null;
+let guardHealthSource: GuardHealthSource | undefined;
 if (config.guardian) {
   const backend = backendFromUrl(config.btcBackendUrl);
   const guardianSigner = guardianClient(config.guardian.accountId, config.guardian.nearKey);
@@ -131,13 +133,20 @@ if (config.guardian) {
 
   // Loosening guard (5.3a, fail-closed): its own loop and cursor, so a veto that keeps failing
   // never stalls alerts or clawbacks; the ticker sends each veto at effective_at − 65 min.
-  const guardStore = new FileGuardStore(besideJobs("guard"));
+  const guardCursor = new FileStore(besideJobs("guard-cursor"));
+  // A corrupt guard file is moved aside and the schedule rebuilt from event 0 (first-sight rule).
+  const guardStore = new FileGuardStore(besideJobs("guard"), {
+    log,
+    onCorrupt: () => guardCursor.reset(),
+  });
+  // Read once before the loops start, so a corrupt file is recovered before any event is handled.
+  await guardStore.entries().catch(() => undefined);
   if (!config.watcherEnvelopeSecretKey) {
     log("warn", "MORROW_WATCHER_X25519_SK not set: the loosening guard reads duress as unknown");
   }
   guardLoop = new EventLoop({
     client,
-    store: new FileStore(besideJobs("guard-cursor")),
+    store: guardCursor,
     handlers: [
       new LooseningGuard({
         reader: client,
@@ -157,9 +166,16 @@ if (config.guardian) {
     reader: client,
     signer: guardianSigner,
     store: guardStore,
+    guardianAccount: config.guardian.accountId,
     clock,
     log,
     intervalMs: config.pollIntervalMs,
+  });
+  guardHealthSource = guardHealth({
+    cursor: guardCursor,
+    store: guardStore,
+    loop: guardLoop,
+    ticker: guardTicker,
   });
 } else {
   log(
@@ -180,16 +196,18 @@ const clawbackApi =
   runner && config.adminToken
     ? { adminToken: config.adminToken, enqueue: (vaultId: string) => runner.enqueue(vaultId) }
     : undefined;
-createApiServer(store, bot ? { links, botUsername } : undefined, clawbackApi).listen(
-  config.port,
-  () => {
-    log("info", "watcher listening", {
-      port: config.port,
-      contract: config.vaultContract,
-      network: config.nearNetwork,
-    });
-  },
-);
+createApiServer(
+  store,
+  bot ? { links, botUsername } : undefined,
+  clawbackApi,
+  guardHealthSource,
+).listen(config.port, () => {
+  log("info", "watcher listening", {
+    port: config.port,
+    contract: config.vaultContract,
+    network: config.nearNetwork,
+  });
+});
 loop.start();
 challengeLoop?.start();
 guardLoop?.start();

@@ -1,4 +1,5 @@
-import { mkdtemp, readFile, rm } from "node:fs/promises";
+import { mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/promises";
+import type { AddressInfo } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
@@ -17,13 +18,21 @@ import {
   type Guardian,
   type ProposePolicyChangeArgs,
 } from "@morrow/core-ts";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { loadConfig } from "../config.js";
 import type { LogLevel } from "../log.js";
 import { EventLoop } from "../loop.js";
 import { FileStore, InMemoryStore, type WatcherStore } from "../store.js";
+import { createApiServer } from "../heartbeat.js";
 import { LooseningGuard, VETO_LEAD_NS, envelopeKeypair, readDuress } from "./handler.js";
-import { FileGuardStore, InMemoryGuardStore, type GuardStore } from "./store.js";
+import { guardHealth } from "./health.js";
+import {
+  FileGuardStore,
+  GUARD_PRUNE_AFTER_MS,
+  InMemoryGuardStore,
+  type GuardEntry,
+  type GuardStore,
+} from "./store.js";
 import { GuardTicker } from "./ticker.js";
 
 const OWNER = "daniel.testnet";
@@ -47,14 +56,28 @@ function as(mock: MockContractClient, account: string): ContractClient {
   });
 }
 
-/** The Guardian signer, counting vetoes; `fail` makes the next vetoes throw instead. */
+const never = () => new Promise<never>(() => undefined);
+
+/**
+ * The Guardian signer, counting vetoes; `fail` makes the next vetoes throw instead, `hang` makes
+ * the vetoes of those change ids never answer.
+ */
 function countingSigner(guardian: ContractClient) {
-  const veto = { calls: 0, fail: null as null | (() => Error), after: false };
+  const veto = {
+    calls: 0,
+    fail: null as null | (() => Error),
+    after: false,
+    hang: new Set<string>(),
+    /** Runs before the real veto, e.g. someone applying the change first. */
+    before: null as null | ((changeId: string) => Promise<void>),
+  };
   const signer = new Proxy(guardian, {
     get: (target, prop, receiver) =>
       prop === "vetoPolicyChange"
         ? async (changeId: string) => {
             veto.calls++;
+            if (veto.hang.has(changeId)) return never();
+            await veto.before?.(changeId);
             // `after`: the veto lands, then the call fails (a crash before the result is stored).
             if (veto.fail && veto.after) await guardian.vetoPolicyChange(changeId);
             if (veto.fail) throw veto.fail();
@@ -132,7 +155,30 @@ async function setup(options: SetupOptions = {}) {
     clock,
     log,
   });
-  const ticker = new GuardTicker({ reader: mock, signer, store, clock, log });
+  // The ticker's reader, with faults: `fail` throws, `hang` never answers for those change ids.
+  const read = { fail: null as null | (() => Error), hang: new Set<string>() };
+  const tickerReader = new Proxy(mock, {
+    get: (target, prop, receiver) => {
+      if (prop === "getPolicyChange") {
+        return async (id: string) => {
+          if (read.hang.has(id)) return never();
+          if (read.fail) throw read.fail();
+          return target.getPolicyChange(id);
+        };
+      }
+      const value = Reflect.get(target, prop, receiver) as unknown;
+      return typeof value === "function" ? value.bind(target) : value;
+    },
+  }) as ContractClient;
+  const ticker = new GuardTicker({
+    reader: tickerReader,
+    signer,
+    store,
+    guardianAccount: GUARDIAN,
+    clock,
+    log,
+    callTimeoutMs: 20,
+  });
   /** One pass of both: the guard loop reads events, then the ticker sends due vetoes. */
   const tick = async () => {
     await loop.tick();
@@ -149,7 +195,21 @@ async function setup(options: SetupOptions = {}) {
     });
   const change = (id: string) => mock.getPolicyChange(id);
   const entry = async (id: string) => (await store.entry(id))!;
-  return { mock, vaultId, owner, logs, store, veto, loop, ticker, tick, propose, change, entry };
+  return {
+    mock,
+    vaultId,
+    owner,
+    logs,
+    store,
+    veto,
+    read,
+    loop,
+    ticker,
+    tick,
+    propose,
+    change,
+    entry,
+  };
 }
 
 type Setup = Awaited<ReturnType<typeof setup>>;
@@ -304,18 +364,18 @@ describe("LooseningGuard + GuardTicker", () => {
       await sealEnvelope("normal", vaultKey.publicKeyHex),
     );
     await t.tick();
-    expect((await t.entry(withdrawn)).status).toBe("settled");
+    expect(await t.entry(withdrawn)).toMatchObject({ status: "settled", cause: "withdrawn" });
 
     const vetoed = await t.propose({ recovery_address: NEW_RECOVERY });
     await t.tick();
     await as(t.mock, EMMA).vetoPolicyChange(vetoed);
     await t.tick();
-    expect((await t.entry(vetoed)).status).toBe("settled");
+    expect(await t.entry(vetoed)).toMatchObject({ status: "settled", cause: "vetoed" });
 
     await toVetoAt(t, vetoed);
     await t.tick();
     expect(t.veto.calls).toBe(0);
-    expect(t.logs.filter((l) => l.msg.includes("settled before its veto"))).toHaveLength(2);
+    expect(t.logs.filter((l) => l.msg === "loosening guard: change closed")).toHaveLength(2);
   });
 
   it("settles at veto time, with no call, when the loop has not seen the settlement yet", async () => {
@@ -332,7 +392,12 @@ describe("LooseningGuard + GuardTicker", () => {
     });
   });
 
-  for (const code of ["ERR_BAD_OP_STATE", "ERR_CHANGE_NOT_FOUND"] as ErrorCode[]) {
+  for (const code of [
+    "ERR_BAD_OP_STATE",
+    "ERR_CHANGE_NOT_FOUND",
+    "ERR_CLAWED_BACK",
+    "ERR_VAULT_NOT_ACTIVE",
+  ] as ErrorCode[]) {
     it(`counts ${code} on the veto as settled`, async () => {
       const t = await setup();
       const id = await t.propose({ recovery_address: NEW_RECOVERY });
@@ -341,13 +406,13 @@ describe("LooseningGuard + GuardTicker", () => {
       await toVetoAt(t, id);
       await t.tick();
       expect(t.veto.calls).toBe(1);
-      expect((await t.entry(id)).status).toBe("settled");
+      expect(await t.entry(id)).toMatchObject({ status: "settled", cause: code });
       await t.tick();
       expect(t.veto.calls).toBe(1);
     });
   }
 
-  it("retries a failing veto each tick until effective_at, never after", async () => {
+  it("retries a failing veto each tick", async () => {
     const t = await setup();
     const id = await t.propose({ recovery_address: NEW_RECOVERY });
     await t.tick();
@@ -365,41 +430,194 @@ describe("LooseningGuard + GuardTicker", () => {
     expect(await t.entry(id)).toMatchObject({ status: "vetoed", last_error: null });
   });
 
-  it("stops at effective_at and logs the missed veto", async () => {
+  it("keeps vetoing past effective_at while the change is pending", async () => {
     const t = await setup();
     const id = await t.propose({ recovery_address: NEW_RECOVERY });
     await t.tick();
     t.veto.fail = () => new Error("RPC timeout");
     await toVetoAt(t, id);
     await t.tick();
-    t.mock.setNow(BigInt((await t.change(id)).effective_at));
+    t.mock.setNow(BigInt((await t.change(id)).effective_at) + HOUR_NS);
+    await t.tick();
+    expect((await t.entry(id)).status).toBe("scheduled");
     t.veto.fail = null;
     await t.tick();
-    await t.tick();
-    expect(t.veto.calls).toBe(1);
-    expect((await t.change(id)).state).toBe("pending");
-    expect((await t.entry(id)).status).toBe("settled");
-    expect(t.logs.find((l) => l.msg.includes("veto window missed"))).toMatchObject({
-      level: "error",
-      fields: { change_id: id },
-    });
+    expect(t.veto.calls).toBe(3);
+    expect(await t.change(id)).toMatchObject({ state: "vetoed", vetoed_by: GUARDIAN });
+    expect((await t.entry(id)).status).toBe("vetoed");
   });
 
-  it("vetoes at once when first seen after veto_at (catch-up), but not after effective_at", async () => {
+  it("vetoes at once when first seen after veto_at, even after effective_at, until applied", async () => {
     const t = await setup();
     const late = await t.propose({ recovery_address: NEW_RECOVERY });
-    const { effective_at } = await t.change(late);
-    t.mock.setNow(BigInt(effective_at) - 10n * MINUTE_NS);
+    t.mock.setNow(BigInt((await t.change(late)).effective_at) - 10n * MINUTE_NS);
     await t.tick();
     expect(t.veto.calls).toBe(1);
     expect((await t.change(late)).state).toBe("vetoed");
 
-    const missed = await t.propose({ recovery_address: NEW_RECOVERY });
-    t.mock.setNow(BigInt((await t.change(missed)).effective_at));
+    const overdue = await t.propose({ recovery_address: NEW_RECOVERY });
+    t.mock.setNow(BigInt((await t.change(overdue)).effective_at) + DAY_NS);
     await t.tick();
+    expect(t.veto.calls).toBe(2);
+    expect((await t.change(overdue)).state).toBe("vetoed");
+    expect((await t.entry(overdue)).status).toBe("vetoed");
+  });
+
+  it("records a change already applied at first sight as settled, without an error", async () => {
+    const t = await setup();
+    const id = await t.propose({ recovery_address: NEW_RECOVERY });
+    t.mock.setNow(BigInt((await t.change(id)).effective_at));
+    await t.mock.applyPolicyChange(id);
+    await t.tick();
+    expect(await t.entry(id)).toMatchObject({
+      status: "settled",
+      cause: "already settled at first sight",
+    });
+    expect(t.veto.calls).toBe(0);
+    expect(t.logs.filter((l) => l.level === "error")).toEqual([]);
+  });
+
+  it("logs an applied loosening change as an error (handler, read and race paths)", async () => {
+    const applied = "loosening guard: loosening change applied without a veto";
+    // The guard loop sees policy_change_applied first.
+    const h = await setup();
+    const viaEvent = await h.propose({ recovery_address: NEW_RECOVERY });
+    await h.loop.tick();
+    h.mock.setNow(BigInt((await h.change(viaEvent)).effective_at));
+    await h.mock.applyPolicyChange(viaEvent);
+    await h.loop.tick();
+    expect(await h.entry(viaEvent)).toMatchObject({ status: "settled", cause: "applied" });
+    expect(h.logs.find((l) => l.msg === applied)).toMatchObject({
+      level: "error",
+      fields: { change_id: viaEvent },
+    });
+
+    // The ticker reads it applied.
+    const r = await setup();
+    const viaRead = await r.propose({ recovery_address: NEW_RECOVERY });
+    await r.loop.tick();
+    r.mock.setNow(BigInt((await r.change(viaRead)).effective_at));
+    await r.mock.applyPolicyChange(viaRead);
+    await r.ticker.tick();
+    expect(r.veto.calls).toBe(0);
+    expect(await r.entry(viaRead)).toMatchObject({ status: "settled", cause: "applied" });
+    expect(r.logs.find((l) => l.msg === applied)?.level).toBe("error");
+
+    // The veto loses the race to an apply (ERR_BAD_OP_STATE), and the next read shows it applied.
+    const race = await setup();
+    const viaRace = await race.propose({ recovery_address: NEW_RECOVERY });
+    await race.loop.tick();
+    race.mock.setNow(BigInt((await race.change(viaRace)).effective_at));
+    // Applied between the ticker's read and its veto: the real veto then fails ERR_BAD_OP_STATE.
+    race.veto.before = (id) => race.mock.applyPolicyChange(id);
+    await race.ticker.tick();
+    expect(race.veto.calls).toBe(1);
+    expect(await race.entry(viaRace)).toMatchObject({ status: "settled", cause: "applied" });
+    expect(race.logs.find((l) => l.msg === applied)?.level).toBe("error");
+  });
+
+  it("retries a failed change read, never settles on it; ERR_CHANGE_NOT_FOUND settles", async () => {
+    const t = await setup();
+    const id = await t.propose({ recovery_address: NEW_RECOVERY });
+    await t.tick();
+    t.read.fail = () => new Error("RPC timeout");
+    await toVetoAt(t, id);
+    await t.ticker.tick();
+    expect(t.veto.calls).toBe(0);
+    expect(await t.entry(id)).toMatchObject({ status: "scheduled", last_error: "RPC timeout" });
+    expect(t.ticker.lastError?.error).toBe("Error");
+    t.read.fail = null;
+    await t.ticker.tick();
     expect(t.veto.calls).toBe(1);
-    expect((await t.entry(missed)).status).toBe("settled");
-    expect(t.logs.some((l) => l.level === "error" && l.msg.includes("missed"))).toBe(true);
+    expect((await t.entry(id)).status).toBe("vetoed");
+    expect(t.ticker.lastError).toBeNull();
+
+    const gone = await setup();
+    const missing = await gone.propose({ recovery_address: NEW_RECOVERY });
+    await gone.tick();
+    gone.read.fail = () => new MorrowContractError("ERR_CHANGE_NOT_FOUND");
+    await toVetoAt(gone, missing);
+    await gone.ticker.tick();
+    expect(gone.veto.calls).toBe(0);
+    expect(await gone.entry(missing)).toMatchObject({ status: "settled", cause: "not_found" });
+  });
+
+  it("times out a hung read or veto, retries it, and still vetoes the other changes", async () => {
+    const mock = new MockContractClient();
+    const t = await setup({ mock });
+    const second = await setup({ mock });
+    const hungRead = await t.propose({ recovery_address: NEW_RECOVERY });
+    const hungVeto = await second.propose({ recovery_address: NEW_RECOVERY });
+    // Both Vaults on one mock: let the first guard see both changes.
+    await t.loop.tick();
+    t.read.hang.add(hungRead);
+    t.veto.hang.add(hungVeto);
+    await toVetoAt(t, hungVeto);
+    await t.ticker.tick();
+    expect(await t.entry(hungRead)).toMatchObject({ status: "scheduled" });
+    expect((await t.entry(hungRead)).last_error).toMatch(/get_policy_change timed out/);
+    expect((await t.entry(hungVeto)).last_error).toMatch(/veto_policy_change timed out/);
+    expect(t.ticker.lastError?.error).toBe("GuardTimeoutError");
+
+    t.read.hang.clear();
+    t.veto.hang.clear();
+    await t.ticker.tick();
+    expect((await t.change(hungRead)).state).toBe("vetoed");
+    expect((await t.change(hungVeto)).state).toBe("vetoed");
+  });
+
+  it("skips a Vault whose Owner Account is the guard's Guardian account, with a config error", async () => {
+    const t = await setup({ owner: GUARDIAN });
+    const id = await t.propose({ recovery_address: NEW_RECOVERY });
+    await t.tick();
+    expect(await t.entry(id)).toMatchObject({
+      status: "skipped",
+      cause: "owner is the guardian account",
+    });
+    await toVetoAt(t, id);
+    await t.tick();
+    expect(t.veto.calls).toBe(0);
+    expect(t.logs.find((l) => l.msg.includes("config error"))).toMatchObject({ level: "error" });
+  });
+
+  it("records a Clawback's veto as settled (clawback), not as the guard's veto", async () => {
+    const clawback = (t: Setup) =>
+      as(t.mock, GUARDIAN).beginClawback({
+        vault_id: t.vaultId,
+        utxos: [{ txid: "aa".repeat(32), vout: 0, value_sats: "100000" }],
+        fee_rate_sat_vb: 2,
+      });
+    const viaEvent = await setup();
+    const a = await viaEvent.propose({ recovery_address: NEW_RECOVERY });
+    await viaEvent.loop.tick();
+    await clawback(viaEvent);
+    expect(await viaEvent.change(a)).toMatchObject({ state: "vetoed", vetoed_by: GUARDIAN });
+    await viaEvent.loop.tick();
+    expect(await viaEvent.entry(a)).toMatchObject({ status: "settled", cause: "clawback" });
+
+    const viaRead = await setup();
+    const b = await viaRead.propose({ recovery_address: NEW_RECOVERY });
+    await viaRead.loop.tick();
+    await clawback(viaRead);
+    await toVetoAt(viaRead, b);
+    await viaRead.ticker.tick();
+    expect(viaRead.veto.calls).toBe(0);
+    expect(await viaRead.entry(b)).toMatchObject({ status: "settled", cause: "clawback" });
+  });
+
+  it("logs a tightening duress change exactly like a tightening normal one", async () => {
+    const lines = async (flag: "normal" | "duress") => {
+      const t = await setup();
+      const id = await t.propose(higherDelay, flag);
+      await t.loop.tick();
+      expect((await t.entry(id)).status).toBe(flag === "duress" ? "scheduled" : "skipped");
+      return t.logs;
+    };
+    const normal = await lines("normal");
+    expect(normal.length).toBeGreaterThan(0);
+    expect(await lines("duress")).toEqual(normal);
+    expect(normal.map((l) => l.msg)).toEqual(["loosening guard: change recorded"]);
+    expect(Object.keys(normal[0]!.fields).sort()).toEqual(["change_id", "vault_id"]);
   });
 
   it("marks its own veto as vetoed when the result was lost before it was stored", async () => {
@@ -500,5 +718,190 @@ describe("guard config", () => {
         /MORROW_WATCHER_X25519_SK must be a 32-byte hex secret key/,
       );
     }
+  });
+});
+
+const sample = (changeId: string, overrides: Partial<GuardEntry> = {}) => ({
+  change_id: changeId,
+  vault_id: "1",
+  proposed_at: "1",
+  effective_at: "2",
+  veto_at: "1",
+  loosening: true,
+  reasons: ["recovery_address changed"],
+  duress: "normal" as const,
+  status: "scheduled" as const,
+  cause: null,
+  last_error: null,
+  ...overrides,
+});
+
+describe("GuardStore", () => {
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it("never lets a stale snapshot revert a final status (compare-and-set)", async () => {
+    const store = new InMemoryGuardStore();
+    const snapshot = await store.add(sample("7"));
+    // The handler settles the entry while the ticker still holds its scheduled snapshot.
+    expect(
+      await store.update({ ...snapshot, status: "settled", cause: "withdrawn" }, "scheduled"),
+    ).toBe(true);
+    expect(await store.update({ ...snapshot, status: "vetoed" }, "scheduled")).toBe(false);
+    expect(await store.update({ ...snapshot, last_error: "RPC timeout" }, "scheduled")).toBe(false);
+    expect(await store.entry("7")).toMatchObject({ status: "settled", cause: "withdrawn" });
+    expect(await store.update({ ...sample("8"), updated_at: "" }, "scheduled")).toBe(false); // unknown id
+  });
+
+  it("drops final entries 30 days after their last update, keeps scheduled ones", async () => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(new Date("2026-11-05T00:00:00Z"));
+    const store = new InMemoryGuardStore();
+    await store.add(sample("1", { status: "skipped", cause: "not loosening" }));
+    await store.add(sample("2"));
+    vi.setSystemTime(Date.now() + GUARD_PRUNE_AFTER_MS - 1_000);
+    await store.add(sample("3", { status: "settled", cause: "vetoed" }));
+    expect((await store.entries()).map((e) => e.change_id)).toEqual(["1", "2", "3"]);
+    vi.setSystemTime(Date.now() + 2_000);
+    await store.add(sample("4"));
+    expect((await store.entries()).map((e) => e.change_id)).toEqual(["2", "3", "4"]);
+  });
+});
+
+describe("corrupt guard file", () => {
+  let dir = "";
+  afterEach(async () => {
+    if (dir) await rm(dir, { recursive: true, force: true });
+  });
+
+  it("moves it aside, resets the guard cursor and rebuilds the schedule with the first-sight rule", async () => {
+    dir = await mkdtemp(join(tmpdir(), "morrow-guard-"));
+    const path = join(dir, "clawbacks.guard.json");
+    const cursor = new FileStore(join(dir, "clawbacks.guard-cursor.json"));
+    const errors: string[] = [];
+    const store = new FileGuardStore(path, {
+      log: (level, msg) => {
+        if (level === "error") errors.push(msg);
+      },
+      onCorrupt: () => cursor.reset(),
+    });
+    const t = await setup({ guardStore: store, cursorStore: cursor });
+    const settled = await t.propose({ recovery_address: NEW_RECOVERY });
+    await as(t.mock, EMMA).vetoPolicyChange(settled);
+    const pending = await t.propose({ recovery_address: NEW_RECOVERY });
+    await t.loop.tick();
+    expect((await cursor.progress()).cursor).not.toBe("0");
+
+    await writeFile(path, "{not json");
+    await expect(store.entries()).rejects.toThrow(/corrupt/);
+    expect((await readdir(dir)).some((f) => f.startsWith("clawbacks.guard.json.corrupt-"))).toBe(
+      true,
+    );
+    expect(errors).toEqual(["loosening guard: guard file corrupt; moved aside, rebuilding"]);
+    expect((await cursor.progress()).cursor).toBe("0");
+    expect(await store.entries()).toEqual([]);
+
+    await t.loop.tick();
+    expect(await t.entry(settled)).toMatchObject({
+      status: "settled",
+      cause: "already settled at first sight",
+    });
+    expect((await t.entry(pending)).status).toBe("scheduled");
+    expect(t.logs.filter((l) => l.level === "error")).toEqual([]);
+    await toVetoAt(t, pending);
+    await t.ticker.tick();
+    expect((await t.change(pending)).state).toBe("vetoed");
+  });
+});
+
+describe("guard health", () => {
+  it("reports the guard cursor, its lag, the scheduled count and the last error, no change details", async () => {
+    const main = new InMemoryStore();
+    const cursor = new InMemoryStore();
+    await main.commit("10", "1");
+    await cursor.commit("7", "1");
+    const store = new InMemoryGuardStore();
+    await store.add(sample("41"));
+    await store.add(sample("42", { status: "vetoed" }));
+    const loop = { lastError: null };
+    const ticker = { lastError: { at: "2026-11-05T00:00:00.000Z", error: "GuardTimeoutError" } };
+    const health = guardHealth({ cursor, store, loop, ticker });
+    expect(await health("10")).toEqual({
+      cursor: "7",
+      lag: "3",
+      scheduled: 1,
+      last_error: ticker.lastError,
+    });
+    expect(await health("5")).toMatchObject({ lag: "0" });
+
+    const server = createApiServer(main, undefined, undefined, health).listen(0);
+    await new Promise((resolve) => server.once("listening", resolve));
+    const { port } = server.address() as AddressInfo;
+    try {
+      const body = (await (await fetch(`http://127.0.0.1:${port}/heartbeat`)).json()) as Record<
+        string,
+        unknown
+      >;
+      expect(body).toMatchObject({
+        last_seq: "10",
+        guard: { cursor: "7", lag: "3", scheduled: 1 },
+      });
+      expect(JSON.stringify(body)).not.toMatch(/"4[12]"|recovery_address|duress/);
+    } finally {
+      server.close();
+    }
+    // Without the guard the heartbeat has no guard section.
+    const plain = createApiServer(main).listen(0);
+    await new Promise((resolve) => plain.once("listening", resolve));
+    try {
+      const { port: p } = plain.address() as AddressInfo;
+      expect(await (await fetch(`http://127.0.0.1:${p}/heartbeat`)).json()).not.toHaveProperty(
+        "guard",
+      );
+    } finally {
+      plain.close();
+    }
+  });
+});
+
+describe("GuardTicker.start", () => {
+  it("logs a failing tick, keeps rescheduling, and stops", async () => {
+    const store = new InMemoryGuardStore();
+    let failures = 2;
+    const flaky = new Proxy(store, {
+      get: (target, prop, receiver) =>
+        prop === "entries"
+          ? async () => {
+              if (failures-- > 0) throw new Error("disk busy");
+              return target.entries();
+            }
+          : Reflect.get(target, prop, receiver),
+    });
+    let ticks = 0;
+    const logs: string[] = [];
+    const ticker = new GuardTicker({
+      reader: new MockContractClient(),
+      signer: new MockContractClient(),
+      store: flaky,
+      guardianAccount: GUARDIAN,
+      clock: {
+        now: async () => {
+          ticks++;
+          return 0n;
+        },
+      },
+      log: (_level, msg) => logs.push(msg),
+      intervalMs: 5,
+    });
+    ticker.start();
+    ticker.start(); // a second start is a no-op
+    await vi.waitFor(() => expect(ticks).toBeGreaterThanOrEqual(4), { timeout: 2_000 });
+    expect(logs.filter((m) => m === "loosening guard tick failed; will retry")).toHaveLength(2);
+    expect(ticker.lastError).toBeNull(); // the latest tick was clean
+    ticker.stop();
+    const stoppedAt = ticks;
+    await new Promise((resolve) => setTimeout(resolve, 40));
+    expect(ticks).toBeLessThanOrEqual(stoppedAt + 1);
   });
 });

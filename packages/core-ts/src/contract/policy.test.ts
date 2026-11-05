@@ -13,7 +13,7 @@ import {
   validatePolicyChange,
 } from "./policy.js";
 import { GUARDIANS, signetPolicy } from "./test-fixtures.js";
-import type { Guardian } from "./types.js";
+import type { Guardian, Policy } from "./types.js";
 
 const code = (fn: () => unknown) => {
   try {
@@ -231,6 +231,37 @@ describe("isLoosening", () => {
     ]);
     // An unchanged Script-bound field is no reason.
     expect(isLoosening(current, { guardians: structuredClone(current.guardians) })).toBe(false);
+  });
+
+  it("enabling Fast Approval with a floor gives only real reasons, also on a partial Policy", () => {
+    const enable = { fast_approval: true, fast_approval_floor_ns: (15n * MINUTE_NS).toString() };
+    expect(looseningReasons(off, enable)).toEqual(["fast_approval enabled"]);
+    const partial = { ...off } as Partial<Policy>;
+    delete partial.fast_approval;
+    delete partial.fast_approval_floor_ns;
+    delete partial.allowance_limit_sats;
+    const older = partial as Policy;
+    expect(looseningReasons(older, enable)).toEqual(["fast_approval enabled"]);
+    expect(looseningReasons(older, { fast_approval: false })).toEqual([]);
+    expect(looseningReasons(older, { allowance_limit_sats: "0" })).toEqual([]);
+    expect(looseningReasons(older, { allowance_limit_sats: "1" })).toEqual([
+      "allowance_limit_sats raised",
+    ]);
+    expect(looseningReasons(older, { fast_approval_floor_ns: "x" })).toEqual([
+      "fast_approval_floor_ns is not a u64",
+    ]);
+  });
+
+  it("reads only own fields of the current Policy, never the prototype", () => {
+    expect(looseningReasons(current, { toString: "x" })).toEqual([
+      "toString is not a changeable field",
+    ]);
+    expect(looseningReasons(current, { constructor: undefined })).toEqual([]);
+    const missing = { ...current } as Partial<Policy>;
+    delete missing.delay_ns;
+    expect(looseningReasons(missing as Policy, { delay_ns: "1" })).toEqual([
+      "delay_ns has no comparable current value",
+    ]);
   });
 
   it("compares u64 values as BigInt, beyond Number precision", () => {

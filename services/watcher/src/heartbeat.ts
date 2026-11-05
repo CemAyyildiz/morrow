@@ -4,18 +4,39 @@ import type { ClawbackJob } from "./clawback/jobs.js";
 import type { WatcherStore } from "./store.js";
 import type { LinkRole, LinkStore } from "./telegram/links.js";
 
+/** Loosening-guard health: no change ids, reasons or flags. */
+export interface GuardHealth {
+  /** The guard loop's cursor. */
+  cursor: string;
+  /** Events the guard loop is behind the main loop's cursor (0 when it is ahead). */
+  lag: string;
+  /** Entries waiting for (or retrying) their veto. */
+  scheduled: number;
+  /** The last guard loop or ticker failure: an error code or class only. */
+  last_error: { at: string; error: string } | null;
+}
+
 export interface Heartbeat {
   last_seq: string;
   last_block_timestamp: string | null;
   updated_at: string | null;
+  /** Present when the loosening guard runs. */
+  guard?: GuardHealth;
 }
 
-export async function readHeartbeat(store: WatcherStore): Promise<Heartbeat> {
+/** Reads the guard's health given the main loop's cursor. */
+export type GuardHealthSource = (mainCursor: string) => Promise<GuardHealth>;
+
+export async function readHeartbeat(
+  store: WatcherStore,
+  guard?: GuardHealthSource,
+): Promise<Heartbeat> {
   const progress = await store.progress();
   return {
     last_seq: progress.cursor,
     last_block_timestamp: progress.last_block_timestamp,
     updated_at: progress.updated_at,
+    ...(guard ? { guard: await guard(progress.cursor) } : {}),
   };
 }
 
@@ -59,6 +80,7 @@ export function createApiServer(
   store: WatcherStore,
   linking?: LinkingOptions,
   clawbacks?: ClawbackApiOptions,
+  guard?: GuardHealthSource,
 ): Server {
   return createServer((request, response) => {
     const path = new URL(request.url ?? "/", "http://localhost").pathname;
@@ -74,7 +96,7 @@ export function createApiServer(
 
     if (request.method === "OPTIONS") return json(204, null);
     if (request.method === "GET" && path === "/heartbeat") {
-      readHeartbeat(store).then(
+      readHeartbeat(store, guard).then(
         (heartbeat) => json(200, heartbeat),
         () => json(503, { error: "unavailable" }),
       );

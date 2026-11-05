@@ -51,6 +51,11 @@ abstract class StateStore implements WatcherStore {
     await this.save(state);
   }
 
+  /** Back to before the first event: cursor 0, no marks. */
+  async reset(): Promise<void> {
+    await this.save(initial());
+  }
+
   async commit(seq: string, blockTimestamp: string): Promise<void> {
     const state = await this.load();
     state.cursor = seq;

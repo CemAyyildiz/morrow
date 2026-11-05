@@ -14,7 +14,7 @@ import {
 } from "@morrow/core-ts";
 import { isChallengeOwner } from "../challenge/handler.js";
 import type { EventHandler, HandlerContext } from "../loop.js";
-import type { GuardDuress, GuardStore } from "./store.js";
+import type { GuardDuress, GuardEntry, GuardStore } from "./store.js";
 
 /** The guard vetoes a still-pending change this long before its `effective_at` (AD-21). */
 export const VETO_LEAD_NS = 65n * MINUTE_NS;
@@ -61,9 +61,10 @@ export interface LooseningGuardOptions {
 }
 
 /**
- * Loosening guard, 5.3a (fail-closed): schedules a veto at `effective_at − 65 min` for every
- * loosening or duress-flagged Policy Change on a guarded Vault. There is no Owner Confirmation
- * yet (5.3b), so no loosening change escapes the veto. `GuardTicker` sends the vetoes.
+ * Loosening guard, 5.3a (fail-closed): schedules a veto from `effective_at − 65 min` on for
+ * every loosening or duress-flagged Policy Change on a guarded Vault. There is no Owner
+ * Confirmation yet (5.3b), so no loosening change escapes the veto. `GuardTicker` sends the
+ * vetoes, for as long as the change is pending.
  */
 export class LooseningGuard implements EventHandler {
   readonly name = "loosening_guard";
@@ -79,17 +80,34 @@ export class LooseningGuard implements EventHandler {
     ) {
       return;
     }
-    const { store, guardianAccount } = this.options;
+    const { store, reader, guardianAccount } = this.options;
     const entry = await store.entry(event.data.change_id);
-    if (!entry || entry.status !== "scheduled") return;
-    const ours = event.kind === "policy_change_vetoed" && event.data.by === guardianAccount;
-    entry.status = ours ? "vetoed" : "settled";
-    await store.update(entry);
-    const fields = { vault_id: entry.vault_id, change_id: entry.change_id, event: event.kind };
-    if (event.kind === "policy_change_applied") {
-      log("error", "loosening guard: change applied before its veto", fields);
+    if (!entry) return;
+    const fields = { vault_id: entry.vault_id, change_id: entry.change_id };
+    if (entry.status !== "scheduled") {
+      // Logged for every recorded entry alike, so the log never tells a scheduled one apart.
+      log("info", "loosening guard: change closed", fields);
+      return;
+    }
+    let next: Pick<GuardEntry, "status" | "cause">;
+    if (event.kind === "policy_change_vetoed" && event.data.by === guardianAccount) {
+      // A Clawback vetoes the pending change as the clawing Guardian: not the guard's veto.
+      const clawedBack = (await reader.getVault(entry.vault_id)).state === "clawed_back";
+      next = clawedBack
+        ? { status: "settled", cause: "clawback" }
+        : { status: "vetoed", cause: null };
+    } else if (event.kind === "policy_change_vetoed") {
+      next = { status: "settled", cause: "vetoed" };
+    } else if (event.kind === "policy_change_withdrawn") {
+      next = { status: "settled", cause: "withdrawn" };
     } else {
-      log("info", "loosening guard: change settled before its veto", fields);
+      next = { status: "settled", cause: "applied" };
+    }
+    if (!(await store.update({ ...entry, ...next }, "scheduled"))) return;
+    if (event.kind === "policy_change_applied") {
+      log("error", "loosening guard: loosening change applied without a veto", fields);
+    } else {
+      log("info", "loosening guard: change closed", fields);
     }
   }
 
@@ -102,22 +120,44 @@ export class LooseningGuard implements EventHandler {
     if (await store.entry(change_id)) return;
     const vault = await reader.getVault(event.vault_id);
     if (!isGuarded(vault, guardianAccount)) return;
+    const fields = { vault_id: vault.vault_id, change_id };
 
-    const challenge =
-      challengeOwnerParent !== null && isChallengeOwner(vault.owner_account, challengeOwnerParent);
     const reasons = looseningReasons(vault.policy, changes);
     const loosening = reasons.length > 0;
     if (envelopeKeypair && envelopeKeypair.publicKeyHex !== vault.policy.watcher_x25519_pk) {
-      log("warn", "loosening guard: MORROW_WATCHER_X25519_SK is not this Vault's watcher key", {
-        vault_id: vault.vault_id,
-        change_id,
-      });
+      log(
+        "warn",
+        "loosening guard: MORROW_WATCHER_X25519_SK is not this Vault's watcher key",
+        fields,
+      );
     }
     const duress = await readDuress(envelope, vault.policy.watcher_x25519_pk, envelopeKeypair);
     const effectiveAt = BigInt(effective_at);
     const vetoAt = effectiveAt > VETO_LEAD_NS ? effectiveAt - VETO_LEAD_NS : 0n;
-    const veto = !challenge && (loosening || duress === "duress");
-    const entry = await store.add({
+
+    let decision: Pick<GuardEntry, "status" | "cause">;
+    if (vault.owner_account === guardianAccount) {
+      // Its veto would be an Owner withdrawal, which needs an envelope: it would fail every tick.
+      log(
+        "error",
+        "loosening guard: config error, the Owner Account is the guard's Guardian account",
+        fields,
+      );
+      decision = { status: "skipped", cause: "owner is the guardian account" };
+    } else if (
+      challengeOwnerParent !== null &&
+      isChallengeOwner(vault.owner_account, challengeOwnerParent)
+    ) {
+      decision = { status: "skipped", cause: "challenge vault" };
+    } else if ((await reader.getPolicyChange(change_id)).state !== "pending") {
+      // Replaying history (first start, or a rebuilt store): nothing left to veto or report.
+      decision = { status: "settled", cause: "already settled at first sight" };
+    } else if (loosening || duress === "duress") {
+      decision = { status: "scheduled", cause: null };
+    } else {
+      decision = { status: "skipped", cause: "not loosening" };
+    }
+    await store.add({
       change_id,
       vault_id: event.vault_id,
       proposed_at: event.block_timestamp,
@@ -126,18 +166,11 @@ export class LooseningGuard implements EventHandler {
       loosening,
       reasons,
       duress,
-      status: veto ? "scheduled" : "skipped",
+      ...decision,
       last_error: null,
     });
-    // The duress flag itself is kept in the store only, never logged.
-    log("info", veto ? "loosening guard: veto scheduled" : "loosening guard: nothing to veto", {
-      vault_id: entry.vault_id,
-      change_id,
-      loosening,
-      reasons,
-      veto_at: entry.veto_at,
-      effective_at,
-      ...(challenge ? { skipped: "challenge vault" } : {}),
-    });
+    // One neutral line for every entry: no status, reasons or flags, so a duress-flagged change
+    // (scheduled even when it tightens) cannot be told apart in the log.
+    log("info", "loosening guard: change recorded", fields);
   }
 }

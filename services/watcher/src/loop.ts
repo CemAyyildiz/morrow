@@ -25,11 +25,25 @@ export interface EventLoopOptions {
   batchSize?: number;
 }
 
+/** An error reduced to its code (contract errors) or class name, for health reports. */
+export function failureSummary(error: unknown): { at: string; error: string } {
+  const code = (error as { code?: unknown } | null)?.code;
+  const label =
+    typeof code === "string" && code.startsWith("ERR_")
+      ? code
+      : error instanceof Error
+        ? error.name
+        : "Error";
+  return { at: new Date().toISOString(), error: label };
+}
+
 export class EventLoop {
   private timer: ReturnType<typeof setTimeout> | null = null;
   private running = false;
   private readonly intervalMs: number;
   private readonly batchSize: number;
+  /** The last tick's failure (an error code or class, no event details), null after a clean tick. */
+  lastError: { at: string; error: string } | null = null;
 
   constructor(private readonly options: EventLoopOptions) {
     this.intervalMs = options.intervalMs ?? 5_000;
@@ -43,6 +57,7 @@ export class EventLoop {
   async tick(): Promise<number> {
     const { client, store, handlers, clock, log } = this.options;
     let committed = 0;
+    this.lastError = null;
     for (;;) {
       const { cursor } = await store.progress();
       const events = await client.eventsSince(cursor, this.batchSize);
@@ -59,6 +74,7 @@ export class EventLoop {
               kind: event.kind,
               error: error instanceof Error ? error.message : String(error),
             });
+            this.lastError = failureSummary(error);
             return committed;
           }
           await store.markHandled(event.seq, handler.name);
@@ -77,6 +93,7 @@ export class EventLoop {
       try {
         await this.tick();
       } catch (error) {
+        this.lastError = failureSummary(error);
         this.options.log("error", "poll failed; will retry", {
           error: error instanceof Error ? error.message : String(error),
         });

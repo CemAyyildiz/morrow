@@ -217,30 +217,43 @@ const HIGHER_LOOSENS = ["allowance_limit_sats", "fee_cap_sats"] as const;
 const sameValue = (a: unknown, b: unknown) => JSON.stringify(a) === JSON.stringify(b);
 
 /**
+ * Optional fields an older or partial Policy may lack, read as unset: Fast Approval off, no
+ * Spending Allowance, and no Fast Approval Floor (setting one while it is unset adds no reason;
+ * turning Fast Approval on is its own reason).
+ */
+const UNSET: Record<string, unknown> = { fast_approval: false, allowance_limit_sats: "0" };
+const NO_FLOOR = "fast_approval_floor_ns";
+
+/**
  * Why `next` would loosen `current`, one reason per field (empty when it would not). `next` is the
- * resulting Policy or just the changed fields; only keys present on `next` are compared.
+ * resulting Policy or just the changed fields; only own keys of `next` are compared.
  *
  * Fail-closed (AD-21 / FR-32): a field is loosening unless it is provably unchanged or tightening.
  * A new Recovery Address, a lower Delay, Policy Change Delay or Fast Approval Floor, a higher
- * Allowance limit or Fee Cap, and Fast Approval turned on are loosening, and so is any field
- * outside the changeable set that differs, and any value of the wrong type or format.
+ * Allowance limit or Fee Cap, and Fast Approval turned on are loosening, and so is any value of
+ * the wrong type or format. A field outside the changeable set (the contract rejects those with
+ * `ERR_SCRIPT_BOUND`) is a reason when its value differs; an unchanged one adds no reason.
  */
 export function looseningReasons(current: Policy, next: object): string[] {
   const reasons: string[] = [];
+  const has = (field: string) => Object.hasOwn(current, field);
   for (const [field, value] of Object.entries(next)) {
-    const old = (current as unknown as Record<string, unknown>)[field];
+    const old = has(field)
+      ? (current as unknown as Record<string, unknown>)[field]
+      : Object.hasOwn(UNSET, field)
+        ? UNSET[field]
+        : undefined;
     if (sameValue(old, value)) continue;
-    if ((LOWER_LOOSENS as readonly string[]).includes(field)) {
-      if (typeof value !== "string" || !isU64(value) || typeof old !== "string" || !isU64(old)) {
+    const lowerLoosens = (LOWER_LOOSENS as readonly string[]).includes(field);
+    if (lowerLoosens || (HIGHER_LOOSENS as readonly string[]).includes(field)) {
+      if (typeof value !== "string" || !isU64(value)) {
         reasons.push(`${field} is not a u64`);
-      } else if (BigInt(value) < BigInt(old)) {
-        reasons.push(`${field} lowered`);
-      }
-    } else if ((HIGHER_LOOSENS as readonly string[]).includes(field)) {
-      if (typeof value !== "string" || !isU64(value) || typeof old !== "string" || !isU64(old)) {
-        reasons.push(`${field} is not a u64`);
-      } else if (BigInt(value) > BigInt(old)) {
-        reasons.push(`${field} raised`);
+      } else if (field === NO_FLOOR && !has(field)) {
+        // No floor before: any floor is a new bound, not a lower one.
+      } else if (typeof old !== "string" || !isU64(old)) {
+        reasons.push(`${field} has no comparable current value`);
+      } else if (lowerLoosens ? BigInt(value) < BigInt(old) : BigInt(value) > BigInt(old)) {
+        reasons.push(`${field} ${lowerLoosens ? "lowered" : "raised"}`);
       }
     } else if (field === "fast_approval") {
       if (value === true) reasons.push("fast_approval enabled");
