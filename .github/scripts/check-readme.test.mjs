@@ -6,6 +6,7 @@ import { dirname, join } from "node:path";
 import { test } from "node:test";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import {
+  LEGACY_CONTRACTS,
   checkLog,
   checkReadme,
   expectedLines,
@@ -406,6 +407,40 @@ test("log check passes when every expected line is where the README says", () =>
 test("a SKIP row is held to its exact SKIP line in the log", () => {
   const built = LOG.replace("S-6 Policy Change SKIP (not built)", "S-6 Policy Change PASS");
   assert.deepEqual(checkLog(OK, built), ["S-6 Policy Change SKIP (not built)"]);
+});
+
+test("a legacy contract's S-6 SKIP stands for the PASS; any other contract's does not", () => {
+  assert.deepEqual(LEGACY_CONTRACTS, ["morrow-vault-dev3.testnet"]);
+  const progress = "Unconfirmed loosening change auto-vetoed by the Guardian Watcher";
+  const built = readme({
+    rows: Object.values({
+      ...ROWS,
+      "S-6": row("S-6", "Policy Change", "S-6 Policy Change PASS", progress),
+    }),
+  });
+  const skipped = (contract) =>
+    LOG.replace(
+      "S-6 Policy Change SKIP (not built)",
+      `S-6 Policy Change SKIP (${contract} predates Policy Changes)`,
+    );
+  const passed = LOG.replace(
+    "S-6 Policy Change SKIP (not built)",
+    `  ${progress}\nS-6 Policy Change PASS`,
+  );
+  assert.deepEqual(checkLog(built, passed), []);
+  assert.deepEqual(checkLog(built, skipped("morrow-vault-dev3.testnet")), []);
+  assert.deepEqual(checkLog(built, skipped("morrow-vault-dev4.testnet")), [
+    "S-6 Policy Change PASS",
+  ]);
+  assert.deepEqual(checkLog(built, LOG), ["S-6 Policy Change PASS"]);
+  // A PASS still needs its progress line, and the SKIP stands in for S-6 only.
+  const bare = LOG.replace("S-6 Policy Change SKIP (not built)", "S-6 Policy Change PASS");
+  assert.deepEqual(checkLog(built, bare), [`${progress} (in S-6's output)`]);
+  const s5 = skipped("morrow-vault-dev3.testnet").replace(
+    "S-5 Escape PASS",
+    "S-5 Escape SKIP (morrow-vault-dev3.testnet predates Policy Changes)",
+  );
+  assert.deepEqual(checkLog(built, s5), ["S-5 Escape PASS"]);
 });
 
 test("log mismatch lists every missing line, and a longer line does not count", () => {

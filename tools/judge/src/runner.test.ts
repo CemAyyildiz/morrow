@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { exitCode, runScenarios, selectScenarios } from "./runner.js";
+import { ScenarioSkip, exitCode, runScenarios, selectScenarios } from "./runner.js";
 import { SCENARIOS, type Scenario } from "./scenarios.js";
 
 async function run(scenarios: Scenario[], release = false) {
@@ -56,6 +56,24 @@ describe("judge runner", () => {
       "S-2 Withdraw after Delay FAIL: ERR_NOT_EXECUTABLE expected",
     ]);
     expect(code).toBe(1);
+  });
+
+  it("reports a ScenarioSkip as SKIP with its reason, never FAIL, even mandatory in a release", async () => {
+    const skip = async () => {
+      throw new ScenarioSkip("morrow-vault-dev3.testnet predates Policy Changes");
+    };
+    const { lines, code } = await run(
+      [
+        { id: "S-6", name: "Policy Change", mandatory: false, run: skip },
+        { id: "S-1", name: "Create", mandatory: true, run: skip },
+      ],
+      true,
+    );
+    expect(lines).toEqual([
+      "S-6 Policy Change SKIP (morrow-vault-dev3.testnet predates Policy Changes)",
+      "S-1 Create SKIP (morrow-vault-dev3.testnet predates Policy Changes)",
+    ]);
+    expect(code).toBe(0);
   });
 });
 

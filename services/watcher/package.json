@@ -4,6 +4,12 @@
   "private": true,
   "description": "Guardian Watcher: event loop, Telegram alerts and Auto-Clawback.",
   "type": "module",
+  "exports": {
+    ".": {
+      "types": "./src/index.ts",
+      "default": "./src/index.ts"
+    }
+  },
   "license": "MIT",
   "scripts": {
     "typecheck": "tsc --noEmit",

@@ -12,6 +12,7 @@
   },
   "dependencies": {
     "@morrow/core-ts": "workspace:*",
+    "@morrow/watcher": "workspace:*",
     "@noble/curves": "2.4.0",
     "near-api-js": "7.4.0"
   },

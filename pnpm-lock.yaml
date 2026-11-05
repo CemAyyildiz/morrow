@@ -349,6 +349,9 @@ importers:
       '@morrow/core-ts':
         specifier: workspace:*
         version: link:../../packages/core-ts
+      '@morrow/watcher':
+        specifier: workspace:*
+        version: link:../../services/watcher
       '@noble/curves':
         specifier: 2.4.0
         version: 2.4.0

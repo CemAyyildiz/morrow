@@ -10,6 +10,7 @@ import {
   generateEnvelopeKeypair,
   presetPolicy,
   type EnvelopeKeypair,
+  type Guardian,
   type Policy,
 } from "@morrow/core-ts";
 import { Account, JsonRpcProvider, KeyPair, KeyPairSigner } from "near-api-js";
@@ -99,8 +100,15 @@ export function judgeSession(config: JudgeConfig = loadJudgeConfig()): Promise<J
   return current;
 }
 
-/** Judge Mode Policy: regtest with the 1-minute lower bounds, so Scenarios finish in minutes. */
-export function judgePolicy(session: JudgeSession, recoveryAddress: string): Policy {
+/**
+ * Judge Mode Policy: regtest with the 1-minute lower bounds, so Scenarios finish in minutes. The
+ * session's Guardian is a `backup_device` unless a Scenario asks for another kind.
+ */
+export function judgePolicy(
+  session: JudgeSession,
+  recoveryAddress: string,
+  guardianKind: Guardian["kind"] = "backup_device",
+): Policy {
   return {
     ...presetPolicy("standard", {
       plannedDepositSats: 10_000_000n,
@@ -108,7 +116,7 @@ export function judgePolicy(session: JudgeSession, recoveryAddress: string): Pol
         {
           guardian_key: session.guardianKey,
           guardian_account: session.guardianAccountId,
-          kind: "backup_device",
+          kind: guardianKind,
         },
       ],
       recoveryAddress,
@@ -125,11 +133,12 @@ export function judgePolicy(session: JudgeSession, recoveryAddress: string): Pol
 /** Creates an active Judge Mode Vault for the session's account. */
 export async function createJudgeVault(
   session: JudgeSession,
+  { guardianKind }: { guardianKind?: Guardian["kind"] } = {},
 ): Promise<{ vaultId: string; tx: string }> {
   const recovery = await session.regtest.newAddress();
   const vaultId = await session.client.createVault({
     owner_key: session.ownerKey,
-    policy: judgePolicy(session, recovery),
+    policy: judgePolicy(session, recovery, guardianKind),
     deposit_yocto: MIN_VAULT_STORAGE_YOCTO.toString(),
   });
   return { vaultId, tx: session.client.lastTransactionHash ?? "" };

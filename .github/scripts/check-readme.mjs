@@ -420,8 +420,25 @@ export function expectedLines(readme) {
 }
 
 /**
+ * Deployments older than Policy Changes (Story 5.1). Against one of these, S-6 ends
+ * `S-6 Policy Change SKIP (<contract> predates Policy Changes)` and sends nothing, and the log
+ * check accepts that line in place of S-6's PASS. Against any other contract the PASS is required,
+ * so once the default contract moves on (Story 7.5b) the SKIP no longer counts.
+ */
+export const LEGACY_CONTRACTS = ["morrow-vault-dev3.testnet"];
+
+/** The lines a log may hold in place of a row's expected line: only S-6's legacy SKIP. */
+function substitutes(row) {
+  if (row.id !== "S-6" || row.expected !== `${row.id} ${row.name} PASS`) return [];
+  return LEGACY_CONTRACTS.map(
+    (contract) => `${row.id} ${row.name} SKIP (${contract} predates Policy Changes)`,
+  );
+}
+
+/**
  * Log check: what the log lacks. A Scenario's output runs from the line after the previous
- * unindented line (banner or result) to its own result line.
+ * unindented line (banner or result) to its own result line. A legacy SKIP (`substitutes`) stands
+ * for the expected line and its progress line, as that Scenario printed nothing.
  */
 export function checkLog(readme, log) {
   const lines = log.split(/\r?\n/).map((line) => line.trimEnd());
@@ -439,7 +456,7 @@ export function checkLog(readme, log) {
     if (!row.expected) continue;
     const output = outputOf(row.expected);
     if (!output) {
-      missing.push(row.expected);
+      if (!substitutes(row).some((line) => lines.includes(line))) missing.push(row.expected);
       continue;
     }
     if (row.progress && !output.some((line) => line.trim() === row.progress)) {
