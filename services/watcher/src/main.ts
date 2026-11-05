@@ -66,6 +66,7 @@ if (config.telegramToken) {
       sender: bot,
       appUrl: config.appUrl,
       getOp: (id) => client.getOp(id),
+      clock,
     }),
   );
 } else {
@@ -93,6 +94,7 @@ let guardTicker: GuardTicker | null = null;
 let guardHealthSource: GuardHealthSource | undefined;
 /** Owner Confirmation (5.3b); set once the bot and, when configured, the guard exist. */
 let confirmation: OwnerConfirmation | null = null;
+let linkTimer: ReturnType<typeof setInterval> | null = null;
 if (config.guardian) {
   const backend = backendFromUrl(config.btcBackendUrl);
   const guardianSigner = guardianClient(config.guardian.accountId, config.guardian.nearKey);
@@ -175,6 +177,7 @@ if (config.guardian) {
     intervalMs: config.pollIntervalMs,
     // Without Telegram there is no owner chat: every loosening change is vetoed (fail-closed).
     requests: { request: async (entry, now) => confirmation?.request(entry, now) },
+    envelopeKeyConfigured: config.watcherEnvelopeSecretKey !== null,
   });
   const ticker = guardTicker;
   if (bot) {
@@ -205,6 +208,21 @@ if (bot) {
   confirmation ??= new OwnerConfirmation({ links, sender: bot, reader: client, clock, log });
   bot.attach(confirmation);
   bot.start();
+  // Link announcements, activation notices and re-link notices, retried until delivered.
+  const linkActions = confirmation;
+  let linkTicking = false;
+  linkTimer = setInterval(() => {
+    if (linkTicking) return;
+    linkTicking = true;
+    linkActions
+      .tickLinks()
+      .catch((error: unknown) =>
+        log("error", "telegram link tick failed; will retry", {
+          error: error instanceof Error ? error.message : String(error),
+        }),
+      )
+      .finally(() => (linkTicking = false));
+  }, config.pollIntervalMs);
 }
 
 const loop = new EventLoop({
@@ -259,6 +277,7 @@ for (const signal of ["SIGINT", "SIGTERM"] as const) {
     challengeLoop?.stop();
     guardLoop?.stop();
     guardTicker?.stop();
+    if (linkTimer) clearInterval(linkTimer);
     runner?.stop();
     void bot?.stop();
     log("info", "stopped", { signal });

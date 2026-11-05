@@ -7,7 +7,10 @@ export interface Alert {
   /** Telegram HTML. */
   html: string;
   buttons: AlertButton[];
-  /** Asks the chat to reply to this message (the typed-confirmation step). */
+  /**
+   * Asks the chat to reply to this message (the typed-confirmation step). Only for a message
+   * without buttons: Telegram allows one reply markup, and the inline keyboard wins.
+   */
   forceReply?: boolean;
 }
 

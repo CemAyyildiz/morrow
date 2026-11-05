@@ -56,7 +56,44 @@ export interface LinkingOptions {
   reader: Pick<ContractClient, "getVault">;
   /** The latest final NEAR block time, for the `ts` window. */
   clock: ChainClock;
+  /** Wall-clock nanoseconds, for the cheap `ts` pre-check before any RPC; default `Date.now()`. */
+  wallNow?: () => bigint;
+  /** Per-IP and per-Vault limits; `createApiServer` adds one when absent. */
+  limiter?: RateLimiter;
 }
+
+/**
+ * Fixed-window request counter per key, in memory: at most `limit` requests per `windowMs`.
+ * Enough to stop a flood of `POST /link-codes` from turning into a flood of NEAR RPC calls.
+ */
+export class RateLimiter {
+  private readonly windows = new Map<string, { start: number; count: number }>();
+
+  constructor(
+    private readonly limit = 20,
+    private readonly windowMs = 60_000,
+  ) {}
+
+  /** Counts one request for every key; false when any key is over its limit. */
+  allow(keys: string[], now = Date.now()): boolean {
+    if (this.windows.size > 10_000) {
+      for (const [key, w] of this.windows)
+        if (now - w.start >= this.windowMs) this.windows.delete(key);
+    }
+    let ok = true;
+    for (const key of keys) {
+      const current = this.windows.get(key);
+      const w = current && now - current.start < this.windowMs ? current : { start: now, count: 0 };
+      w.count++;
+      this.windows.set(key, w);
+      if (w.count > this.limit) ok = false;
+    }
+    return ok;
+  }
+}
+
+/** The wall-clock pre-check allows this much more than the window, for clock drift. */
+const WALL_CLOCK_SLACK_NS = 5n * MINUTE_NS;
 
 /** A link request's `ts` must be this close to the final-block time. */
 export const LINK_TS_WINDOW_NS = 10n * MINUTE_NS;
@@ -71,23 +108,12 @@ type LinkDecision =
  */
 export async function checkLinkRequest(
   body: unknown,
-  linking: Pick<LinkingOptions, "reader" | "clock">,
+  linking: Pick<LinkingOptions, "reader" | "botUsername">,
   now: bigint,
 ): Promise<LinkDecision> {
-  const fields = (body && typeof body === "object" ? body : {}) as Record<string, unknown>;
-  const { vault_id, role, account_id, ts, signature } = fields;
-  const problems = linkRequestProblems({ vault_id, role, account_id, ts });
-  if (typeof signature !== "string" || !/^[0-9a-f]{128}$/.test(signature)) {
-    problems.push("signature must be 64-byte compact secp256k1 hex (r ‖ s, low-S)");
-  }
-  if (problems.length) {
-    return {
-      ok: false,
-      status: 400,
-      error: `expected {vault_id, role: owner|guardian, account_id, ts, signature}: ${problems.join("; ")}`,
-    };
-  }
-  const request = { vault_id, role, account_id, ts } as LinkRequest;
+  const shape = linkRequestShape(body, linking.botUsername);
+  if (!shape.ok) return shape;
+  const { request, signature } = shape;
   const skew = BigInt(request.ts) - now;
   if (skew > LINK_TS_WINDOW_NS || -skew > LINK_TS_WINDOW_NS) {
     return { ok: false, status: 401, error: "ts is not within 10 minutes of NEAR time" };
@@ -101,6 +127,7 @@ export async function checkLinkRequest(
     }
     throw error;
   }
+  if (vault.state !== "active") return { ok: false, status: 409, error: "vault is not active" };
   const key =
     request.role === "owner"
       ? vault.owner_account === request.account_id
@@ -108,7 +135,7 @@ export async function checkLinkRequest(
         : null
       : (vault.policy.guardians.find((g) => g.guardian_account === request.account_id)
           ?.guardian_key ?? null);
-  if (!key || !verifyLinkRequest(request, signature as string, key)) {
+  if (!key || !verifyLinkRequest(request, signature, key)) {
     return {
       ok: false,
       status: 401,
@@ -116,6 +143,30 @@ export async function checkLinkRequest(
     };
   }
   return { ok: true, request };
+}
+
+/** The no-RPC part: the fields and the signature's format. The bot is this watcher's own. */
+function linkRequestShape(
+  body: unknown,
+  botUsername: string,
+):
+  | { ok: true; request: LinkRequest; signature: string }
+  | { ok: false; status: number; error: string } {
+  const fields = (body && typeof body === "object" ? body : {}) as Record<string, unknown>;
+  const { vault_id, role, account_id, ts, signature } = fields;
+  const problems = linkRequestProblems({ bot: botUsername, vault_id, role, account_id, ts });
+  if (typeof signature !== "string" || !/^[0-9a-f]{128}$/.test(signature)) {
+    problems.push("signature must be 64-byte compact secp256k1 hex (r ‖ s, low-S)");
+  }
+  if (problems.length) {
+    return {
+      ok: false,
+      status: 400,
+      error: `expected {vault_id, role: owner|guardian, account_id, ts, signature}: ${problems.join("; ")}`,
+    };
+  }
+  const request = { bot: botUsername, vault_id, role, account_id, ts } as LinkRequest;
+  return { ok: true, request, signature: signature as string };
 }
 
 /** Manual Auto-Clawback trigger; only served when an admin token and a Guardian are configured. */
@@ -150,11 +201,28 @@ async function readJson(request: IncomingMessage): Promise<unknown> {
 export async function issueLinkCode(
   body: unknown,
   linking: LinkingOptions,
+  ip?: string,
 ): Promise<{ status: number; body: unknown }> {
+  // Cheap checks first, so a flood never reaches NEAR: shape, rate limit, wall-clock window.
+  const shape = linkRequestShape(body, linking.botUsername);
+  if (!shape.ok) return { status: shape.status, body: { error: shape.error } };
+  const keys = [`vault:${shape.request.vault_id}`, ...(ip ? [`ip:${ip}`] : [])];
+  if (linking.limiter && !linking.limiter.allow(keys)) {
+    return { status: 429, body: { error: "too many link requests; try again in a minute" } };
+  }
+  const wall = linking.wallNow?.() ?? BigInt(Date.now()) * 1_000_000n;
+  const drift = BigInt(shape.request.ts) - wall;
+  if (
+    drift > LINK_TS_WINDOW_NS + WALL_CLOCK_SLACK_NS ||
+    -drift > LINK_TS_WINDOW_NS + WALL_CLOCK_SLACK_NS
+  ) {
+    return { status: 401, body: { error: "ts is not within 10 minutes of NEAR time" } };
+  }
   const now = await linking.clock.now();
   const decision = await checkLinkRequest(body, linking, now);
   if (!decision.ok) return { status: decision.status, body: { error: decision.error } };
   const { vault_id, role, account_id, ts } = decision.request;
+  // The nonce covers this watcher only: the bot is part of the signed message.
   const code = await linking.links.createCode(
     { vault_id, role, account_id },
     { key: `${vault_id}:${role}:${account_id}:${ts}`, expiresAt: BigInt(ts) + LINK_TS_WINDOW_NS },
@@ -169,8 +237,9 @@ export async function issueLinkCode(
 
 /**
  * The watcher's public HTTP API: `GET /heartbeat`; when Telegram is configured,
- * `POST /link-codes {vault_id, role, account_id, ts, signature}` (signed, single-use; see
- * `checkLinkRequest`) → `{code, deep_link}`; when Auto-Clawback and an
+ * `POST /link-codes {vault_id, role, account_id, ts, signature}` (signed over this watcher's bot
+ * username, single-use, rate-limited per IP and per Vault, 429 on excess; see `checkLinkRequest`)
+ * → `{code, deep_link}`; when Auto-Clawback and an
  * admin token are configured, `POST /clawbacks {vault_id}` with `Authorization: Bearer <token>`
  * → 202 `{job_id, vault_id, status}`. Everything else is 404.
  */
@@ -180,6 +249,7 @@ export function createApiServer(
   clawbacks?: ClawbackApiOptions,
   guard?: GuardHealthSource,
 ): Server {
+  const linkingWithLimit = linking && { limiter: new RateLimiter(), ...linking };
   return createServer((request, response) => {
     const path = new URL(request.url ?? "/", "http://localhost").pathname;
     const json = (status: number, body: unknown) =>
@@ -203,7 +273,7 @@ export function createApiServer(
     if (request.method === "POST" && path === "/link-codes" && linking) {
       readJson(request).then(
         (body) =>
-          issueLinkCode(body, linking).then(
+          issueLinkCode(body, linkingWithLimit ?? linking, request.socket.remoteAddress).then(
             (result) => json(result.status, result.body),
             () => json(503, { error: "unavailable" }),
           ),

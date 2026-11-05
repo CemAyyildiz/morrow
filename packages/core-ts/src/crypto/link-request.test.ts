@@ -15,6 +15,7 @@ const SECRET = hexToBytes("11".repeat(32));
 const OTHER = hexToBytes("22".repeat(32));
 const PUBLIC = bytesToHex(secp256k1.getPublicKey(SECRET, true));
 const REQUEST: LinkRequest = {
+  bot: "MorrowAlert_Bot",
   vault_id: "7",
   role: "owner",
   account_id: "daniel.testnet",
@@ -24,7 +25,7 @@ const REQUEST: LinkRequest = {
 describe("link requests", () => {
   it("signs the fixed message and verifies under the signing key only", () => {
     expect(linkRequestMessage(REQUEST)).toBe(
-      "morrow-link:v1:7:owner:daniel.testnet:1793608920000000000",
+      "morrow-link:v1:morrowalert_bot:7:owner:daniel.testnet:1793608920000000000",
     );
     const signature = signLinkRequest(REQUEST, SECRET);
     expect(signature).toMatch(/^[0-9a-f]{128}$/);
@@ -36,7 +37,10 @@ describe("link requests", () => {
 
   it("binds every field", () => {
     const signature = signLinkRequest(REQUEST, SECRET);
+    // The bot name is case-insensitive, as Telegram usernames are.
+    expect(verifyLinkRequest({ ...REQUEST, bot: "morrowalert_bot" }, signature, PUBLIC)).toBe(true);
     for (const changed of [
+      { bot: "OtherWatcher_Bot" },
       { vault_id: "8" },
       { role: "guardian" as const },
       { account_id: "thief.testnet" },
@@ -58,8 +62,8 @@ describe("link requests", () => {
 
   it("names each malformed field and refuses to sign one", () => {
     expect(
-      linkRequestProblems({ vault_id: "x", role: "admin", account_id: "A", ts: -1 }),
-    ).toHaveLength(4);
+      linkRequestProblems({ bot: "@x", vault_id: "x", role: "admin", account_id: "A", ts: -1 }),
+    ).toHaveLength(5);
     expect(linkRequestProblems(REQUEST)).toEqual([]);
     expect(() => signLinkRequest({ ...REQUEST, account_id: "a:owner" }, SECRET)).toThrow();
   });

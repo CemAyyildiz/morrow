@@ -12,6 +12,7 @@ import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import {
   LINK_TS_WINDOW_NS,
+  RateLimiter,
   createApiServer,
   issueLinkCode,
   type LinkingOptions,
@@ -20,7 +21,7 @@ import { InMemoryStore } from "../store.js";
 import { TelegramBot } from "./bot.js";
 import { formatAlert, formatBtc, formatTime, SAFETY_FOOTER, type Alert } from "./alerts.js";
 import { AlertsHandler, type Sender } from "./handler.js";
-import { CODE_TTL_NS, FileLinkStore, InMemoryLinkStore } from "./links.js";
+import { CODE_TTL_NS, FileLinkStore, InMemoryLinkStore, type Redeemed } from "./links.js";
 import {
   AUTO,
   CONTACT,
@@ -139,6 +140,7 @@ async function linkingSetup() {
     botUsername: "MorrowAlert_Bot",
     reader: mock,
     clock: { now: async () => mock.now() },
+    wallNow: () => mock.now(),
   };
   const owner: LinkAs = {
     vault_id: vaultId,
@@ -161,18 +163,35 @@ describe("links", () => {
     const issued = await issueLinkCode(signedBody(emma, mock.now()), linking);
     const { code } = issued.body as { code: string };
     expect(code).toMatch(/^[A-Z2-9]{8}$/);
-    expect((await links.redeem(code, 42, mock.now()))?.link).toMatchObject({
+    const from = { userId: 42, privateChat: false };
+    expect(((await links.redeem(code, 42, mock.now(), from)) as Redeemed).link).toMatchObject({
       chat_id: 42,
       vault_id: vaultId,
       role: "guardian",
       activated_at: mock.now().toString(),
+      user_id: 42,
     });
-    expect(await links.redeem(code, 43, mock.now())).toBeNull();
+    expect(await links.redeem(code, 43, mock.now(), from)).toBeNull();
     const late = await issueLinkCode(signedBody(emma, mock.now() + 1n), linking);
     expect(
-      await links.redeem((late.body as { code: string }).code, 44, mock.now() + CODE_TTL_NS + 1n),
+      await links.redeem(
+        (late.body as { code: string }).code,
+        44,
+        mock.now() + CODE_TTL_NS + 1n,
+        from,
+      ),
     ).toBeNull();
     expect((await links.linksForVault(vaultId)).map((l) => l.chat_id)).toEqual([42]);
+  });
+
+  it("accepts an owner code only from a private chat, and keeps the code for one", async () => {
+    const { mock, linking, links, owner } = await linkingSetup();
+    const issued = await issueLinkCode(signedBody(owner, mock.now()), linking);
+    const { code } = issued.body as { code: string };
+    const group = { userId: 7, privateChat: false };
+    expect(await links.redeem(code, -100, mock.now(), group)).toBe("private_chat_required");
+    const linked = await links.redeem(code, 7, mock.now(), { userId: 7, privateChat: true });
+    expect((linked as Redeemed).link).toMatchObject({ chat_id: 7, role: "owner", user_id: 7 });
   });
 });
 
@@ -194,13 +213,14 @@ describe("links made before signed link codes", () => {
       const links = new FileLinkStore(path);
       expect((await links.linksForVault("1")).map((l) => l.chat_id)).toEqual([9]);
       expect(await links.ownerLinks("1", 0n)).toEqual({ current: null, pending: null });
-      expect(await links.redeem("OLDCODE1", 9, 1_793_608_920_000_000_000n)).toBeNull();
+      const from = { userId: 9, privateChat: true };
+      expect(await links.redeem("OLDCODE1", 9, 1_793_608_920_000_000_000n, from)).toBeNull();
     } finally {
       await rm(dir, { recursive: true, force: true });
     }
   });
 
-  it("are replaced by a signed link of the same chat, which a new owner link then waits behind", async () => {
+  it("do not count as the owner link a first signed owner link would replace", async () => {
     const { linking, links, owner, vaultId, mock } = await linkingSetup();
     const first = await linkChat(linking, owner, 9);
     expect(first.replaces).toBeNull();
@@ -212,7 +232,7 @@ describe("AlertsHandler", () => {
   it("sends the alert to every chat linked to the Vault", async () => {
     const { links, linking, owner, emma, vaultId } = await linkingSetup();
     await linkChat(linking, owner, 1);
-    await linkChat(linking, { ...emma, account_id: EMMA }, 2);
+    await linkChat(linking, emma, 2);
     const sent: [number, Alert][] = [];
     const sender: Sender = { send: async (chat, alert) => void sent.push([chat, alert]) };
     const handler = new AlertsHandler({
@@ -251,6 +271,41 @@ describe("TelegramBot.send", () => {
 
   it("throws on other failures so the event is retried", async () => {
     await expect(failing(429, "Too Many Requests").send(1, alert)).rejects.toThrow();
+  });
+
+  it("puts the callback token on the wire as callback_data, with no force_reply", async () => {
+    const bot = new TelegramBot("1:test", new InMemoryLinkStore(), () => undefined, {
+      now: async () => 0n,
+    });
+    const payloads: Record<string, unknown>[] = [];
+    // Every Bot API call is answered here: nothing reaches Telegram.
+    (bot as unknown as { bot: Bot }).bot.api.config.use(async (_prev, _method, payload) => {
+      payloads.push(payload as Record<string, unknown>);
+      return {
+        ok: true,
+        result: { message_id: 1, date: 0, chat: { id: 1, type: "private" } } as never,
+      };
+    });
+    const token = "AbCdEfGhIjKlMnOpQrStUv";
+    await bot.send(1, {
+      html: "x",
+      buttons: [
+        { text: "Confirm", callback: token },
+        { text: "Open", url: "https://app.example/g/1" },
+      ],
+      forceReply: true,
+    });
+    await bot.send(1, { html: "type it", buttons: [], forceReply: true });
+    expect(payloads[0]?.reply_markup).toEqual({
+      inline_keyboard: [
+        [
+          { text: "Confirm", callback_data: token },
+          { text: "Open", url: "https://app.example/g/1" },
+        ],
+      ],
+    });
+    expect(Buffer.byteLength(token)).toBeLessThanOrEqual(64);
+    expect(payloads[1]?.reply_markup).toEqual({ force_reply: true });
   });
 });
 
@@ -296,6 +351,8 @@ describe("POST /link-codes", () => {
       expect((await post(signedBody(owner, stale))).status).toBe(401);
       expect((await post(signedBody(owner, now + LINK_TS_WINDOW_NS + 1n))).status).toBe(401);
       expect((await post(signedBody({ ...owner, vault_id: "999" }, now))).status).toBe(404);
+      // Signed for another watcher's bot: no good here.
+      expect((await post(signedBody(owner, now + 9n, "OtherWatcher_Bot"))).status).toBe(401);
       // Single use: the same signed request twice.
       const once = signedBody(owner, now + 8n);
       expect((await post(once)).status).toBe(201);
@@ -307,9 +364,53 @@ describe("POST /link-codes", () => {
     }
   });
 
-  it("answers 503 when NEAR time is unavailable", async () => {
+  it("throws when NEAR time is unavailable, which the server answers with 503", async () => {
     const { linking, owner, mock } = await linkingSetup();
     const down = { ...linking, clock: { now: () => Promise.reject(new Error("rpc down")) } };
     await expect(issueLinkCode(signedBody(owner, mock.now()), down)).rejects.toThrow();
+    const server = createApiServer(new InMemoryStore(), down).listen(0);
+    await new Promise((resolve) => server.once("listening", resolve));
+    const { port } = server.address() as { port: number };
+    try {
+      const response = await fetch(`http://127.0.0.1:${port}/link-codes`, {
+        method: "POST",
+        body: JSON.stringify(signedBody(owner, mock.now())),
+      });
+      expect(response.status).toBe(503);
+    } finally {
+      server.close();
+    }
+  });
+
+  it("does the cheap checks before any RPC, limits per IP and per Vault, needs an active Vault", async () => {
+    const { linking, owner, mock, vaultId } = await linkingSetup();
+    let reads = 0;
+    const counted: LinkingOptions = {
+      ...linking,
+      clock: { now: async () => (reads++, mock.now()) },
+      reader: { getVault: async (id) => (reads++, mock.getVault(id)) },
+    };
+    // Malformed, or far from the wall clock: refused with no RPC at all.
+    expect((await issueLinkCode({ vault_id: vaultId }, counted)).status).toBe(400);
+    const farAway = signedBody(owner, mock.now() - 2n * LINK_TS_WINDOW_NS);
+    expect((await issueLinkCode(farAway, counted)).status).toBe(401);
+    expect(reads).toBe(0);
+
+    const limited = { ...linking, limiter: new RateLimiter(2) };
+    const at = (n: bigint) => signedBody(owner, mock.now() - n);
+    expect((await issueLinkCode(at(1n), limited, "1.2.3.4")).status).toBe(201);
+    expect((await issueLinkCode(at(2n), limited, "1.2.3.4")).status).toBe(201);
+    expect((await issueLinkCode(at(3n), limited, "5.6.7.8")).status).toBe(429); // same Vault
+    const other = new RateLimiter(2);
+    expect(other.allow(["ip:a"])).toBe(true);
+    expect(other.allow(["ip:a"])).toBe(true);
+    expect(other.allow(["ip:a"])).toBe(false);
+    expect(other.allow(["ip:a"], Date.now() + 60_000)).toBe(true);
+
+    const inactive: LinkingOptions = {
+      ...linking,
+      reader: { getVault: async (id) => ({ ...(await mock.getVault(id)), state: "clawed_back" }) },
+    };
+    expect((await issueLinkCode(at(4n), inactive)).status).toBe(409);
   });
 });

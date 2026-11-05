@@ -43,7 +43,16 @@ export class TelegramBot implements Sender {
         );
         return;
       }
-      const redeemed = await this.links.redeem(code, ctx.chat.id, now);
+      const redeemed = await this.links.redeem(code, ctx.chat.id, now, {
+        userId: ctx.from?.id ?? 0,
+        privateChat: ctx.chat.type === "private",
+      });
+      if (redeemed === "private_chat_required") {
+        await ctx.reply(
+          "An Owner link works only in a private chat with this bot. Open the same link from your own chat with the bot.",
+        );
+        return;
+      }
       if (!redeemed) {
         await ctx.reply("That link has expired or was already used. Ask for a new one.");
         return;
@@ -55,7 +64,8 @@ export class TelegramBot implements Sender {
         pending: link.pending_replace_of != null,
       });
       await ctx.reply(linkedReply(redeemed));
-      await this.actions?.announceLink(redeemed);
+      // Queued by the store; delivered now, and retried by the link ticker if a send fails.
+      await this.actions?.tickLinks();
     });
 
     this.bot.on("callback_query:data", async (ctx) => {
@@ -66,7 +76,7 @@ export class TelegramBot implements Sender {
       }
       let result;
       try {
-        result = await this.actions.press(chatId, ctx.callbackQuery.data);
+        result = await this.actions.press(chatId, ctx.from.id, ctx.callbackQuery.data);
       } catch (error) {
         this.log("error", "telegram button failed", { error: failure(error) });
         await ctx.answerCallbackQuery({ text: "Something went wrong. Try again in a minute." });
@@ -83,7 +93,7 @@ export class TelegramBot implements Sender {
     this.bot.on("message:text", async (ctx) => {
       if (!this.actions || ctx.message.text.startsWith("/")) return;
       try {
-        await this.actions.reply(ctx.chat.id, ctx.message.text);
+        await this.actions.reply(ctx.chat.id, ctx.from.id, ctx.message.text);
       } catch (error) {
         this.log("error", "telegram reply failed", { error: failure(error) });
         await ctx.reply("Something went wrong. Press Confirm again in a minute.");

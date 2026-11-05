@@ -20,12 +20,19 @@ export interface ConfirmationRequests {
 /**
  * True when the guard leaves the change to apply: the Owner confirmed it, the confirmation is
  * bound to exactly this change as the contract has it now, and it is not duress-flagged (duress
- * always wins). Anything else is vetoed.
+ * always wins). With a watcher key configured, a flag the guard could not read counts as duress
+ * (fail-closed); without one every flag reads `unknown` and the loosening rule alone decides.
+ * Anything else is vetoed.
  */
-export function confirmedAndClean(entry: GuardEntry, change: PolicyChange): boolean {
+export function confirmedAndClean(
+  entry: GuardEntry,
+  change: PolicyChange,
+  envelopeKeyConfigured = false,
+): boolean {
   return (
     entry.confirmation === "confirmed" &&
     entry.duress !== "duress" &&
+    !(envelopeKeyConfigured && entry.duress === "unknown") &&
     entry.binding !== null &&
     entry.binding === changeBinding(change)
   );
@@ -47,6 +54,8 @@ export interface GuardTickerOptions {
   callTimeoutMs?: number;
   /** Owner Confirmation; without it no request is sent and every loosening change is vetoed. */
   requests?: ConfirmationRequests;
+  /** `MORROW_WATCHER_X25519_SK` is set: an unreadable duress flag then counts as duress. */
+  envelopeKeyConfigured?: boolean;
 }
 
 /** The change was settled by someone else between the read and the veto. */
@@ -206,7 +215,11 @@ export class GuardTicker {
     // The latest confirmation state: the Owner may have confirmed or rejected since the snapshot.
     const latest = (await this.options.store.entry(entry.change_id)) ?? entry;
     if (latest.status !== "scheduled") return;
-    if (confirmedAndClean(latest, state)) return this.leave(latest);
+    if (confirmedAndClean(latest, state, this.options.envelopeKeyConfigured)) {
+      if (await this.leave(latest, changeBinding(state))) return;
+      // A Reject (or another write) won the race: veto unless the entry is already final.
+      if ((await this.options.store.entry(entry.change_id))?.status !== "scheduled") return;
+    }
     try {
       await within(this.callTimeoutMs, "veto_policy_change", () =>
         this.options.signer.vetoPolicyChange(entry.change_id),
@@ -242,17 +255,19 @@ export class GuardTicker {
    * The Owner confirmed the change: no veto. Logged neutrally, with no reasons, confirmation or
    * duress details.
    */
-  private async leave(entry: GuardEntry): Promise<void> {
-    const stored = await this.options.store.update(
-      { ...entry, status: "skipped", cause: "owner confirmed", last_error: null },
-      "scheduled",
+  private async leave(entry: GuardEntry, binding: string): Promise<boolean> {
+    // Compare-and-set on the stored entry, so a Reject recorded since the read wins.
+    const stored = await this.options.store.modify(entry.change_id, (e) =>
+      e.status === "scheduled" && e.confirmation === "confirmed" && e.binding === binding
+        ? { ...e, status: "skipped", cause: "owner confirmed", last_error: null }
+        : null,
     );
-    if (stored) {
-      this.options.log("info", "loosening guard: veto decision made; no veto sent", {
-        vault_id: entry.vault_id,
-        change_id: entry.change_id,
-      });
-    }
+    if (!stored) return false;
+    this.options.log("info", "loosening guard: veto decision made; no veto sent", {
+      vault_id: entry.vault_id,
+      change_id: entry.change_id,
+    });
+    return true;
   }
 
   /** The change is no longer pending and the guard did not veto it. */

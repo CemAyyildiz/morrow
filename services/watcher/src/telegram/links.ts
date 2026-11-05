@@ -26,6 +26,21 @@ export interface Link {
   pending_replace_of?: number | null;
   /** On the owner link in force: the chat id of its pending replacement. */
   replaced_by?: number | null;
+  /**
+   * The Telegram user who redeemed the code. Owner links are made only in private chats, and
+   * only this user's button presses and replies count for them.
+   */
+  user_id?: number;
+  /** Chats still to be told about this new link (R4); each is removed once a send succeeds. */
+  announce_to?: number[];
+  /** Whether the link's activation (maturity, approval or promotion) was already queued. */
+  activation_noted?: boolean;
+  /** Chats still to be told that this owner link became active. */
+  active_announce_to?: number[];
+  /** On an owner link that took over: the chat of the owner link it replaced. */
+  replaced_chat?: number | null;
+  /** On a link made before signed codes: the one-time re-link notice was sent. */
+  legacy_notified?: boolean;
 }
 
 interface PendingCode {
@@ -62,9 +77,14 @@ export interface Prompt {
   change_id: U64;
   /** The last 6 characters of the new Recovery Address, lowercase. */
   suffix: string;
-  /** NEAR time (ns) the window closes. */
+  /** NEAR time (ns) the window closes; fixed when Confirm is pressed, never extended. */
   expires_at: U64;
+  /** Wrong answers so far; at `MAX_PROMPT_ATTEMPTS` the chat is locked out until `expires_at`. */
+  attempts: number;
 }
+
+/** Wrong answers allowed in one typed-confirmation window. */
+export const MAX_PROMPT_ATTEMPTS = 3;
 
 interface State {
   links: Link[];
@@ -90,21 +110,75 @@ export const isSigned = (link: Link): boolean => typeof link.activated_at === "s
 const isOwnerOf = (link: Link, vaultId: string) =>
   link.vault_id === vaultId && link.role === "owner" && isSigned(link);
 
+const unique = (chats: number[]) => [...new Set(chats)];
+
+const guardianChats = (state: State, vaultId: string) =>
+  state.links.filter((l) => l.vault_id === vaultId && l.role === "guardian").map((l) => l.chat_id);
+
 /**
- * Lets every pending owner replacement whose `activated_at` has passed take over: the link it
- * replaced is removed. A pending link whose target is gone stands on its own.
+ * Queues the activation notice of an owner link: to the link's own chat, the chat it replaced
+ * (if any) and every Guardian chat of the Vault.
  */
-function promote(state: State, now: bigint): void {
+function noteActivation(state: State, link: Link, replaced: number | null): void {
+  link.activation_noted = true;
+  link.replaced_chat = replaced;
+  link.active_announce_to = unique([
+    ...(replaced === null ? [] : [replaced]),
+    link.chat_id,
+    ...guardianChats(state, link.vault_id),
+  ]);
+}
+
+/**
+ * Whether `byChat` may approve or cancel `pendingChat`: it is the owner link in force, already
+ * active, and `pendingChat` is its pending replacement. An immature link in force has no say.
+ */
+function replacementDecider(
+  current: Link | null,
+  pending: Link | null,
+  byChat: number,
+  pendingChat: number,
+  now: bigint,
+): boolean {
+  return (
+    current !== null &&
+    pending !== null &&
+    current.chat_id === byChat &&
+    pending.chat_id === pendingChat &&
+    BigInt(current.activated_at as string) <= now
+  );
+}
+
+/**
+ * The one place owner links move with time, run by every read and write: a pending replacement
+ * whose `activated_at` has passed takes over (the link it replaced is removed), a pending link
+ * whose target is gone stands on its own, and a link that becomes active has its activation
+ * announced. Returns whether anything changed, so the caller persists it.
+ */
+function promote(state: State, now: bigint): boolean {
+  let changed = false;
   for (const link of [...state.links]) {
-    if (!isSigned(link) || link.role !== "owner" || link.pending_replace_of == null) continue;
-    const target = state.links.find(
-      (l) => isOwnerOf(l, link.vault_id) && l.chat_id === link.pending_replace_of,
-    );
-    if (target && BigInt(link.activated_at as string) > now) continue;
-    if (target) state.links = state.links.filter((l) => l !== target);
-    link.pending_replace_of = null;
-    link.replaced_by = null;
+    if (!isSigned(link) || link.role !== "owner") continue;
+    if (link.pending_replace_of != null) {
+      const target = state.links.find(
+        (l) => isOwnerOf(l, link.vault_id) && l.chat_id === link.pending_replace_of,
+      );
+      if (target && BigInt(link.activated_at as string) > now) continue;
+      if (target) state.links = state.links.filter((l) => l !== target);
+      link.pending_replace_of = null;
+      link.replaced_by = null;
+      changed = true;
+      if (target) {
+        noteActivation(state, link, target.chat_id);
+        continue;
+      }
+    }
+    if (!link.activation_noted && BigInt(link.activated_at as string) <= now) {
+      noteActivation(state, link, null);
+      changed = true;
+    }
   }
+  return changed;
 }
 
 function ownerPair(state: State, vaultId: string): OwnerLinks {
@@ -159,6 +233,24 @@ export abstract class LinkStore {
   }
 
   /**
+   * Runs `work` on the state inside the write queue, after `promote` when `now` is given (so
+   * every reader sees the same owner links). Saves when `work` says it wrote or promotion
+   * changed something.
+   */
+  private run<T>(
+    now: bigint | null,
+    work: (state: State) => { result: T; write: boolean } | Promise<{ result: T; write: boolean }>,
+  ): Promise<T> {
+    return this.exclusive(async () => {
+      const state = await this.read();
+      const promoted = now !== null && promote(state, now);
+      const { result, write } = await work(state);
+      if (write || promoted) await this.save(state);
+      return result;
+    });
+  }
+
+  /**
    * A single-use 8-character code that links the chat that sends it to this Vault role, or null
    * when `nonce` (a signed request) was already used. The caller has checked the signature.
    */
@@ -188,25 +280,33 @@ export abstract class LinkStore {
   }
 
   /**
-   * Consumes a code and links the chat; null if the code is unknown or expired. A first owner
+   * Consumes a code and links the chat; null if the code is unknown or expired, and
+   * `private_chat_required` (the code is kept) for an owner code sent from a group. A first owner
    * link activates after `OWNER_LINK_MATURITY_NS`; a later one is a pending replacement of the
    * link in force (superseding an earlier pending one), which the chat in force may approve or
-   * cancel. Written before the caller answers the chat.
+   * cancel once it is active. Every other chat of the Vault is queued to be told (R4). Written
+   * before the caller answers the chat.
    */
-  redeem(code: string, chatId: number, now: bigint): Promise<Redeemed | null> {
-    return this.exclusive(async () => {
-      const state = await this.read();
+  redeem(
+    code: string,
+    chatId: number,
+    now: bigint,
+    from: { userId: number; privateChat: boolean },
+  ): Promise<Redeemed | "private_chat_required" | null> {
+    return this.run<Redeemed | "private_chat_required" | null>(now, (state) => {
       const key = code.trim().toUpperCase();
       const pending = state.codes[key];
-      if (!pending || BigInt(pending.expires_at) < now) return null;
+      if (!pending || BigInt(pending.expires_at) < now) return { result: null, write: false };
+      if (pending.role === "owner" && !from.privateChat) {
+        return { result: "private_chat_required" as const, write: false };
+      }
       state.codes = Object.fromEntries(Object.entries(state.codes).filter(([c]) => c !== key));
-      promote(state, now);
       const { vault_id: vaultId, role } = pending;
       const mine = (l: Link) => l.chat_id === chatId && l.vault_id === vaultId && l.role === role;
       const same = state.links.find((l) => mine(l) && isSigned(l));
       if (same) {
-        await this.save(state);
-        return { link: same, relinked: true, replaces: null, superseded: null, others: [] };
+        const result = { link: same, relinked: true, replaces: null, superseded: null, others: [] };
+        return { result, write: true };
       }
       // A link made before signed codes is replaced by the signed one.
       state.links = state.links.filter((l) => !mine(l));
@@ -219,6 +319,7 @@ export abstract class LinkStore {
         if (superseded) state.links = state.links.filter((l) => l !== superseded);
         if (replaces) replaces.replaced_by = chatId;
       }
+      const others = state.links.filter((l) => l.vault_id === vaultId);
       const link: Link = {
         chat_id: chatId,
         vault_id: vaultId,
@@ -228,28 +329,78 @@ export abstract class LinkStore {
         activated_at: (role === "owner" ? now + OWNER_LINK_MATURITY_NS : now).toString(),
         pending_replace_of: replaces?.chat_id ?? null,
         replaced_by: null,
+        user_id: from.userId,
+        // A superseded pending chat is told too: it learns why it no longer counts.
+        announce_to: unique([
+          ...others.map((l) => l.chat_id),
+          ...(superseded ? [superseded.chat_id] : []),
+        ]).filter((c) => c !== chatId),
+        activation_noted: role === "guardian",
+        active_announce_to: [],
+        replaced_chat: null,
       };
-      const others = state.links.filter((l) => l.vault_id === vaultId);
       state.links.push(link);
-      await this.save(state);
-      return { link, relinked: false, replaces, superseded, others };
+      return { result: { link, relinked: false, replaces, superseded, others }, write: true };
     });
   }
 
-  async linksForVault(vaultId: string): Promise<Link[]> {
-    return (await this.read()).links.filter((l) => l.vault_id === vaultId);
+  /** The Vault's links as of `now` (promoted); without `now`, as last stored. */
+  linksForVault(vaultId: string, now: bigint | null = null): Promise<Link[]> {
+    return this.run(now, (state) => ({
+      result: state.links.filter((l) => l.vault_id === vaultId),
+      write: false,
+    }));
   }
 
   /** The owner link in force and its pending replacement, as of `now`. */
-  async ownerLinks(vaultId: string, now: bigint): Promise<OwnerLinks> {
-    const state = await this.read();
-    promote(state, now);
-    return ownerPair(state, vaultId);
+  ownerLinks(vaultId: string, now: bigint): Promise<OwnerLinks> {
+    return this.run(now, (state) => ({ result: ownerPair(state, vaultId), write: false }));
+  }
+
+  /** Links with chats still to be told about them, as of `now`. */
+  announcements(now: bigint): Promise<Link[]> {
+    return this.run(now, (state) => ({
+      result: state.links.filter((l) => l.announce_to?.length || l.active_announce_to?.length),
+      write: false,
+    }));
+  }
+
+  /** Records that `chat` was told about `link` (`link`: its creation, `active`: its activation). */
+  markAnnounced(link: Link, kind: "link" | "active", chat: number): Promise<void> {
+    return this.run(null, (state) => {
+      const stored = state.links.find(
+        (l) => l.vault_id === link.vault_id && l.chat_id === link.chat_id && l.role === link.role,
+      );
+      if (!stored) return { result: undefined, write: false };
+      const field = kind === "link" ? "announce_to" : "active_announce_to";
+      stored[field] = (stored[field] ?? []).filter((c) => c !== chat);
+      return { result: undefined, write: true };
+    });
+  }
+
+  /** Owner links made before signed codes that have not had the re-link notice. */
+  legacyOwnerLinks(): Promise<Link[]> {
+    return this.run(null, (state) => ({
+      result: state.links.filter((l) => l.role === "owner" && !isSigned(l) && !l.legacy_notified),
+      write: false,
+    }));
+  }
+
+  markLegacyNotified(link: Link): Promise<void> {
+    return this.run(null, (state) => {
+      for (const l of state.links) {
+        if (l.vault_id === link.vault_id && l.chat_id === link.chat_id && !isSigned(l)) {
+          l.legacy_notified = true;
+        }
+      }
+      return { result: undefined, write: true };
+    });
   }
 
   /**
-   * The chat in force approves its pending replacement: the new link takes over at once with the
-   * old link's `activated_at`, and the old link is removed. Null when there is nothing to approve.
+   * The chat in force, once active, approves its pending replacement: the new link takes over at
+   * once with the old link's `activated_at`, the old link is removed, and the change is queued
+   * for announcement. Null when there is nothing to approve or the chat in force is not active.
    */
   approveReplacement(
     vaultId: string,
@@ -257,40 +408,36 @@ export abstract class LinkStore {
     pendingChat: number,
     now: bigint,
   ): Promise<{ link: Link; replaced: Link } | null> {
-    return this.exclusive(async () => {
-      const state = await this.read();
-      promote(state, now);
+    return this.run(now, (state) => {
       const { current, pending } = ownerPair(state, vaultId);
-      if (!current || !pending || current.chat_id !== byChat || pending.chat_id !== pendingChat) {
-        return null;
+      if (!replacementDecider(current, pending, byChat, pendingChat, now)) {
+        return { result: null, write: false };
       }
-      pending.activated_at = current.activated_at as string;
-      pending.pending_replace_of = null;
-      pending.replaced_by = null;
-      state.links = state.links.filter((l) => l !== current);
-      await this.save(state);
-      return { link: pending, replaced: current };
+      const [old, next] = [current as Link, pending as Link];
+      next.activated_at = old.activated_at as string;
+      next.pending_replace_of = null;
+      next.replaced_by = null;
+      state.links = state.links.filter((l) => l !== old);
+      noteActivation(state, next, old.chat_id);
+      return { result: { link: next, replaced: old }, write: true };
     });
   }
 
-  /** The chat in force cancels its pending replacement; returns the dropped link. */
+  /** The chat in force, once active, cancels its pending replacement; returns the dropped link. */
   cancelReplacement(
     vaultId: string,
     byChat: number,
     pendingChat: number,
     now: bigint,
   ): Promise<Link | null> {
-    return this.exclusive(async () => {
-      const state = await this.read();
-      promote(state, now);
+    return this.run(now, (state) => {
       const { current, pending } = ownerPair(state, vaultId);
-      if (!current || !pending || current.chat_id !== byChat || pending.chat_id !== pendingChat) {
-        return null;
+      if (!replacementDecider(current, pending, byChat, pendingChat, now)) {
+        return { result: null, write: false };
       }
       state.links = state.links.filter((l) => l !== pending);
-      current.replaced_by = null;
-      await this.save(state);
-      return pending;
+      (current as Link).replaced_by = null;
+      return { result: pending, write: true };
     });
   }
 
@@ -315,6 +462,11 @@ export abstract class LinkStore {
   async callback(token: string): Promise<CallbackGrant | null> {
     const callbacks = (await this.read()).callbacks;
     return Object.hasOwn(callbacks, token) ? (callbacks[token] ?? null) : null;
+  }
+
+  /** Whether any stored token's grant matches. */
+  async hasCallback(match: (grant: CallbackGrant) => boolean): Promise<boolean> {
+    return Object.values((await this.read()).callbacks).some(match);
   }
 
   /** Voids every token whose grant matches (all buttons of an answered request). */

@@ -903,6 +903,19 @@ describe("guard health", () => {
     } finally {
       plain.close();
     }
+    // A guard whose health cannot be read (its store is broken): 503, not a partial heartbeat.
+    const broken = createApiServer(main, undefined, undefined, () =>
+      Promise.reject(new Error("guard file unreadable")),
+    ).listen(0);
+    await new Promise((resolve) => broken.once("listening", resolve));
+    try {
+      const { port: b } = broken.address() as AddressInfo;
+      const response = await fetch(`http://127.0.0.1:${b}/heartbeat`);
+      expect(response.status).toBe(503);
+      expect(await response.json()).toEqual({ error: "unavailable" });
+    } finally {
+      broken.close();
+    }
   });
 });
 

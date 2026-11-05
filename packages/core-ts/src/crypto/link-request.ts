@@ -10,9 +10,13 @@ export type LinkRequestRole = "owner" | "guardian";
 
 /**
  * A request for a Telegram link code (`POST /link-codes`), signed by the Vault's own key: the
- * Owner Key for the Owner role, the Guardian's `guardian_key` for a Guardian.
+ * Owner Key for the Owner role, the Guardian's `guardian_key` for a Guardian. The watcher's bot
+ * username is part of the signed message, so a request seen in transit cannot be replayed to
+ * another watcher.
  */
 export interface LinkRequest {
+  /** The watcher's Telegram bot username (without `@`); compared case-insensitively. */
+  bot: string;
   vault_id: U64;
   role: LinkRequestRole;
   account_id: AccountId;
@@ -21,6 +25,7 @@ export interface LinkRequest {
 }
 
 const U64_PATTERN = /^(0|[1-9]\d*)$/;
+const BOT_USERNAME = /^[A-Za-z][A-Za-z0-9_]{4,31}$/;
 const NEAR_ACCOUNT = /^(?=.{2,64}$)(([a-z\d]+[-_])*[a-z\d]+\.)*([a-z\d]+[-_])*[a-z\d]+$/;
 
 /** Field problems, or an empty list when `request` can be signed and checked. */
@@ -28,6 +33,9 @@ export function linkRequestProblems(
   request: Partial<Record<keyof LinkRequest, unknown>>,
 ): string[] {
   const problems: string[] = [];
+  if (typeof request.bot !== "string" || !BOT_USERNAME.test(request.bot)) {
+    problems.push("bot must be the watcher's Telegram bot username");
+  }
   const u64 = (value: unknown) =>
     typeof value === "string" && U64_PATTERN.test(value) && BigInt(value) < 2n ** 64n;
   if (!u64(request.vault_id)) problems.push("vault_id must be a u64 decimal string");
@@ -41,12 +49,12 @@ export function linkRequestProblems(
   return problems;
 }
 
-/** `morrow-link:v1:<vault_id>:<role>:<account_id>:<ts>`; no field can hold a `:`. */
+/** `morrow-link:v1:<bot>:<vault_id>:<role>:<account_id>:<ts>` (bot lowercased); no field can hold a `:`. */
 export function linkRequestMessage(request: LinkRequest): string {
   const problems = linkRequestProblems(request);
   if (problems.length) throw new CryptoError(`Invalid link request: ${problems.join("; ")}`);
-  const { vault_id, role, account_id, ts } = request;
-  return `morrow-link:v1:${vault_id}:${role}:${account_id}:${ts}`;
+  const { bot, vault_id, role, account_id, ts } = request;
+  return `morrow-link:v1:${bot.toLowerCase()}:${vault_id}:${role}:${account_id}:${ts}`;
 }
 
 /** The 32-byte digest that is signed: sha256 of the UTF-8 message. */
