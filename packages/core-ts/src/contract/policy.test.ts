@@ -6,7 +6,9 @@ import {
   HOUR_NS,
   MINUTE_NS,
   CHANGEABLE_FIELDS,
+  isLoosening,
   isPlausibleAddress,
+  looseningReasons,
   validatePolicy,
   validatePolicyChange,
 } from "./policy.js";
@@ -145,5 +147,95 @@ describe("parseContractError", () => {
 
   it("ignores unknown codes", () => {
     expect(parseContractError("ERR_SOMETHING_NEW")).toBeNull();
+  });
+});
+
+describe("isLoosening", () => {
+  // Standard preset: Delay 24 h, Policy Change Delay 7 d, Fee Cap 100k, allowance 100k, Floor 10 min.
+  const current = signetPolicy({ fast_approval: true });
+  const off = signetPolicy();
+
+  it("is true for each loosening field", () => {
+    const loosening: [object, string][] = [
+      [{ recovery_address: `tb1qnewrcv${"q".repeat(32)}` }, "recovery_address changed"],
+      [{ delay_ns: (23n * HOUR_NS).toString() }, "delay_ns lowered"],
+      [{ policy_change_delay_ns: (6n * DAY_NS).toString() }, "policy_change_delay_ns lowered"],
+      [{ allowance_limit_sats: "100001" }, "allowance_limit_sats raised"],
+      [{ fee_cap_sats: "100001" }, "fee_cap_sats raised"],
+      [{ fast_approval_floor_ns: (9n * MINUTE_NS).toString() }, "fast_approval_floor_ns lowered"],
+    ];
+    for (const [changes, reason] of loosening) {
+      expect(isLoosening(current, changes), reason).toBe(true);
+      expect(looseningReasons(current, changes)).toEqual([reason]);
+    }
+    expect(looseningReasons(off, { fast_approval: true })).toEqual(["fast_approval enabled"]);
+  });
+
+  it("is false for each tightening or unchanged field", () => {
+    const tightening: object[] = [
+      { delay_ns: (25n * HOUR_NS).toString() },
+      { policy_change_delay_ns: (8n * DAY_NS).toString() },
+      { allowance_limit_sats: "99999" },
+      { allowance_limit_sats: "0" },
+      { fee_cap_sats: "99999" },
+      { fast_approval: false },
+      { fast_approval_floor_ns: (11n * MINUTE_NS).toString() },
+      { recovery_address: current.recovery_address },
+      { delay_ns: current.delay_ns, fee_cap_sats: current.fee_cap_sats },
+      {},
+    ];
+    for (const changes of tightening) {
+      expect(isLoosening(current, changes), JSON.stringify(changes)).toBe(false);
+    }
+    expect(isLoosening(off, { fast_approval: false })).toBe(false);
+  });
+
+  it("is true for a mix with any loosening field, with one reason per loosening field", () => {
+    const mixed = { delay_ns: (48n * HOUR_NS).toString(), fee_cap_sats: "200000" };
+    expect(isLoosening(current, mixed)).toBe(true);
+    expect(looseningReasons(current, mixed)).toEqual(["fee_cap_sats raised"]);
+    const both = { ...mixed, recovery_address: `tb1qnewrcv${"q".repeat(32)}` };
+    expect(looseningReasons(current, both)).toEqual([
+      "fee_cap_sats raised",
+      "recovery_address changed",
+    ]);
+  });
+
+  it("accepts the whole resulting Policy", () => {
+    const tighter = validatePolicyChange(current, { delay_ns: (48n * HOUR_NS).toString() });
+    expect(isLoosening(current, tighter)).toBe(false);
+    expect(isLoosening(current, current)).toBe(false);
+    const looser = validatePolicyChange(current, { delay_ns: (2n * HOUR_NS).toString() });
+    expect(looseningReasons(current, looser)).toEqual(["delay_ns lowered"]);
+  });
+
+  it("fails closed on unknown fields and malformed values", () => {
+    expect(looseningReasons(current, { escape_timelock_blocks: 1 })).toEqual([
+      "escape_timelock_blocks is not a changeable field",
+    ]);
+    expect(looseningReasons(current, { guardians: [] })).toEqual([
+      "guardians is not a changeable field",
+    ]);
+    expect(looseningReasons(current, { something_new: "1" })).toEqual([
+      "something_new is not a changeable field",
+    ]);
+    expect(looseningReasons(current, { delay_ns: 1 })).toEqual(["delay_ns is not a u64"]);
+    expect(looseningReasons(current, { fee_cap_sats: "-1" })).toEqual([
+      "fee_cap_sats is not a u64",
+    ]);
+    expect(looseningReasons(current, { fee_cap_sats: "0100000" })).toEqual([
+      "fee_cap_sats is not a u64",
+    ]);
+    expect(looseningReasons(off, { fast_approval: "false" })).toEqual([
+      "fast_approval is not a boolean",
+    ]);
+    // An unchanged Script-bound field is no reason.
+    expect(isLoosening(current, { guardians: structuredClone(current.guardians) })).toBe(false);
+  });
+
+  it("compares u64 values as BigInt, beyond Number precision", () => {
+    const big = signetPolicy({ allowance_limit_sats: "18446744073709551614" });
+    expect(isLoosening(big, { allowance_limit_sats: "18446744073709551615" })).toBe(true);
+    expect(isLoosening(big, { allowance_limit_sats: "18446744073709551613" })).toBe(false);
   });
 });

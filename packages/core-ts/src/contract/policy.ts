@@ -209,6 +209,56 @@ export function validatePolicyChange(current: Policy, changes: object): Policy {
   return next;
 }
 
+/** u64 fields where a lower value loosens the Policy. */
+const LOWER_LOOSENS = ["delay_ns", "policy_change_delay_ns", "fast_approval_floor_ns"] as const;
+/** u64 fields where a higher value loosens the Policy. */
+const HIGHER_LOOSENS = ["allowance_limit_sats", "fee_cap_sats"] as const;
+
+const sameValue = (a: unknown, b: unknown) => JSON.stringify(a) === JSON.stringify(b);
+
+/**
+ * Why `next` would loosen `current`, one reason per field (empty when it would not). `next` is the
+ * resulting Policy or just the changed fields; only keys present on `next` are compared.
+ *
+ * Fail-closed (AD-21 / FR-32): a field is loosening unless it is provably unchanged or tightening.
+ * A new Recovery Address, a lower Delay, Policy Change Delay or Fast Approval Floor, a higher
+ * Allowance limit or Fee Cap, and Fast Approval turned on are loosening, and so is any field
+ * outside the changeable set that differs, and any value of the wrong type or format.
+ */
+export function looseningReasons(current: Policy, next: object): string[] {
+  const reasons: string[] = [];
+  for (const [field, value] of Object.entries(next)) {
+    const old = (current as unknown as Record<string, unknown>)[field];
+    if (sameValue(old, value)) continue;
+    if ((LOWER_LOOSENS as readonly string[]).includes(field)) {
+      if (typeof value !== "string" || !isU64(value) || typeof old !== "string" || !isU64(old)) {
+        reasons.push(`${field} is not a u64`);
+      } else if (BigInt(value) < BigInt(old)) {
+        reasons.push(`${field} lowered`);
+      }
+    } else if ((HIGHER_LOOSENS as readonly string[]).includes(field)) {
+      if (typeof value !== "string" || !isU64(value) || typeof old !== "string" || !isU64(old)) {
+        reasons.push(`${field} is not a u64`);
+      } else if (BigInt(value) > BigInt(old)) {
+        reasons.push(`${field} raised`);
+      }
+    } else if (field === "fast_approval") {
+      if (value === true) reasons.push("fast_approval enabled");
+      else if (value !== false) reasons.push("fast_approval is not a boolean");
+    } else if (field === "recovery_address") {
+      reasons.push("recovery_address changed");
+    } else {
+      reasons.push(`${field} is not a changeable field`);
+    }
+  }
+  return reasons;
+}
+
+/** True when `next` would loosen `current`; see `looseningReasons`. */
+export function isLoosening(current: Policy, next: object): boolean {
+  return looseningReasons(current, next).length > 0;
+}
+
 export interface PresetInputs {
   plannedDepositSats: bigint;
   guardians: Guardian[];

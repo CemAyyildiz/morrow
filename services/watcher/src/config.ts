@@ -22,6 +22,11 @@ export interface WatcherConfig {
    * on every Withdrawal Request and have every Policy Change vetoed. Off when null.
    */
   challengeOwnerParent: string | null;
+  /**
+   * `MORROW_WATCHER_X25519_SK`: 32-byte X25519 secret (hex) the Watcher Envelopes are sealed to,
+   * so the loosening guard can read the duress flag. Never log it. Without it the flag is unknown.
+   */
+  watcherEnvelopeSecretKey: string | null;
 }
 
 export interface GuardianConfig {
@@ -93,6 +98,10 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): WatcherConfig 
       );
     }
   }
+  const watcherEnvelopeSecretKey = env.MORROW_WATCHER_X25519_SK || null;
+  if (watcherEnvelopeSecretKey !== null && !/^[0-9a-f]{64}$/i.test(watcherEnvelopeSecretKey)) {
+    throw new Error("MORROW_WATCHER_X25519_SK must be a 32-byte hex secret key");
+  }
   return {
     nearNetwork,
     nearRpcUrl: nearNetwork === "mock" ? null : (env.MORROW_NEAR_RPC_URL ?? NEAR_RPC[nearNetwork]),
@@ -109,5 +118,6 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): WatcherConfig 
     clawbackFeeRate,
     adminToken: env.MORROW_WATCHER_ADMIN_TOKEN || null,
     challengeOwnerParent,
+    watcherEnvelopeSecretKey: watcherEnvelopeSecretKey?.toLowerCase() ?? null,
   };
 }

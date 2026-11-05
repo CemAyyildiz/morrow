@@ -142,6 +142,7 @@ describe("@morrow/core-ts/browser", () => {
       pending_change: change,
     };
     expect(vault.pending_change?.changes.recovery_address).toBe("tb1qnew");
+    expect(browser.looseningReasons(policy, change.changes)).toEqual(["recovery_address changed"]);
     // Types leave nothing behind at run time.
     for (const name of [
       "Vault",

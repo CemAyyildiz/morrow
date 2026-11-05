@@ -21,6 +21,7 @@ export {
   type EventKind,
   type MorrowEvent,
 } from "./contract/events.js";
+export { isLoosening, looseningReasons } from "./contract/policy.js";
 export type {
   AccountId,
   BtcNetwork,

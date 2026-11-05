@@ -14,6 +14,9 @@ import { FileJobStore } from "./clawback/jobs.js";
 import { ClawbackRunner, guardianBroadcaster } from "./clawback/runner.js";
 import { NearFinalBlockClock, type ChainClock } from "./clock.js";
 import { loadConfig } from "./config.js";
+import { LooseningGuard, envelopeKeypair } from "./guard/handler.js";
+import { FileGuardStore } from "./guard/store.js";
+import { GuardTicker } from "./guard/ticker.js";
 import { createApiServer } from "./heartbeat.js";
 import { createLogger } from "./log.js";
 import { EventLoop, type EventHandler } from "./loop.js";
@@ -71,11 +74,12 @@ if (config.telegramToken) {
 // The frozen-op index has its own loop and cursor, so it backfills from seq 0 when the jobs
 // file is new and a broken jobs file never stalls alerts. It runs even without a Guardian.
 const jobs = new FileJobStore(config.jobsFile);
+/** `<jobs>.<suffix>.json`, next to the jobs file. */
+const besideJobs = (suffix: string) =>
+  join(dirname(config.jobsFile), `${basename(config.jobsFile, ".json")}.${suffix}.json`);
 const indexLoop = new EventLoop({
   client,
-  store: new FileStore(
-    join(dirname(config.jobsFile), `${basename(config.jobsFile, ".json")}.index-cursor.json`),
-  ),
+  store: new FileStore(besideJobs("index-cursor")),
   handlers: [new ClawbackIndexHandler(jobs)],
   clock,
   log,
@@ -83,6 +87,8 @@ const indexLoop = new EventLoop({
 });
 let runner: ClawbackRunner | null = null;
 let challengeLoop: EventLoop | null = null;
+let guardLoop: EventLoop | null = null;
+let guardTicker: GuardTicker | null = null;
 if (config.guardian) {
   const backend = backendFromUrl(config.btcBackendUrl);
   const guardianSigner = guardianClient(config.guardian.accountId, config.guardian.nearKey);
@@ -107,12 +113,7 @@ if (config.guardian) {
     const challengeRunner = runner;
     challengeLoop = new EventLoop({
       client,
-      store: new FileStore(
-        join(
-          dirname(config.jobsFile),
-          `${basename(config.jobsFile, ".json")}.challenge-cursor.json`,
-        ),
-      ),
+      store: new FileStore(besideJobs("challenge-cursor")),
       handlers: [
         new ChallengeHandler({
           reader: client,
@@ -127,8 +128,44 @@ if (config.guardian) {
     });
     log("info", "challenge mode on", { owner_parent: config.challengeOwnerParent });
   }
+
+  // Loosening guard (5.3a, fail-closed): its own loop and cursor, so a veto that keeps failing
+  // never stalls alerts or clawbacks; the ticker sends each veto at effective_at − 65 min.
+  const guardStore = new FileGuardStore(besideJobs("guard"));
+  if (!config.watcherEnvelopeSecretKey) {
+    log("warn", "MORROW_WATCHER_X25519_SK not set: the loosening guard reads duress as unknown");
+  }
+  guardLoop = new EventLoop({
+    client,
+    store: new FileStore(besideJobs("guard-cursor")),
+    handlers: [
+      new LooseningGuard({
+        reader: client,
+        guardianAccount: config.guardian.accountId,
+        store: guardStore,
+        envelopeKeypair: config.watcherEnvelopeSecretKey
+          ? envelopeKeypair(config.watcherEnvelopeSecretKey)
+          : null,
+        challengeOwnerParent: config.challengeOwnerParent,
+      }),
+    ],
+    clock,
+    log,
+    intervalMs: config.pollIntervalMs,
+  });
+  guardTicker = new GuardTicker({
+    reader: client,
+    signer: guardianSigner,
+    store: guardStore,
+    clock,
+    log,
+    intervalMs: config.pollIntervalMs,
+  });
 } else {
-  log("warn", "Guardian account and keys not set: Auto-Clawback is disabled");
+  log(
+    "warn",
+    "Guardian account and keys not set: Auto-Clawback and the loosening guard are disabled",
+  );
 }
 
 const loop = new EventLoop({
@@ -155,6 +192,8 @@ createApiServer(store, bot ? { links, botUsername } : undefined, clawbackApi).li
 );
 loop.start();
 challengeLoop?.start();
+guardLoop?.start();
+guardTicker?.start();
 // The runner plans only once the index has caught up, or it could miss reserved or racing coins.
 void (async () => {
   for (;;) {
@@ -177,6 +216,8 @@ for (const signal of ["SIGINT", "SIGTERM"] as const) {
     loop.stop();
     indexLoop.stop();
     challengeLoop?.stop();
+    guardLoop?.stop();
+    guardTicker?.stop();
     runner?.stop();
     void bot?.stop();
     log("info", "stopped", { signal });

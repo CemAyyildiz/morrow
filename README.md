@@ -136,6 +136,8 @@ What you trust:
 4. **T-4** The Owner keeps the Recovery Address key offline.
 5. **T-5** (only with Fast Approval) a Trusted Contact, who can shorten the Delay only to the Fast Approval Floor, does not collude with a thief. **T-6** (only with a Guardian Watcher) the Guardian Watcher stays live and uncompromised.
 
+On a Vault with an Auto-Clawback Guardian, the Guardian Watcher vetoes every loosening Policy Change (such as a new Recovery Address or a shorter Delay) until Owner Confirmation ships (Story 5.3b). To send that veto, the watcher must be live at `effective_at` − 1 h 5 min.
+
 The deployment is not locked yet. Until its account's access keys are deleted (Story 7.5), whoever deployed it can replace the contract code and void every guarantee above. The tooling that locks a deployment, and lets anyone check one, is in `tools/deploy`; see [Verify the deployment](#verify-the-deployment).
 
 ## Verify the deployment
