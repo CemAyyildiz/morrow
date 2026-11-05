@@ -47,7 +47,7 @@ export const CATEGORIES: Record<Category, CategoryInfo> = {
   refresh: { method: "refresh", label: "Refresh", story: "4.1" },
   spend_allowance: { method: "spend_allowance", label: "Allowance spend", story: "5.2" },
   policy_change: { method: "propose_policy_change", label: "Policy Change", story: "5.1" },
-  fast_approval: { method: "fast_approve", label: "Fast Approval as the Owner", story: "8.4" },
+  fast_approval: { method: "fast_approve", label: "Fast Approval", story: "8.4" },
   bitcoin_escape: {
     method: null,
     label: "Escape spend before the Escape Timelock, Owner Key only",
@@ -246,7 +246,7 @@ export const MOVES: Record<Move, MoveInfo> = {
 };
 
 /** The scripted part of a round, in the frozen order. */
-const SCRIPT: readonly Move[] = [
+export const SCRIPT: readonly Move[] = [
   "clawback_as_owner",
   "bad_envelope",
   "allowance_over_limit",

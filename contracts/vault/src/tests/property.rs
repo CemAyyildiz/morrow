@@ -6,9 +6,10 @@
 //!
 //! 1. No signature outside the Policy: every MPC sign request is for an op whose freeze was
 //!    legal (a withdrawal at or after `min(request + Delay, min over its Fast Approvals of
-//!    approval time + the floor then in effect)`), triggered by an authorised caller, on the op's own path, for the sighash this file
-//!    recomputes (BIP143) from the frozen transaction, and that transaction pays only what the
-//!    Policy allows.
+//!    approval time + the floor then in effect)`), triggered by an authorised caller, on the
+//!    op's own path, for the sighash this file recomputes (BIP143) from the frozen transaction,
+//!    and that transaction pays only what the Policy allows. Every `fast_approve` is accepted
+//!    or refused, with the refusal code, exactly as the model predicts.
 //! 2. No fee above the cap, recomputed here from the transaction's inputs and outputs.
 //! 3. No change to Script-bound data, and a Policy field changes only through an applied Policy
 //!    Change after its `effective_at`.
@@ -2260,9 +2261,15 @@ impl Harness {
                     m.kind == SpendOpKind::Withdrawal && m.state == SpendOpState::Pending
                 });
                 // A real approval, then its stored result 1 ns lower, as a buggy `min` would.
+                let approvals = self.stats.fast_approvals;
                 self.fast_approve(Who::Emma, *pick)?;
+                assert_eq!(
+                    self.stats.fast_approvals,
+                    approvals + 1,
+                    "the planted approval must be an accepted one"
+                );
                 if let Some(op) = self.contract.ops.get_mut(&op_id) {
-                    op.executable_at = op.executable_at.map(|t| U64(t.0 - 1));
+                    op.executable_at = op.executable_at.map(|t| U64(t.0.saturating_sub(1)));
                 }
                 Ok(())
             }
@@ -2280,48 +2287,102 @@ impl Harness {
         }
     }
 
-    /// `fast_approve` by `who`. Accepted only from a Trusted Contact Guardian of the op's open
-    /// Vault, with Fast Approval on in the Policy in effect, for a Pending withdrawal; it must set
-    /// `executable_at` to `min(executable_at, now + floor in effect)`, never later or earlier.
+    /// The outcome the model predicts for `fast_approve(op_id)` from `caller`, in the contract's
+    /// check order: the new `executable_at`, or the refusal code.
+    fn expected_approval(&self, op_id: u64, caller: &str) -> Result<u64, &'static str> {
+        let m = self.ops.get(&op_id).ok_or("ERR_OP_NOT_FOUND")?;
+        let v = &self.vaults[&m.vault];
+        if v.closed {
+            return Err("ERR_CLAWED_BACK");
+        }
+        if caller == v.owner {
+            return Err("ERR_UNAUTHORIZED");
+        }
+        let guardian = v
+            .policy
+            .guardians
+            .iter()
+            .find(|g| g.guardian_account.as_str() == caller)
+            .ok_or("ERR_UNAUTHORIZED")?;
+        if !v.policy.fast_approval {
+            return Err("ERR_FAST_APPROVAL_DISABLED");
+        }
+        if guardian.kind != GuardianKind::TrustedContact {
+            return Err("ERR_NOT_TRUSTED_CONTACT");
+        }
+        if m.kind != SpendOpKind::Withdrawal || m.state != SpendOpState::Pending {
+            return Err("ERR_BAD_OP_STATE");
+        }
+        let floor_at = self.now.saturating_add(v.policy.fast_approval_floor_ns.0);
+        // It must strictly lower the wait; otherwise it is refused.
+        if floor_at >= m.executable_at() {
+            return Err("ERR_BAD_OP_STATE");
+        }
+        Ok(floor_at)
+    }
+
+    /// `fast_approve` by `who`: accepted or refused, with the refusal code, exactly as
+    /// `expected_approval` predicts; on acceptance the stored `executable_at` and the
+    /// `fast_approved` event match the model.
     fn fast_approve(&mut self, who: Who, op: u8) -> Checked {
         let op_id = self.pick_op(op, |m| {
             m.kind == SpendOpKind::Withdrawal && m.state == SpendOpState::Pending
         });
         let caller = who.account();
-        let before = self.ops.get(&op_id).cloned();
-        let Ok(((), requests)) = self.call(caller, NearToken::from_yoctonear(0), |c| {
+        let expected = self.expected_approval(op_id, caller);
+        let events_before = self.contract.events.len();
+        let outcome = self.call(caller, NearToken::from_yoctonear(0), |c| {
             c.fast_approve(U64(op_id))
-        }) else {
-            return Ok(());
+        });
+        let ((), requests) = match (outcome, expected) {
+            (Err(message), Err(code)) => {
+                let got = refusal_code(&message);
+                if got.as_deref() != Some(code) {
+                    return Err(signature(format!(
+                        "fast_approve of op {op_id} from {caller} refused with {got:?}; the model expects {code}"
+                    )));
+                }
+                return Ok(());
+            }
+            (Err(message), Ok(at)) => {
+                return Err(signature(format!(
+                    "fast_approve of op {op_id} from {caller} refused ({message:?}); the model expects executable_at {at}"
+                )));
+            }
+            (Ok(_), Err(code)) => {
+                let m = self.ops.get(&op_id);
+                return Err(signature(format!(
+                    "fast_approve of op {op_id} ({:?} {:?}) accepted from {caller}; the model expects {code}",
+                    m.map(|m| m.kind),
+                    m.map(|m| m.state)
+                )));
+            }
+            (Ok(done), Ok(_)) => done,
         };
         no_sign_requests(&requests, "fast_approve")?;
-        let m = before
-            .ok_or_else(|| signature(format!("fast_approve succeeded on unknown op {op_id}")))?;
-        let v = &self.vaults[&m.vault];
-        let kind = v
-            .policy
-            .guardians
-            .iter()
-            .find(|g| g.guardian_account.as_str() == caller)
-            .map(|g| g.kind);
-        let legal = !v.closed
-            && v.policy.fast_approval
-            && kind == Some(GuardianKind::TrustedContact)
-            && m.kind == SpendOpKind::Withdrawal
-            && m.state == SpendOpState::Pending;
-        if !legal {
+        let floor_at = expected.expect("accepted above");
+        let stored = self.contract.get_op(U64(op_id)).executable_at.map(|t| t.0);
+        if stored != Some(floor_at) {
             return Err(signature(format!(
-                "fast_approve of {:?} op {op_id} in state {:?} accepted from {caller} (Guardian Kind {kind:?}, Fast Approval {}, closed: {})",
-                m.kind, m.state, v.policy.fast_approval, v.closed
+                "fast_approve set executable_at of op {op_id} to {stored:?}, not now + floor = {floor_at}"
             )));
         }
-        let floor_at = self.now.saturating_add(v.policy.fast_approval_floor_ns.0);
-        let expected = m.executable_at().min(floor_at);
-        let stored = self.contract.get_op(U64(op_id)).executable_at.map(|t| t.0);
-        if stored != Some(expected) {
+        let added = self
+            .contract
+            .events_since(U64(u64::from(events_before)), 100);
+        let vault = self.ops[&op_id].vault;
+        let want = json!({
+            "op_id": op_id.to_string(),
+            "by": caller,
+            "executable_at": floor_at.to_string(),
+        });
+        let matches = added.len() == 1
+            && added[0].kind == "fast_approved"
+            && added[0].vault_id.0 == vault
+            && added[0].data == want;
+        if !matches {
             return Err(signature(format!(
-                "fast_approve set executable_at of op {op_id} to {stored:?}, not min(executable_at {}, now + floor {floor_at}) = {expected}",
-                m.executable_at()
+                "fast_approve of op {op_id} logged {added:?}; the model expects one fast_approved {want} on Vault {vault}"
             )));
         }
         let m = self.ops.get_mut(&op_id).expect("seen above");

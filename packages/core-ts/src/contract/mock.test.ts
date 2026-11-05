@@ -6,6 +6,7 @@ import {
   DESTINATION,
   EMMA,
   ENVELOPE,
+  GUARDIANS,
   OWNER,
   OWNER_KEY,
   STRANGER,
@@ -287,6 +288,24 @@ describe("MockContractClient: lifecycles", () => {
     expect(op.executable_at).toBe((mock.now() + 10n * MINUTE_NS).toString());
     mock.advance(10n * MINUTE_NS).asCaller(OWNER);
     expect((await mock.beginExecute(opId, ENVELOPE)).state).toBe("frozen");
+  });
+
+  it("refuses the Owner's own fast approval even when it is listed as a Trusted Contact", async () => {
+    const { mock, vaultId } = await setup({
+      fast_approval: true,
+      guardians: [{ ...GUARDIANS[0]!, guardian_account: OWNER }, GUARDIANS[1]!],
+    });
+    const opId = await mock.requestWithdrawal(withdrawal(vaultId));
+    await expectCode(mock.fastApprove(opId), "ERR_UNAUTHORIZED");
+  });
+
+  it("refuses a fast approval that would not lower executable_at, with no event", async () => {
+    const { mock, vaultId } = await setup({ fast_approval: true });
+    const opId = await mock.requestWithdrawal(withdrawal(vaultId));
+    await mock.asCaller(EMMA).fastApprove(opId);
+    const events = (await mock.eventsSince("0", 100)).length;
+    await expectCode(mock.fastApprove(opId), "ERR_BAD_OP_STATE");
+    expect((await mock.eventsSince("0", 100)).length).toBe(events);
   });
 
   it("Allowance spends within the rolling 24 h limit and rejects beyond it", async () => {

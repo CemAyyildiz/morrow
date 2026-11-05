@@ -945,9 +945,10 @@ impl VaultContract {
         self.flush_and_charge(op.vault_id.0, storage_before);
     }
 
-    /// Fast Approval: a Trusted Contact Guardian shortens a Pending withdrawal's wait to
-    /// `min(executable_at, now + fast_approval_floor_ns)`, under the Policy in effect now. It
-    /// never extends the wait. Charged like a veto, so a Guardian's call never fails on storage.
+    /// Fast Approval: a Trusted Contact Guardian (never the Owner) shortens a Pending
+    /// withdrawal's wait to `now + fast_approval_floor_ns`, under the Policy in effect now. An
+    /// approval that would not lower `executable_at` is refused, so it never extends the wait.
+    /// Charged like a veto, so a Guardian's call never fails on storage.
     pub fn fast_approve(&mut self, op_id: U64) {
         let storage_before = env::storage_usage();
         let op = self
@@ -957,6 +958,11 @@ impl VaultContract {
             .unwrap_or_else(|| fail(ErrorCode::OpNotFound));
         let vault = self.active_vault(op.vault_id.0).clone();
         let caller = env::predecessor_account_id();
+        // The Owner never approves its own withdrawal, even when also listed as a Guardian:
+        // a stolen Owner key must not cut the Delay to the floor.
+        if caller == vault.owner_account {
+            fail(ErrorCode::Unauthorized);
+        }
         let guardian = vault
             .policy
             .guardians
@@ -976,7 +982,12 @@ impl VaultContract {
             _ => fail(ErrorCode::BadOpState),
         };
         let floor_at = env::block_timestamp().saturating_add(vault.policy.fast_approval_floor_ns.0);
-        let executable_at = U64(current.min(floor_at));
+        // An approval that does not lower the wait is refused: it would only add an event and
+        // drain storage, and could be repeated.
+        if floor_at >= current {
+            fail(ErrorCode::BadOpState);
+        }
+        let executable_at = U64(floor_at);
         if let Some(stored) = self.ops.get_mut(&op_id.0) {
             stored.executable_at = Some(executable_at);
         }

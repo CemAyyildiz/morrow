@@ -2828,41 +2828,114 @@ mod fast_approval {
 
     #[test]
     fn it_only_shortens() {
-        let (mut contract, _, op) = pending(fast_policy());
-        let delay_end = NOW + 24 * HOUR_NS;
+        // Delay 24 h, floor 6 h; a change lowering the floor to 10 min is proposed at NOW and
+        // applies at NOW + 7 d. The withdrawal is requested just before it applies.
+        let (mut contract, id) = active_vault_with(Policy {
+            fast_approval_floor_ns: U64(6 * HOUR_NS),
+            ..fast_policy()
+        });
+        as_caller("owner.testnet");
+        let change = contract.propose_policy_change(
+            id,
+            json!({ "fast_approval_floor_ns": (10 * MINUTE_NS).to_string() }),
+            envelope(),
+        );
+        at_time("owner.testnet", NOW + WEEK - HOUR_NS);
+        let op = contract.request_withdrawal(
+            id,
+            U64(100_000),
+            DESTINATION.into(),
+            2,
+            vec![utxo(1, 200_000)],
+            envelope(),
+        );
         approve(
+            &mut contract,
+            op,
+            "emma.testnet",
+            NOW + WEEK - 30 * MINUTE_NS,
+        );
+        let first = NOW + WEEK + 5 * HOUR_NS + 30 * MINUTE_NS;
+        assert_eq!(contract.get_op(op).executable_at, Some(U64(first)));
+
+        // The same floor again cannot lower it: refused, no event, nothing charged.
+        let balance = contract.get_vault(id).storage_balance;
+        refused(
+            &mut contract,
+            op,
+            "emma.testnet",
+            NOW + WEEK - 20 * MINUTE_NS,
+            "ERR_BAD_OP_STATE",
+        );
+        assert_eq!(contract.get_vault(id).storage_balance, balance);
+
+        // After the lower floor applies, a second approval shortens again to now + the new floor.
+        at_time("anyone.testnet", NOW + WEEK);
+        contract.apply_policy_change(change);
+        approve(&mut contract, op, "emma.testnet", NOW + WEEK + HOUR_NS);
+        let second = NOW + WEEK + HOUR_NS + 10 * MINUTE_NS;
+        assert_eq!(contract.get_op(op).executable_at, Some(U64(second)));
+        assert_eq!(
+            last_event(&contract).data["executable_at"],
+            second.to_string()
+        );
+
+        // Without another floor change, a later approval would only extend: refused.
+        refused(
+            &mut contract,
+            op,
+            "emma.testnet",
+            NOW + WEEK + HOUR_NS + MINUTE_NS,
+            "ERR_BAD_OP_STATE",
+        );
+        assert_eq!(contract.get_op(op).executable_at, Some(U64(second)));
+    }
+
+    #[test]
+    fn an_approval_that_does_not_lower_the_wait_is_refused() {
+        // At t + 23.5 h, now + 1 h is past the end of the Delay: refused, no event, no charge.
+        let (mut contract, id, op) = pending(fast_policy());
+        let balance = contract.get_vault(id).storage_balance;
+        refused(
             &mut contract,
             op,
             "emma.testnet",
             NOW + 23 * HOUR_NS + 30 * MINUTE_NS,
+            "ERR_BAD_OP_STATE",
         );
-        assert_eq!(contract.get_op(op).executable_at, Some(U64(delay_end)));
-        let event = last_event(&contract);
-        assert_eq!(event.kind, "fast_approved");
-        assert_eq!(event.data["executable_at"], delay_end.to_string());
+        assert_eq!(contract.get_vault(id).storage_balance, balance);
+        assert_eq!(
+            contract.get_op(op).executable_at,
+            Some(U64(NOW + 24 * HOUR_NS))
+        );
 
-        // A second approval shortens again, but only to now + floor at that moment.
+        // Once `executable_at` has passed, an approval is refused too.
         let (mut contract, _, op) = pending(fast_policy());
-        approve(&mut contract, op, "emma.testnet", NOW + 10 * HOUR_NS);
-        assert_eq!(
-            contract.get_op(op).executable_at,
-            Some(U64(NOW + 11 * HOUR_NS))
-        );
-        approve(&mut contract, op, "emma.testnet", NOW + 2 * HOUR_NS);
-        assert_eq!(
-            contract.get_op(op).executable_at,
-            Some(U64(NOW + 3 * HOUR_NS))
-        );
-        approve(
+        refused(
             &mut contract,
             op,
             "emma.testnet",
-            NOW + 2 * HOUR_NS + 30 * MINUTE_NS,
+            NOW + 24 * HOUR_NS + 1,
+            "ERR_BAD_OP_STATE",
         );
-        assert_eq!(
-            contract.get_op(op).executable_at,
-            Some(U64(NOW + 3 * HOUR_NS)),
-            "a later approval never extends"
+    }
+
+    #[test]
+    fn the_owner_listed_as_a_trusted_contact_is_refused() {
+        // A stolen Owner key must not cut the Delay to the floor, whatever the Guardian list says.
+        let (mut contract, _, op) = pending(Policy {
+            guardians: vec![
+                guardian("22", "owner.testnet", GuardianKind::TrustedContact),
+                guardian("33", "backup.testnet", GuardianKind::BackupDevice),
+            ],
+            ..fast_policy()
+        });
+        refused(
+            &mut contract,
+            op,
+            "owner.testnet",
+            NOW + HOUR_NS,
+            "ERR_UNAUTHORIZED",
         );
     }
 
@@ -2934,9 +3007,17 @@ mod fast_approval {
 
     #[test]
     fn the_owner_key_on_the_challenge_vault_is_refused() {
-        // The Challenge Vault: allowance 0, Fast Approval off, the attacker holds the Owner key.
+        // The Challenge Vault as tools/challenge's round builds it: allowance 0, Fast Approval
+        // off, a single Auto-Clawback Guardian, no Trusted Contact; the attacker holds the Owner
+        // key.
         let challenge = Policy {
             allowance_limit_sats: U64(0),
+            fast_approval: false,
+            guardians: vec![guardian(
+                "33",
+                "watcher.testnet",
+                GuardianKind::AutoClawback,
+            )],
             ..standard_policy()
         };
         let (mut contract, _, op) = pending(challenge);
@@ -2946,6 +3027,17 @@ mod fast_approval {
             "owner.testnet",
             NOW + HOUR_NS,
             "ERR_UNAUTHORIZED",
+        );
+
+        // A Trusted Contact on a Vault with Fast Approval off is refused for that reason.
+        let (mut contract, _, op) = pending(standard_policy());
+        assert!(!contract.get_vault(U64(1)).policy.fast_approval);
+        refused(
+            &mut contract,
+            op,
+            "emma.testnet",
+            NOW + HOUR_NS,
+            "ERR_FAST_APPROVAL_DISABLED",
         );
     }
 

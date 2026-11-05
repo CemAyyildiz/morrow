@@ -11,6 +11,7 @@ import { describe, expect, it } from "vitest";
 import type { PolicyChangeOutcome } from "../attempts.js";
 import type { PublicRound } from "../store.js";
 import { DRY_RUN_FUNCTION_CALL_KEY, FakeBitcoin, dryRunPorts } from "./dry-run.js";
+import { SCRIPT } from "./plan.js";
 import type { CallPlan, CallResult, NearPort } from "./near.js";
 import {
   AttackRun,
@@ -138,7 +139,7 @@ describe("dry run", () => {
   });
 });
 
-describe("Fast Approval as the Owner", () => {
+describe("Fast Approval", () => {
   it("races the Clawback in the window batch and is refused: the Owner is no Guardian", async () => {
     const ports = await dryRunPorts();
     const batches: string[][] = [];
@@ -150,14 +151,12 @@ describe("Fast Approval as the Owner", () => {
         return batch(key, plans);
       },
     };
-    const { report, exitCode } = await runAttack(ports, { ...SHORT, n: 14 });
+    // The whole script, no fill.
+    const { report, exitCode } = await runAttack(ports, { ...SHORT, n: SCRIPT.length });
     expect(exitCode).toBe(0);
-    expect(batches[1]).toEqual([
-      "begin_execute",
-      "sign_input",
-      "request_withdrawal",
-      "fast_approve",
-    ]);
+    // The window batch that races the Clawback: the one holding the request's Execute.
+    const window = batches.find((b) => b.includes("begin_execute"));
+    expect(window).toContain("fast_approve");
     const attempt = report.attempts.find((a) => a.method === "fast_approve")!;
     expect(attempt.category).toBe("fast_approval");
     expect(attempt.args).toEqual({ op_id: report.rounds[0]!.request_op_id });
@@ -554,12 +553,13 @@ describe("failures (exit 1)", () => {
   it("no Clawback seen: the round is marked, its fill skipped, and the run fails", async () => {
     const ports = await dryRunPorts();
     ports.watcher = { tick: async () => null };
-    // One more than the 14 scripted attempts, so a fill slot exists to be skipped.
-    const { report, exitCode } = await runAttack(ports, { ...SHORT, n: 15 });
+    // One more than the scripted attempts, so a fill slot exists to be skipped.
+    const n = SCRIPT.length + 1;
+    const { report, exitCode } = await runAttack(ports, { ...SHORT, n });
     expect(exitCode).toBe(1);
     expect(report.rounds[0]?.clawback_seen).toBe(false);
     expect(report.summary.clawback_missing).toEqual([1]);
-    expect(report.attempts.length).toBeLessThan(15); // no fill
+    expect(report.attempts.length).toBeLessThan(n); // no fill
   });
 });
 

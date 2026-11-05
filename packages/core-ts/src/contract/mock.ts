@@ -435,6 +435,8 @@ export class MockContractClient implements ContractClient {
   async fastApprove(opId: U64): Promise<void> {
     const op = this.op(opId);
     const vault = this.activeVault(op.vault_id);
+    // The Owner never approves its own withdrawal, even when also listed as a Guardian.
+    if (this.caller === vault.owner_account) this.fail("ERR_UNAUTHORIZED");
     const guardian = this.guardianOf(vault);
     if (!guardian) this.fail("ERR_UNAUTHORIZED");
     if (!vault.policy.fast_approval) this.fail("ERR_FAST_APPROVAL_DISABLED");
@@ -443,8 +445,9 @@ export class MockContractClient implements ContractClient {
       this.fail("ERR_BAD_OP_STATE");
     }
     const floorAt = this.nowNs + BigInt(vault.policy.fast_approval_floor_ns);
-    const current = BigInt(op.executable_at);
-    op.executable_at = (floorAt < current ? floorAt : current).toString();
+    // An approval that does not lower the wait is refused, before any write or event.
+    if (floorAt >= BigInt(op.executable_at)) this.fail("ERR_BAD_OP_STATE");
+    op.executable_at = floorAt.toString();
     this.emit(vault.vault_id, "fast_approved", {
       op_id: op.op_id,
       by: this.caller,
