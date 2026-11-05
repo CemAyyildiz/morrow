@@ -64,6 +64,7 @@ describe("@morrow/core-ts/browser", () => {
       "crypto/browser-envelope.ts",
       "crypto/errors.ts",
       "crypto/hex.ts",
+      "crypto/link-request.ts",
       "near/browser-tx.ts",
       "xray/failure.ts",
       "xray/links.ts",

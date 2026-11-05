@@ -21,7 +21,7 @@ export {
   type EventKind,
   type MorrowEvent,
 } from "./contract/events.js";
-export { isLoosening, looseningReasons } from "./contract/policy.js";
+export { canonicalChangesJson, isLoosening, looseningReasons } from "./contract/policy.js";
 export type {
   AccountId,
   BtcNetwork,
@@ -58,6 +58,15 @@ export {
   type SignedFunctionCall,
 } from "./near/browser-tx.js";
 export { sealWatcherEnvelope, type WatcherEnvelopeFlag } from "./crypto/browser-envelope.js";
+export {
+  linkRequestDigest,
+  linkRequestMessage,
+  linkRequestProblems,
+  signLinkRequest,
+  verifyLinkRequest,
+  type LinkRequest,
+  type LinkRequestRole,
+} from "./crypto/link-request.js";
 // The full entry's own hex helpers (pure), so both entries export the same functions.
 export { bytesToHex, hexToBytes } from "./crypto/hex.js";
 export {

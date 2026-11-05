@@ -30,6 +30,7 @@ import {
   FileGuardStore,
   GUARD_PRUNE_AFTER_MS,
   InMemoryGuardStore,
+  noConfirmation,
   type GuardEntry,
   type GuardStore,
 } from "./store.js";
@@ -732,6 +733,7 @@ const sample = (changeId: string, overrides: Partial<GuardEntry> = {}) => ({
   duress: "normal" as const,
   status: "scheduled" as const,
   cause: null,
+  ...noConfirmation(),
   last_error: null,
   ...overrides,
 });
@@ -752,6 +754,45 @@ describe("GuardStore", () => {
     expect(await store.update({ ...snapshot, last_error: "RPC timeout" }, "scheduled")).toBe(false);
     expect(await store.entry("7")).toMatchObject({ status: "settled", cause: "withdrawn" });
     expect(await store.update({ ...sample("8"), updated_at: "" }, "scheduled")).toBe(false); // unknown id
+  });
+
+  it("never lets a stale snapshot undo a confirmation or a Reject's earlier veto_at", async () => {
+    const store = new InMemoryGuardStore();
+    const snapshot = await store.add(sample("9", { veto_at: "100" }));
+    await store.modify("9", (e) => ({
+      ...e,
+      confirmation: "rejected",
+      binding: "ab".repeat(32),
+      request_chats: [1],
+      veto_at: "50",
+    }));
+    expect(await store.update({ ...snapshot, last_error: "RPC timeout" }, "scheduled")).toBe(true);
+    expect(await store.entry("9")).toMatchObject({
+      last_error: "RPC timeout",
+      confirmation: "rejected",
+      binding: "ab".repeat(32),
+      request_chats: [1],
+      veto_at: "50",
+    });
+    expect(await store.modify("missing", (e) => e)).toBeNull();
+    expect(await store.modify("9", () => null)).toBeNull();
+  });
+
+  it("reads entries written before Owner Confirmation with its fields unset", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "morrow-guard-old-"));
+    try {
+      const path = join(dir, "guard.json");
+      const unset = Object.keys(noConfirmation());
+      const old = Object.fromEntries(
+        Object.entries({ ...sample("5"), updated_at: new Date().toISOString() }).filter(
+          ([field]) => !unset.includes(field),
+        ),
+      );
+      await writeFile(path, JSON.stringify({ entries: [old] }));
+      expect(await new FileGuardStore(path).entry("5")).toMatchObject(noConfirmation());
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
   });
 
   it("drops final entries 30 days after their last update, keeps scheduled ones", async () => {

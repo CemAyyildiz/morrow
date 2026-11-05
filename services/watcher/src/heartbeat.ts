@@ -1,8 +1,17 @@
 import { createHash, timingSafeEqual } from "node:crypto";
 import { createServer, type IncomingMessage, type Server } from "node:http";
+import {
+  MINUTE_NS,
+  MorrowContractError,
+  linkRequestProblems,
+  verifyLinkRequest,
+  type ContractClient,
+  type LinkRequest,
+} from "@morrow/core-ts";
 import type { ClawbackJob } from "./clawback/jobs.js";
+import type { ChainClock } from "./clock.js";
 import type { WatcherStore } from "./store.js";
-import type { LinkRole, LinkStore } from "./telegram/links.js";
+import type { LinkStore } from "./telegram/links.js";
 
 /** Loosening-guard health: no change ids, reasons or flags. */
 export interface GuardHealth {
@@ -43,6 +52,70 @@ export async function readHeartbeat(
 export interface LinkingOptions {
   links: LinkStore;
   botUsername: string;
+  /** Reads `get_vault`, whose keys sign link requests. */
+  reader: Pick<ContractClient, "getVault">;
+  /** The latest final NEAR block time, for the `ts` window. */
+  clock: ChainClock;
+}
+
+/** A link request's `ts` must be this close to the final-block time. */
+export const LINK_TS_WINDOW_NS = 10n * MINUTE_NS;
+
+type LinkDecision =
+  { ok: true; request: LinkRequest } | { ok: false; status: number; error: string };
+
+/**
+ * Checks a signed link request (R1): the fields, `ts` within ±10 min of the final-block time,
+ * and the signature against the Vault's own key for the role: `owner_key` with `owner_account`,
+ * or the named Guardian's `guardian_key`.
+ */
+export async function checkLinkRequest(
+  body: unknown,
+  linking: Pick<LinkingOptions, "reader" | "clock">,
+  now: bigint,
+): Promise<LinkDecision> {
+  const fields = (body && typeof body === "object" ? body : {}) as Record<string, unknown>;
+  const { vault_id, role, account_id, ts, signature } = fields;
+  const problems = linkRequestProblems({ vault_id, role, account_id, ts });
+  if (typeof signature !== "string" || !/^[0-9a-f]{128}$/.test(signature)) {
+    problems.push("signature must be 64-byte compact secp256k1 hex (r ‖ s, low-S)");
+  }
+  if (problems.length) {
+    return {
+      ok: false,
+      status: 400,
+      error: `expected {vault_id, role: owner|guardian, account_id, ts, signature}: ${problems.join("; ")}`,
+    };
+  }
+  const request = { vault_id, role, account_id, ts } as LinkRequest;
+  const skew = BigInt(request.ts) - now;
+  if (skew > LINK_TS_WINDOW_NS || -skew > LINK_TS_WINDOW_NS) {
+    return { ok: false, status: 401, error: "ts is not within 10 minutes of NEAR time" };
+  }
+  let vault;
+  try {
+    vault = await linking.reader.getVault(request.vault_id);
+  } catch (error) {
+    if (error instanceof MorrowContractError && error.code === "ERR_VAULT_NOT_FOUND") {
+      return { ok: false, status: 404, error: "vault not found" };
+    }
+    throw error;
+  }
+  const key =
+    request.role === "owner"
+      ? vault.owner_account === request.account_id
+        ? vault.owner_key
+        : null
+      : (vault.policy.guardians.find((g) => g.guardian_account === request.account_id)
+          ?.guardian_key ?? null);
+  if (!key || !verifyLinkRequest(request, signature as string, key)) {
+    return {
+      ok: false,
+      status: 401,
+      error: "signature does not match the Vault's key for this role",
+    };
+  }
+  return { ok: true, request };
 }
 
 /** Manual Auto-Clawback trigger; only served when an admin token and a Guardian are configured. */
@@ -71,8 +144,33 @@ async function readJson(request: IncomingMessage): Promise<unknown> {
 }
 
 /**
+ * `POST /link-codes`: checks the signed request (`checkLinkRequest`), uses up its nonce and
+ * issues a code. Throws when NEAR or the store is unavailable.
+ */
+export async function issueLinkCode(
+  body: unknown,
+  linking: LinkingOptions,
+): Promise<{ status: number; body: unknown }> {
+  const now = await linking.clock.now();
+  const decision = await checkLinkRequest(body, linking, now);
+  if (!decision.ok) return { status: decision.status, body: { error: decision.error } };
+  const { vault_id, role, account_id, ts } = decision.request;
+  const code = await linking.links.createCode(
+    { vault_id, role, account_id },
+    { key: `${vault_id}:${role}:${account_id}:${ts}`, expiresAt: BigInt(ts) + LINK_TS_WINDOW_NS },
+    now,
+  );
+  if (!code) return { status: 409, body: { error: "this signed request was already used" } };
+  return {
+    status: 201,
+    body: { code, deep_link: `https://t.me/${linking.botUsername}?start=${code}` },
+  };
+}
+
+/**
  * The watcher's public HTTP API: `GET /heartbeat`; when Telegram is configured,
- * `POST /link-codes {vault_id, account_id, role}` → `{code, deep_link}`; when Auto-Clawback and an
+ * `POST /link-codes {vault_id, role, account_id, ts, signature}` (signed, single-use; see
+ * `checkLinkRequest`) → `{code, deep_link}`; when Auto-Clawback and an
  * admin token are configured, `POST /clawbacks {vault_id}` with `Authorization: Bearer <token>`
  * → 202 `{job_id, vault_id, status}`. Everything else is 404.
  */
@@ -103,25 +201,14 @@ export function createApiServer(
       return;
     }
     if (request.method === "POST" && path === "/link-codes" && linking) {
-      readJson(request)
-        .then(async (body) => {
-          const { vault_id, account_id, role } = (body ?? {}) as Record<string, unknown>;
-          const validRole = role === "owner" || role === "guardian";
-          if (
-            typeof vault_id !== "string" ||
-            !/^\d+$/.test(vault_id) ||
-            typeof account_id !== "string" ||
-            !validRole
-          ) {
-            return json(400, { error: "expected {vault_id, account_id, role: owner|guardian}" });
-          }
-          const code = await linking.links.createCode(vault_id, account_id, role as LinkRole);
-          return json(201, {
-            code,
-            deep_link: `https://t.me/${linking.botUsername}?start=${code}`,
-          });
-        })
-        .catch(() => json(400, { error: "invalid JSON" }));
+      readJson(request).then(
+        (body) =>
+          issueLinkCode(body, linking).then(
+            (result) => json(result.status, result.body),
+            () => json(503, { error: "unavailable" }),
+          ),
+        () => json(400, { error: "invalid JSON" }),
+      );
       return;
     }
     if (request.method === "POST" && path === "/clawbacks" && clawbacks) {

@@ -1,14 +1,14 @@
 import type { MorrowEvent, SpendOp } from "@morrow/core-ts";
 
-export interface AlertButton {
-  text: string;
-  url: string;
-}
+/** A link button, or an inline button whose callback data is a server-side token. */
+export type AlertButton = { text: string; url: string } | { text: string; callback: string };
 
 export interface Alert {
   /** Telegram HTML. */
   html: string;
   buttons: AlertButton[];
+  /** Asks the chat to reply to this message (the typed-confirmation step). */
+  forceReply?: boolean;
 }
 
 export interface AlertContext {
@@ -20,7 +20,7 @@ export interface AlertContext {
 
 export const SAFETY_FOOTER = "Morrow never asks for keys or seed words.";
 
-const escape = (text: string) =>
+export const escape = (text: string) =>
   text.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 
 /** "2026-11-02 08:42 UTC" from NEAR nanoseconds. */

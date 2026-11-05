@@ -1,6 +1,6 @@
 import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import { dirname } from "node:path";
-import type { U64 } from "@morrow/core-ts";
+import type { Hex, U64 } from "@morrow/core-ts";
 import type { Logger } from "../log.js";
 
 /** The Watcher Envelope's flag; `unknown` when the guard cannot open it. */
@@ -18,6 +18,27 @@ export const GUARD_FINAL_STATUSES: readonly GuardStatus[] = ["vetoed", "settled"
 /** Final entries are dropped this long after their last update. */
 export const GUARD_PRUNE_AFTER_MS = 30 * 24 * 60 * 60 * 1_000;
 
+/**
+ * Owner Confirmation (5.3b): `none` until a request is delivered to an owner chat, `requested`
+ * after, `confirmed` once the Owner confirmed from the active owner chat, `rejected` once an owner
+ * chat pressed Reject (which vetoes at once).
+ */
+export type GuardConfirmation = "none" | "requested" | "confirmed" | "rejected";
+
+type ConfirmationFields = Pick<
+  GuardEntry,
+  "confirmation" | "binding" | "confirmed_by_chat" | "confirmed_at" | "request_chats"
+>;
+
+/** The Owner Confirmation fields of an entry that has none yet. */
+export const noConfirmation = (): ConfirmationFields => ({
+  confirmation: "none",
+  binding: null,
+  confirmed_by_chat: null,
+  confirmed_at: null,
+  request_chats: [],
+});
+
 /** One Policy Change on a guarded Vault. Never holds the envelope or any secret. */
 export interface GuardEntry {
   change_id: U64;
@@ -34,6 +55,17 @@ export interface GuardEntry {
   status: GuardStatus;
   /** Why the entry was skipped or settled; null while scheduled and once vetoed. */
   cause: string | null;
+  confirmation: GuardConfirmation;
+  /**
+   * `changeBinding` of the change as the request showed it; a confirmation counts only while the
+   * change read from the contract still has this binding.
+   */
+  binding: Hex | null;
+  /** The owner chat that confirmed, and the NEAR time (ns) it did. */
+  confirmed_by_chat: number | null;
+  confirmed_at: U64 | null;
+  /** Owner chats the confirmation request was delivered to (each gets it once). */
+  request_chats: number[];
   /** The last failed read or veto, kept for the operator. */
   last_error: string | null;
   updated_at: string;
@@ -44,6 +76,13 @@ interface State {
 }
 
 const empty = (): State => ({ entries: [] });
+
+/** Entries written before Owner Confirmation have none of its fields. */
+const withDefaults = (entry: GuardEntry): GuardEntry => ({
+  ...noConfirmation(),
+  ...entry,
+  request_chats: [...(entry.request_chats ?? [])],
+});
 
 /** Loosening-guard schedule. Writes are serialized per instance. */
 export abstract class GuardStore {
@@ -83,25 +122,61 @@ export abstract class GuardStore {
   /**
    * Compare-and-set: replaces the stored entry with the same change id only while its stored
    * status is still `expected`, so a stale snapshot never reverts a final status. Returns whether
-   * it wrote.
+   * it wrote. The Owner Confirmation fields (written with `modify`) are kept as stored, and
+   * `veto_at`, which a Reject brings forward, keeps the earlier of the two, so a stale snapshot
+   * never undoes a confirmation or a Reject either.
    */
   update(entry: GuardEntry, expected: GuardStatus): Promise<boolean> {
     return this.exclusive(async () => {
       const state = await this.load();
       const index = state.entries.findIndex((e) => e.change_id === entry.change_id);
-      if (index < 0 || state.entries[index]?.status !== expected) return false;
-      state.entries[index] = { ...structuredClone(entry), updated_at: new Date().toISOString() };
+      const stored = state.entries[index];
+      if (!stored || stored.status !== expected) return false;
+      const kept = withDefaults(stored);
+      state.entries[index] = {
+        ...structuredClone(entry),
+        confirmation: kept.confirmation,
+        binding: kept.binding,
+        confirmed_by_chat: kept.confirmed_by_chat,
+        confirmed_at: kept.confirmed_at,
+        request_chats: kept.request_chats,
+        veto_at: BigInt(kept.veto_at) < BigInt(entry.veto_at) ? kept.veto_at : entry.veto_at,
+        updated_at: new Date().toISOString(),
+      };
       await this.prunedSave(state);
       return true;
     });
   }
 
+  /**
+   * Atomic read-modify-write of one entry: `change` gets the stored entry and returns the new one,
+   * or null to leave it. Returns what was written, or null.
+   */
+  modify(
+    changeId: U64,
+    change: (entry: GuardEntry) => GuardEntry | null,
+  ): Promise<GuardEntry | null> {
+    return this.exclusive(async () => {
+      const state = await this.load();
+      const index = state.entries.findIndex((e) => e.change_id === changeId);
+      const current = state.entries[index];
+      if (!current) return null;
+      const next = change(structuredClone(withDefaults(current)));
+      if (!next) return null;
+      const stored = { ...structuredClone(next), updated_at: new Date().toISOString() };
+      state.entries[index] = stored;
+      await this.prunedSave(state);
+      return stored;
+    });
+  }
+
   async entries(): Promise<GuardEntry[]> {
-    return (await this.load()).entries;
+    return (await this.load()).entries.map(withDefaults);
   }
 
   async entry(changeId: U64): Promise<GuardEntry | null> {
-    return (await this.load()).entries.find((e) => e.change_id === changeId) ?? null;
+    const found = (await this.load()).entries.find((e) => e.change_id === changeId);
+    return found ? withDefaults(found) : null;
   }
 }
 

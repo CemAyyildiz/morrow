@@ -14,7 +14,7 @@ import {
 } from "@morrow/core-ts";
 import { isChallengeOwner } from "../challenge/handler.js";
 import type { EventHandler, HandlerContext } from "../loop.js";
-import type { GuardDuress, GuardEntry, GuardStore } from "./store.js";
+import { noConfirmation, type GuardDuress, type GuardEntry, type GuardStore } from "./store.js";
 
 /** The guard vetoes a still-pending change this long before its `effective_at` (AD-21). */
 export const VETO_LEAD_NS = 65n * MINUTE_NS;
@@ -61,10 +61,11 @@ export interface LooseningGuardOptions {
 }
 
 /**
- * Loosening guard, 5.3a (fail-closed): schedules a veto from `effective_at − 65 min` on for
- * every loosening or duress-flagged Policy Change on a guarded Vault. There is no Owner
- * Confirmation yet (5.3b), so no loosening change escapes the veto. `GuardTicker` sends the
- * vetoes, for as long as the change is pending.
+ * Loosening guard: schedules a veto from `effective_at − 65 min` on for every loosening or
+ * duress-flagged Policy Change on a guarded Vault. `GuardTicker` sends the vetoes, for as long as
+ * the change is pending, and the Owner Confirmation requests (5.3b); a loosening change escapes
+ * the veto only when the Owner confirmed it from the active owner chat and it is not
+ * duress-flagged. Without an active owner link every loosening change is vetoed (fail-closed).
  */
 export class LooseningGuard implements EventHandler {
   readonly name = "loosening_guard";
@@ -167,6 +168,7 @@ export class LooseningGuard implements EventHandler {
       reasons,
       duress,
       ...decision,
+      ...noConfirmation(),
       last_error: null,
     });
     // One neutral line for every entry: no status, reasons or flags, so a duress-flagged change

@@ -267,6 +267,19 @@ export function looseningReasons(current: Policy, next: object): string[] {
   return reasons;
 }
 
+/**
+ * The canonical JSON of a Policy Change's fields: keys sorted, no whitespace, values as the
+ * contract stores them (u64 as decimal strings). Equal changes give equal strings, whatever the
+ * key order they were proposed or read in. Only flat objects are expected; a nested value keeps
+ * its own key order.
+ */
+export function canonicalChangesJson(changes: object): string {
+  const sorted = Object.keys(changes)
+    .sort()
+    .map((key) => [key, (changes as Record<string, unknown>)[key]]);
+  return JSON.stringify(Object.fromEntries(sorted));
+}
+
 /** True when `next` would loosen `current`; see `looseningReasons`. */
 export function isLoosening(current: Policy, next: object): boolean {
   return looseningReasons(current, next).length > 0;

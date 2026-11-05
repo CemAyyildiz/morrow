@@ -23,6 +23,7 @@ import { createLogger } from "./log.js";
 import { EventLoop, type EventHandler } from "./loop.js";
 import { FileStore } from "./store.js";
 import { TelegramBot } from "./telegram/bot.js";
+import { OwnerConfirmation } from "./telegram/confirm.js";
 import { AlertsHandler } from "./telegram/handler.js";
 import { FileLinkStore } from "./telegram/links.js";
 
@@ -57,7 +58,7 @@ let bot: TelegramBot | null = null;
 let botUsername = "";
 
 if (config.telegramToken) {
-  bot = new TelegramBot(config.telegramToken, links, log);
+  bot = new TelegramBot(config.telegramToken, links, log, clock);
   botUsername = await bot.username();
   handlers.push(
     new AlertsHandler({
@@ -67,7 +68,6 @@ if (config.telegramToken) {
       getOp: (id) => client.getOp(id),
     }),
   );
-  bot.start();
 } else {
   log("warn", "MORROW_TELEGRAM_BOT_TOKEN not set: alerts are disabled");
 }
@@ -91,6 +91,8 @@ let challengeLoop: EventLoop | null = null;
 let guardLoop: EventLoop | null = null;
 let guardTicker: GuardTicker | null = null;
 let guardHealthSource: GuardHealthSource | undefined;
+/** Owner Confirmation (5.3b); set once the bot and, when configured, the guard exist. */
+let confirmation: OwnerConfirmation | null = null;
 if (config.guardian) {
   const backend = backendFromUrl(config.btcBackendUrl);
   const guardianSigner = guardianClient(config.guardian.accountId, config.guardian.nearKey);
@@ -131,8 +133,9 @@ if (config.guardian) {
     log("info", "challenge mode on", { owner_parent: config.challengeOwnerParent });
   }
 
-  // Loosening guard (5.3a, fail-closed): its own loop and cursor, so a veto that keeps failing
-  // never stalls alerts or clawbacks; the ticker sends each veto at effective_at − 65 min.
+  // Loosening guard: its own loop and cursor, so a veto that keeps failing never stalls alerts or
+  // clawbacks; the ticker sends each veto at effective_at − 65 min unless the Owner confirmed the
+  // change from the active owner chat (5.3b), and delivers the confirmation requests.
   const guardCursor = new FileStore(besideJobs("guard-cursor"));
   // A corrupt guard file is moved aside and the schedule rebuilt from event 0 (first-sight rule).
   const guardStore = new FileGuardStore(besideJobs("guard"), {
@@ -170,7 +173,20 @@ if (config.guardian) {
     clock,
     log,
     intervalMs: config.pollIntervalMs,
+    // Without Telegram there is no owner chat: every loosening change is vetoed (fail-closed).
+    requests: { request: async (entry, now) => confirmation?.request(entry, now) },
   });
+  const ticker = guardTicker;
+  if (bot) {
+    confirmation = new OwnerConfirmation({
+      links,
+      sender: bot,
+      reader: client,
+      clock,
+      log,
+      guard: { store: guardStore, vetoNow: (changeId) => ticker.vetoNow(changeId) },
+    });
+  }
   guardHealthSource = guardHealth({
     cursor: guardCursor,
     store: guardStore,
@@ -182,6 +198,13 @@ if (config.guardian) {
     "warn",
     "Guardian account and keys not set: Auto-Clawback and the loosening guard are disabled",
   );
+}
+
+if (bot) {
+  // Link buttons (Approve / Cancel) work even without the guard; Confirm and Reject need it.
+  confirmation ??= new OwnerConfirmation({ links, sender: bot, reader: client, clock, log });
+  bot.attach(confirmation);
+  bot.start();
 }
 
 const loop = new EventLoop({
@@ -198,7 +221,7 @@ const clawbackApi =
     : undefined;
 createApiServer(
   store,
-  bot ? { links, botUsername } : undefined,
+  bot ? { links, botUsername, reader: client, clock } : undefined,
   clawbackApi,
   guardHealthSource,
 ).listen(config.port, () => {

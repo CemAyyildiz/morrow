@@ -2,12 +2,34 @@ import {
   MorrowContractError,
   type ContractClient,
   type ErrorCode,
+  type PolicyChange,
   type PolicyChangeState,
 } from "@morrow/core-ts";
 import type { ChainClock } from "../clock.js";
 import type { Logger } from "../log.js";
 import { failureSummary } from "../loop.js";
+import { changeBinding } from "./binding.js";
 import type { GuardEntry, GuardStore } from "./store.js";
+
+/** Delivers Owner Confirmation requests (5.3b); see `OwnerConfirmation.request`. */
+export interface ConfirmationRequests {
+  /** Sends the entry's request to every owner chat that has not had it yet. */
+  request(entry: GuardEntry, now: bigint): Promise<void>;
+}
+
+/**
+ * True when the guard leaves the change to apply: the Owner confirmed it, the confirmation is
+ * bound to exactly this change as the contract has it now, and it is not duress-flagged (duress
+ * always wins). Anything else is vetoed.
+ */
+export function confirmedAndClean(entry: GuardEntry, change: PolicyChange): boolean {
+  return (
+    entry.confirmation === "confirmed" &&
+    entry.duress !== "duress" &&
+    entry.binding !== null &&
+    entry.binding === changeBinding(change)
+  );
+}
 
 export interface GuardTickerOptions {
   /** Unsigned client for views. */
@@ -23,6 +45,8 @@ export interface GuardTickerOptions {
   intervalMs?: number;
   /** Per-call limit for the read and the veto; default 3 × `intervalMs`. */
   callTimeoutMs?: number;
+  /** Owner Confirmation; without it no request is sent and every loosening change is vetoed. */
+  requests?: ConfirmationRequests;
 }
 
 /** The change was settled by someone else between the read and the veto. */
@@ -57,9 +81,12 @@ async function within<T>(ms: number, what: string, work: () => Promise<T>): Prom
 
 /**
  * Sends the loosening guard's vetoes: each scheduled entry from `veto_at` on, for as long as the
- * change is pending. The contract accepts a veto until someone applies the change, so a watcher
- * that is late past `effective_at` still vetoes. A failed or timed-out read or veto is retried on
- * the next tick; an entry is final only once the change is no longer pending.
+ * change is pending, unless the Owner confirmed it (`confirmedAndClean`, checked against a fresh
+ * `get_policy_change` right before the veto). The contract accepts a veto until someone applies
+ * the change, so a watcher that is late past `effective_at` still vetoes. A failed or timed-out
+ * read or veto is retried on the next tick; an entry is final only once the change is no longer
+ * pending or the guard decided to leave it. Before `veto_at` it delivers the Owner Confirmation
+ * requests of loosening entries; a failing request never delays a veto.
  */
 export class GuardTicker {
   private timer: ReturnType<typeof setTimeout> | null = null;
@@ -74,14 +101,50 @@ export class GuardTicker {
     this.callTimeoutMs = options.callTimeoutMs ?? 3 * this.intervalMs;
   }
 
-  /** Advances every scheduled entry that is due. */
+  /** Advances every scheduled entry that is due, then sends the requests not yet delivered. */
   async tick(): Promise<void> {
     this.lastError = null;
     const now = await this.options.clock.now();
-    for (const entry of await this.options.store.entries()) {
+    const entries = await this.options.store.entries();
+    for (const entry of entries) {
       if (entry.status !== "scheduled" || now < BigInt(entry.veto_at)) continue;
       await this.advance(entry);
     }
+    const requests = this.options.requests;
+    if (!requests) return;
+    for (const entry of entries) {
+      if (
+        entry.status !== "scheduled" ||
+        !entry.loosening ||
+        now >= BigInt(entry.veto_at) ||
+        (entry.confirmation !== "none" && entry.confirmation !== "requested")
+      ) {
+        continue;
+      }
+      try {
+        await within(this.callTimeoutMs, "confirmation request", () =>
+          requests.request(entry, now),
+        );
+      } catch (error) {
+        this.lastError = failureSummary(error);
+        this.options.log("error", "loosening guard: confirmation request failed; will retry", {
+          vault_id: entry.vault_id,
+          change_id: entry.change_id,
+          error: message(error),
+        });
+      }
+    }
+  }
+
+  /**
+   * Vetoes a scheduled change now, whatever its `veto_at` (an owner chat pressed Reject, which
+   * also brought `veto_at` forward so the next tick retries a failure). True once it is vetoed.
+   */
+  async vetoNow(changeId: string): Promise<boolean> {
+    const entry = await this.options.store.entry(changeId);
+    if (!entry || entry.status !== "scheduled") return entry?.status === "vetoed";
+    await this.advance(entry);
+    return (await this.options.store.entry(changeId))?.status === "vetoed";
   }
 
   start(): void {
@@ -108,14 +171,17 @@ export class GuardTicker {
   }
 
   /**
-   * The change's state (`vetoed_by_us` for a veto by the guard's Guardian outside a Clawback),
-   * `not_found`, or null after a retryable failure (already logged).
+   * The pending change itself, else its state (`vetoed_by_us` for a veto by the guard's Guardian
+   * outside a Clawback), `not_found`, or null after a retryable failure (already logged).
    */
-  private async read(entry: GuardEntry): Promise<Settlement | "pending" | "vetoed_by_us" | null> {
+  private async read(
+    entry: GuardEntry,
+  ): Promise<Settlement | PolicyChange | "vetoed_by_us" | null> {
     try {
       const change = await within(this.callTimeoutMs, "get_policy_change", () =>
         this.options.reader.getPolicyChange(entry.change_id),
       );
+      if (change.state === "pending") return change;
       if (change.state !== "vetoed" || change.vetoed_by !== this.options.guardianAccount) {
         return change.state;
       }
@@ -136,7 +202,11 @@ export class GuardTicker {
     const state = await this.read(entry);
     if (state === null) return;
     if (state === "vetoed_by_us") return this.vetoed(entry);
-    if (state !== "pending") return this.settle(entry, state);
+    if (typeof state === "string") return this.settle(entry, state);
+    // The latest confirmation state: the Owner may have confirmed or rejected since the snapshot.
+    const latest = (await this.options.store.entry(entry.change_id)) ?? entry;
+    if (latest.status !== "scheduled") return;
+    if (confirmedAndClean(latest, state)) return this.leave(latest);
     try {
       await within(this.callTimeoutMs, "veto_policy_change", () =>
         this.options.signer.vetoPolicyChange(entry.change_id),
@@ -148,7 +218,7 @@ export class GuardTicker {
         if (after === null) return;
         if (after === "vetoed_by_us") return this.vetoed(entry);
         // A read that still says pending (a lagging RPC node): the refusal itself settles it.
-        return this.settle(entry, after === "pending" ? error.code : after);
+        return this.settle(entry, typeof after === "string" ? after : error.code);
       }
       return this.failed(entry, error, "loosening guard: veto failed; will retry while pending");
     }
@@ -162,6 +232,23 @@ export class GuardTicker {
     );
     if (stored) {
       this.options.log("info", "loosening guard: policy change vetoed", {
+        vault_id: entry.vault_id,
+        change_id: entry.change_id,
+      });
+    }
+  }
+
+  /**
+   * The Owner confirmed the change: no veto. Logged neutrally, with no reasons, confirmation or
+   * duress details.
+   */
+  private async leave(entry: GuardEntry): Promise<void> {
+    const stored = await this.options.store.update(
+      { ...entry, status: "skipped", cause: "owner confirmed", last_error: null },
+      "scheduled",
+    );
+    if (stored) {
+      this.options.log("info", "loosening guard: veto decision made; no veto sent", {
         vault_id: entry.vault_id,
         change_id: entry.change_id,
       });

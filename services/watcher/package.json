@@ -8,7 +8,8 @@
   "scripts": {
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
-    "start": "tsx src/main.ts"
+    "start": "tsx src/main.ts",
+    "link-code": "tsx src/cli/link-code.ts"
   },
   "dependencies": {
     "@morrow/core-ts": "workspace:*",
