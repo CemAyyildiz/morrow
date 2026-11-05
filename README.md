@@ -45,7 +45,7 @@ Run one Scenario with its command, or all of them with `make demo`. The expected
 
 **Property suite.** "The contract never co-signs outside the Policy" is also tested with random hostile call sequences, not only with hand-written examples. Each case runs up to 30 steps against the real contract in the NEAR unit-test environment. In those steps the Owner, both Guardians, a stranger and another Vault's Owner and Guardian call every spend, signing, callback, Fast Approval and Policy method. They use bad envelopes, foreign or invalid addresses, empty, duplicate, reserved or fake coins, edge amounts and fee rates, and jump time to 1 ns around each `executable_at` and `effective_at`. After every step the suite checks three invariant families with its own transaction decoder and BIP143 code:
 
-1. **No signature outside the Policy.** Every MPC sign request is for a legally frozen op (a withdrawal no earlier than the end of its Delay, or approval time + the Fast Approval Floor in effect then if that is earlier), comes from an authorised caller, uses the op's path and carries the recomputed sighash. Its transaction pays only what the Policy allows.
+1. **No signature outside the Policy.** Every MPC sign request is for a legally frozen op (a withdrawal no earlier than the end of its Delay, or approval time + the Fast Approval Floor in effect then if that is earlier), comes from an authorised caller, uses the op's path and carries the recomputed sighash. Its transaction pays only what the Policy allows. A Clawback has exactly one output, and it pays the Recovery Address in effect when it was frozen. One case in four starts by moving the Recovery Address through an applied Policy Change, so this is also checked after the address has changed.
 2. **No fee above the cap.** min(Fee Cap, 5 %), or min(2 × Fee Cap, 10 %) for a Clawback.
 3. **No change to Script-bound data.** A Policy field changes only through an applied Policy Change after its `effective_at`.
 
@@ -57,7 +57,7 @@ cargo test -p morrow-vault --profile proptest property -- --nocapture
 
 It prints `Property suite: <N> cases, seed <hex>, 0 violations`; by default `Property suite: 1000 cases, seed 0x6d6f72726f77, 0 violations`. `MORROW_PROPTEST_SEED=<hex>` replays another seed and `MORROW_PROPTEST_CASES=<n>` runs more cases. Meta-tests plant bugs and assert that the suite reports each one:
 
-- **Signatures:** a withdrawal frozen 1 ns early; a Fast Approval stored 1 ns below its floor; a stranger's freeze; an allowance over its rolling limit; a change output redirected; an extra output; an allowance paying 1 sat more; a Clawback paying elsewhere; a foreign coin; a wrong version, lock time, sequence or dust output; a forged sign request; a stray sign call; a stored signature that the signer did not return; a panic without an error code.
+- **Signatures:** a withdrawal frozen 1 ns early; a Fast Approval stored 1 ns below its floor; a stranger's freeze; an allowance over its rolling limit; a change output redirected; an extra output; an allowance paying 1 sat more; a Clawback paying elsewhere, or paying the old Recovery Address after a change; a foreign coin; a wrong version, lock time, sequence or dust output; a forged sign request; a stray sign call; a stored signature that the signer did not return; a panic without an error code.
 - **Fees:** a fee 1 sat over each cap.
 - **Script-bound data:** each Script-bound field edited; a Policy field edited directly; a change applied 1 ns before `effective_at`; a vetoed change brought back.
 

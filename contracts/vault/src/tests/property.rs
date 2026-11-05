@@ -1,4 +1,6 @@
-//! Signer-discipline property suite (Story 7.4).
+//! Signer-discipline property suite (Story 7.4), which also carries the Clawback-path invariant
+//! of Story 3.2: every signed Clawback has exactly one output, paying the Recovery Address in
+//! effect when it was frozen, including after an applied Policy Change moved that address.
 //!
 //! Random hostile call sequences (Owner, each Guardian, a stranger, the Owner and the Guardian of
 //! another Vault, and time jumps) run against the real contract methods in the NEAR unit-test
@@ -600,7 +602,29 @@ fn case() -> impl Strategy<Value = Case> {
                 }
             },
         );
-    (setup, vec(action(), 1..=MAX_STEPS)).prop_map(|(setup, steps)| Case { setup, steps })
+    // One case in four opens with the Owner moving the Recovery Address through a Policy Change
+    // (refused for an invalid address), so random Clawbacks also run after an applied change
+    // (Story 3.2).
+    let prefix = prop_oneof![
+        3 => Just(vec![]),
+        1 => dest().prop_map(|dest| vec![
+            Action::Propose {
+                who: Who::Owner,
+                vault: VaultPick::Main,
+                change: Change::Fields(vec![Field::Recovery(dest)]),
+                env: Env::Valid,
+            },
+            Action::Advance(Time::EffectiveAt(0, 0)),
+            Action::Apply {
+                who: Who::Stranger,
+                change: 0,
+            },
+        ]),
+    ];
+    (setup, prefix, vec(action(), 1..=MAX_STEPS)).prop_map(|(setup, mut steps, rest)| {
+        steps.extend(rest);
+        Case { setup, steps }
+    })
 }
 
 const SCRIPT_BOUND_KEYS: [&str; 8] = [
@@ -1063,6 +1087,8 @@ struct Stats {
     fast_approvals: u64,
     /// Withdrawals frozen before the end of their Delay, after a Fast Approval.
     fast_freezes: u64,
+    /// Clawbacks frozen after an applied Policy Change moved the Recovery Address (Story 3.2).
+    clawbacks_after_recovery_change: u64,
     /// Refusals by error code (`ERR_…`, or near-sdk's private-method refusal).
     refused_with: BTreeMap<String, u64>,
 }
@@ -1082,6 +1108,7 @@ impl Stats {
         self.applies_1ns_early += other.applies_1ns_early;
         self.fast_approvals += other.fast_approvals;
         self.fast_freezes += other.fast_freezes;
+        self.clawbacks_after_recovery_change += other.clawbacks_after_recovery_change;
         for (code, n) in &other.refused_with {
             *self.refused_with.entry(code.clone()).or_default() += n;
         }
@@ -1104,7 +1131,7 @@ impl Stats {
                 .join(", ")
         };
         format!(
-"Coverage: {} steps, {} refusals; frozen: {}; sign requests: {}; {} signatures stored; {} Policy Changes applied, {} vetoed or withdrawn; {} executes and {} applies 1 ns early; {} Fast Approvals, {} withdrawals frozen before their Delay ended",
+"Coverage: {} steps, {} refusals; frozen: {}; sign requests: {}; {} signatures stored; {} Policy Changes applied, {} vetoed or withdrawn; {} executes and {} applies 1 ns early; {} Fast Approvals, {} withdrawals frozen before their Delay ended; {} Clawbacks after a Recovery Address change",
             self.steps,
             self.refusals,
             per_kind(&self.freezes),
@@ -1116,6 +1143,7 @@ impl Stats {
             self.applies_1ns_early,
             self.fast_approvals,
             self.fast_freezes,
+            self.clawbacks_after_recovery_change,
         )
     }
 
@@ -1130,6 +1158,7 @@ impl Stats {
             && self.applies_1ns_early > 0
             && self.fast_approvals > 0
             && self.fast_freezes > 0
+            && self.clawbacks_after_recovery_change > 0
     }
 }
 
@@ -2028,6 +2057,7 @@ impl Harness {
                 let op = self.contract.get_op(op_id);
                 let source = source.unwrap_or_default();
                 let swept: Vec<String> = utxos.iter().map(Outpoint::key).collect();
+                let moved_recovery = v.policy.recovery_address != RECOVERY_SIGNET;
                 let m = ModelOp {
                     destination: v.policy.recovery_address.clone(),
                     utxos,
@@ -2035,6 +2065,9 @@ impl Harness {
                 };
                 // The tx is checked against the Policy in effect at the Clawback.
                 self.freeze(op_id.0, &op, m)?;
+                if moved_recovery {
+                    self.stats.clawbacks_after_recovery_change += 1;
+                }
                 self.swept.extend(swept);
                 for m in self.ops.values_mut() {
                     if m.vault == vault_id
@@ -3952,4 +3985,75 @@ fn property_the_callbacks_are_private_in_lib_rs() {
             "{method} must stay #[private]"
         );
     }
+}
+
+/// Story 3.2: after an applied Policy Change moves the Recovery Address, a Guardian's Clawback
+/// pays the new address in one output, and a transaction paying the old one is reported.
+#[test]
+fn property_a_clawback_after_a_recovery_change_pays_the_new_address() {
+    install_quiet_panic_hook();
+    let mut harness = Harness::new(&fixed_setup());
+    harness
+        .run(&[
+            Action::Propose {
+                who: Who::Owner,
+                vault: VaultPick::Main,
+                change: Change::Fields(vec![Field::Recovery(Dest::Taproot)]),
+                env: Env::Valid,
+            },
+            Action::Advance(Time::EffectiveAt(0, 0)),
+            stranger_apply(),
+            Action::Clawback {
+                who: Who::Backup,
+                vault: VaultPick::Main,
+                utxos: pool_coins(&[1, 2]),
+                rate: Rate::Normal(2),
+                source: None,
+            },
+            Action::Sign {
+                who: Who::Emma,
+                op: 0,
+                input: 0,
+                deliver: true,
+            },
+        ])
+        .unwrap_or_else(|(step, v)| panic!("step {step}: {}", v.message));
+    assert_eq!(harness.stats.changes_applied, 1);
+    assert_eq!(
+        harness.vaults[&MAIN].policy.recovery_address,
+        TAPROOT_SIGNET
+    );
+    assert_eq!(harness.stats.freezes[kind_index(SpendOpKind::Clawback)], 1);
+    assert_eq!(
+        harness.stats.sign_requests[kind_index(SpendOpKind::Clawback)],
+        1
+    );
+    assert_eq!(harness.stats.clawbacks_after_recovery_change, 1);
+
+    let (&op_id, _) = harness
+        .ops
+        .iter()
+        .find(|(_, m)| m.kind == SpendOpKind::Clawback)
+        .expect("the Clawback is in the model");
+    let op = harness.contract.get_op(U64(op_id));
+    let tx = parse_tx(op.unsigned_tx_hex.as_deref().unwrap()).unwrap();
+    assert_eq!(tx.outputs.len(), 1);
+    assert_eq!(tx.outputs[0].1, signet_script(TAPROOT_SIGNET).unwrap());
+
+    // The same Clawback paying the Recovery Address from before the change is reported.
+    let m = harness.ops[&op_id].clone();
+    let v = &harness.vaults[&MAIN];
+    let mut old = tx;
+    old.outputs[0].1 = signet_script(RECOVERY_SIGNET).unwrap();
+    let script = v.witness_script(m.source);
+    let sighashes: Vec<String> = (0..old.inputs.len())
+        .map(|i| to_hex(&bip143(&old, i, script, m.utxos[i].value_sats.0)))
+        .collect();
+    let violation =
+        check_tx(&old, &sighashes, &m, v, &v.policy).expect_err("the old address must be reported");
+    assert!(
+        violation.message.contains("outside its Policy"),
+        "{}",
+        violation.message
+    );
 }
