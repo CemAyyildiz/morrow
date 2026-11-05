@@ -136,7 +136,37 @@ What you trust:
 4. **T-4** The Owner keeps the Recovery Address key offline.
 5. **T-5** (only with Fast Approval) a Trusted Contact, who can shorten the Delay only to the Fast Approval Floor, does not collude with a thief. **T-6** (only with a Guardian Watcher) the Guardian Watcher stays live and uncompromised.
 
-The deployment is not locked yet. Until its account's full-access keys are deleted (Story 7.5), whoever deployed it can replace the contract code and void every guarantee above.
+The deployment is not locked yet. Until its account's full-access keys are deleted (Story 7.5), whoever deployed it can replace the contract code and void every guarantee above. The tooling that locks a deployment, and lets anyone check one, is in `tools/deploy`; see [Verify the deployment](#verify-the-deployment).
+
+## Verify the deployment
+
+A locked Vault Contract account has no full-access keys, so nobody, the builder included, can replace its code or delete it. `tools/deploy verify` checks that from public NEAR data only: no keys and no funds. The locked testnet and mainnet account names will be filled in here once they are deployed (see What is not done yet).
+
+```sh
+pnpm install --frozen-lockfile
+make wasm   # builds the contract wasm in the pinned rust:1.97.1 Docker image, so your code_hash matches the operator's
+pnpm --filter @morrow/deploy start verify --account <testnet-account> --account <mainnet-account>
+```
+
+For each account, `verify` prints the deployed `code_hash` next to your local build's, `Locked: no full-access keys` (or how many remain), and `get_config` (MPC signer, allowed Bitcoin networks, creator allowlist, version). With several accounts it also checks that they all run the same code. It exits 0 only when every check passes, and it ends with `Deployment verified: <n> account(s), code_hash <hash>, locked`. Pass `--wasm <path>` to compare against another build. The account's network comes from its suffix (`.testnet` or `.near`), or from `--network testnet|mainnet`.
+
+### Operator: deploy and lock
+
+These steps use a funded account that holds no contract yet. The key comes from `~/.near-credentials/<network>/<account>.json` or `MORROW_DEPLOY_PRIVATE_KEY`, and is never printed. Nothing is sent without `--send` (deploy) or `--confirm <account>` (lock).
+
+```sh
+make wasm
+# 1. Dry run: prints the DeployContract + new(...) batch and the code_hash, sends nothing.
+pnpm --filter @morrow/deploy start deploy --account <account> --signer v1.signer-prod.testnet --networks signet
+# 2. Send it: one transaction, then a verify that does not yet require the lock.
+pnpm --filter @morrow/deploy start deploy --account <account> --signer v1.signer-prod.testnet --networks signet --send
+# 3. Lock: re-checks the code_hash and get_config, deletes every full-access key in one transaction, then re-reads the keys.
+pnpm --filter @morrow/deploy start lock --account <account> --confirm <account>
+# 4. Check it the way a judge does.
+pnpm --filter @morrow/deploy start verify --account <account>
+```
+
+On mainnet, add `--network mainnet` and use `--signer v1.signer --networks bitcoin --creators <account>[,<account>]`. The tool refuses any other Bitcoin network, signer or an empty creator allowlist there. A testnet deployment cannot allow `bitcoin`. `build --local` builds with the host toolchain and the same flags, for a quick check; its `code_hash` differs from `make wasm`'s because the paths embedded in the wasm differ.
 
 ## Prior art
 
@@ -169,6 +199,7 @@ The hosted link to the demo Vault's Proof Page, the hosted live demo, the Rob Th
 | `tools/escape`          | Standalone offline Escape CLI (no other repo dependencies)                                            |
 | `tools/judge`           | Judge Mode Scenario runner (`make demo`)                                                              |
 | `tools/challenge`       | Rob This Vault and Mainnet Bounty operator tooling                                                    |
+| `tools/deploy`          | Vault Contract build, deploy, lock and verify tooling                                                 |
 | `infra/`                | Docker Compose (regtest) and Google Cloud deployment                                                  |
 | `evidence/`             | Machine-readable run evidence                                                                         |
 
@@ -204,7 +235,9 @@ pnpm check:readme # this README's Scenario table against tools/judge
 - `tools/escape`: `bitcoinjs-lib`, `@noble/curves`.
 - `tools/judge`: `near-api-js`, `@noble/curves`.
 - `tools/challenge`: `near-api-js`, `bitcoinjs-lib`, `@noble/curves`.
+- `tools/deploy`: `near-api-js`.
 - Dev, repository-wide: `typescript`, `eslint`, `@eslint/js`, `typescript-eslint`, `prettier`, `vitest`, `tsx`.
+- Contract build: the Rust Docker image `rust:1.97.1@sha256:b1b3c9c0d921d7fa0a6d1f9ec7e4eab87f8c8ec97644c3d791450f131dec813f` (`make wasm`).
 - Runtime services: Bitcoin Core (Docker `bitcoin/bitcoin:32.1@sha256:d2454aaf2ff4ce1ebbc49f4aa05ed044c907b849a80a3f4c0ad23e488e50bbe0`, from `infra/regtest`), Telegram Bot API.
 
 ## License

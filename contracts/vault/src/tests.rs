@@ -161,6 +161,114 @@ fn enforces_creator_allowlist_and_minimum_deposit() {
     assert_eq!(create(&mut contract, standard_policy()), U64(1));
 }
 
+/// The Mainnet Bounty deployment: `allowed_networks = {bitcoin}` with a one-account allowlist.
+mod mainnet_deployment {
+    use super::*;
+
+    const BOUNTY_CREATOR: &str = "bounty-operator.near";
+    const RECOVERY_MAINNET: &str = "bc1qw508d6qejxtdg4y5r3zarvary0c5xw7kv8f3t4";
+
+    fn mainnet_contract() -> VaultContract {
+        context("deployer.near", NearToken::from_yoctonear(0));
+        near_sdk::mock::with_mocked_blockchain(|chain| {
+            chain.take_storage();
+        });
+        VaultContract::new(
+            "v1.signer".parse().unwrap(),
+            vec![BtcNetwork::Bitcoin],
+            vec![BOUNTY_CREATOR.parse().unwrap()],
+        )
+    }
+
+    fn mainnet_policy() -> Policy {
+        Policy {
+            btc_network: BtcNetwork::Bitcoin,
+            recovery_address: RECOVERY_MAINNET.into(),
+            fee_cap_sats: U64(10_000),
+            allowance_limit_sats: U64(0),
+            ..standard_policy()
+        }
+    }
+
+    #[test]
+    fn get_config_reports_the_mainnet_init_args() {
+        let contract = mainnet_contract();
+        let config = contract.get_config();
+        assert_eq!(config["signer_account"], "v1.signer");
+        assert_eq!(config["allowed_networks"], json!(["bitcoin"]));
+        assert_eq!(config["creator_allowlist"], json!([BOUNTY_CREATOR]));
+        assert_eq!(config["version"], env!("CARGO_PKG_VERSION"));
+    }
+
+    #[test]
+    fn the_allowed_creator_creates_a_mainnet_vault() {
+        let mut contract = mainnet_contract();
+        context(BOUNTY_CREATOR, MIN_VAULT_STORAGE);
+        let vault_id = create(&mut contract, mainnet_policy());
+        let vault = contract.get_vault(vault_id);
+        assert_eq!(vault.policy.btc_network, BtcNetwork::Bitcoin);
+        assert_eq!(vault.policy.recovery_address, RECOVERY_MAINNET);
+        assert_eq!(vault.owner_account.as_str(), BOUNTY_CREATOR);
+    }
+
+    #[test]
+    fn every_other_network_is_refused() {
+        for (network, recovery) in [
+            (
+                BtcNetwork::Signet,
+                crate::core::policy::tests::RECOVERY_SIGNET,
+            ),
+            (
+                BtcNetwork::Testnet4,
+                crate::core::policy::tests::RECOVERY_SIGNET,
+            ),
+            (
+                BtcNetwork::Regtest,
+                "bcrt1qw508d6qejxtdg4y5r3zarvary0c5xw7kygt080",
+            ),
+        ] {
+            let message = panic_message(move || {
+                let mut contract = mainnet_contract();
+                context(BOUNTY_CREATOR, MIN_VAULT_STORAGE);
+                let policy = Policy {
+                    btc_network: network,
+                    recovery_address: recovery.into(),
+                    ..mainnet_policy()
+                };
+                let _ = contract.create_vault(OWNER_KEY.to_string(), policy);
+            });
+            assert!(
+                message.contains("ERR_NETWORK_NOT_ALLOWED"),
+                "{network:?}: {message}"
+            );
+        }
+    }
+
+    #[test]
+    fn every_other_creator_is_refused() {
+        for caller in ["stranger.near", "operator.testnet", "deployer.near"] {
+            let message = panic_message(move || {
+                let mut contract = mainnet_contract();
+                context(caller, MIN_VAULT_STORAGE);
+                let _ = contract.create_vault(OWNER_KEY.to_string(), mainnet_policy());
+            });
+            assert!(
+                message.contains("ERR_CREATOR_NOT_ALLOWED"),
+                "{caller}: {message}"
+            );
+        }
+    }
+
+    #[test]
+    fn init_refuses_an_empty_network_list() {
+        let message = panic_message(|| {
+            context("deployer.near", NearToken::from_yoctonear(0));
+            let _ = VaultContract::new("v1.signer".parse().unwrap(), vec![], vec![]);
+        });
+        assert!(message.contains("ERR_NETWORK_NOT_ALLOWED"), "{message}");
+    }
+}
+
 #[test]
 fn rejects_a_malformed_owner_key() {
     let message = panic_message(|| {
