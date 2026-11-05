@@ -8,8 +8,8 @@ use crate::core::address::p2wsh_address;
 use crate::core::address::{p2wsh_script_pubkey, script_pubkey};
 use crate::core::errors::{ErrorCode, Rejection};
 use crate::core::policy::{
-    is_compressed_key, parse_change, validate_policy, BtcNetwork, Policy, PolicyChange,
-    PolicyChangeState, DAY_NS,
+    is_compressed_key, parse_change, validate_policy, BtcNetwork, GuardianKind, Policy,
+    PolicyChange, PolicyChangeState, DAY_NS,
 };
 use crate::core::script::{
     build_vault_script, compress_derived_key, hex, parse_key, witness_templates, WitnessTemplate,
@@ -943,6 +943,50 @@ impl VaultContract {
             json!({ "op_id": op_id, "by": caller }),
         );
         self.flush_and_charge(op.vault_id.0, storage_before);
+    }
+
+    /// Fast Approval: a Trusted Contact Guardian shortens a Pending withdrawal's wait to
+    /// `min(executable_at, now + fast_approval_floor_ns)`, under the Policy in effect now. It
+    /// never extends the wait. Charged like a veto, so a Guardian's call never fails on storage.
+    pub fn fast_approve(&mut self, op_id: U64) {
+        let storage_before = env::storage_usage();
+        let op = self
+            .ops
+            .get(&op_id.0)
+            .cloned()
+            .unwrap_or_else(|| fail(ErrorCode::OpNotFound));
+        let vault = self.active_vault(op.vault_id.0).clone();
+        let caller = env::predecessor_account_id();
+        let guardian = vault
+            .policy
+            .guardians
+            .iter()
+            .find(|g| g.guardian_account == caller)
+            .unwrap_or_else(|| fail(ErrorCode::Unauthorized));
+        if !vault.policy.fast_approval {
+            fail(ErrorCode::FastApprovalDisabled);
+        }
+        if guardian.kind != GuardianKind::TrustedContact {
+            fail(ErrorCode::NotTrustedContact);
+        }
+        let current = match op.executable_at {
+            Some(at) if op.kind == SpendOpKind::Withdrawal && op.state == SpendOpState::Pending => {
+                at.0
+            }
+            _ => fail(ErrorCode::BadOpState),
+        };
+        let floor_at = env::block_timestamp().saturating_add(vault.policy.fast_approval_floor_ns.0);
+        let executable_at = U64(current.min(floor_at));
+        if let Some(stored) = self.ops.get_mut(&op_id.0) {
+            stored.executable_at = Some(executable_at);
+        }
+        self.emit(
+            op.vault_id.0,
+            "fast_approved",
+            json!({ "op_id": op_id, "by": caller, "executable_at": executable_at }),
+        );
+        self.flush_all();
+        self.charge_storage(op.vault_id.0, storage_before);
     }
 
     /// Proposes a Policy Change. It waits in public for the current Policy Change Delay: any

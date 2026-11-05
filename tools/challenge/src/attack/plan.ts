@@ -24,6 +24,7 @@ export type Category =
   | "refresh"
   | "spend_allowance"
   | "policy_change"
+  | "fast_approval"
   | "bitcoin_escape"
   | "bitcoin_no_cosigner";
 
@@ -46,6 +47,7 @@ export const CATEGORIES: Record<Category, CategoryInfo> = {
   refresh: { method: "refresh", label: "Refresh", story: "4.1" },
   spend_allowance: { method: "spend_allowance", label: "Allowance spend", story: "5.2" },
   policy_change: { method: "propose_policy_change", label: "Policy Change", story: "5.1" },
+  fast_approval: { method: "fast_approve", label: "Fast Approval as the Owner", story: "8.4" },
   bitcoin_escape: {
     method: null,
     label: "Escape spend before the Escape Timelock, Owner Key only",
@@ -80,6 +82,7 @@ export const LIVE_METHODS: readonly string[] = [
   "refresh",
   "propose_policy_change",
   "spend_allowance",
+  "fast_approve",
 ];
 
 /** Categories the live mix may send: Bitcoin spends always, contract calls when deployed. */
@@ -133,6 +136,7 @@ export type Move =
   | "execute_early"
   | "sign_before_freeze"
   | "same_coins_request"
+  | "fast_approve_own_request"
   | "request_after_clawback"
   | "execute_after_clawback"
   | "sign_after_clawback"
@@ -213,6 +217,13 @@ export const MOVES: Record<Move, MoveInfo> = {
     phase: "window",
     expected: ["ERR_OUTPOINT_RESERVED", "ERR_CLAWED_BACK"],
   },
+  // The Owner Key fast-approves its own request: only a Trusted Contact Guardian may, and the
+  // Owner is no Guardian at all. Racing the Clawback, so ERR_CLAWED_BACK when it lands first.
+  fast_approve_own_request: {
+    category: "fast_approval",
+    phase: "window",
+    expected: ["ERR_UNAUTHORIZED", "ERR_CLAWED_BACK"],
+  },
   request_after_clawback: {
     category: "withdrawal_request",
     phase: "fill",
@@ -249,6 +260,7 @@ const SCRIPT: readonly Move[] = [
   "execute_early",
   "sign_before_freeze",
   "same_coins_request",
+  "fast_approve_own_request",
 ];
 
 /** The fill draw: refusals weigh 3, the harmless top-up 1. */

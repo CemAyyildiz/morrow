@@ -138,6 +138,45 @@ describe("dry run", () => {
   });
 });
 
+describe("Fast Approval as the Owner", () => {
+  it("races the Clawback in the window batch and is refused: the Owner is no Guardian", async () => {
+    const ports = await dryRunPorts();
+    const batches: string[][] = [];
+    const batch = ports.near.callBatch;
+    ports.near = {
+      ...ports.near,
+      callBatch: (key, plans) => {
+        batches.push(plans.map((p) => p.method));
+        return batch(key, plans);
+      },
+    };
+    const { report, exitCode } = await runAttack(ports, { ...SHORT, n: 14 });
+    expect(exitCode).toBe(0);
+    expect(batches[1]).toEqual([
+      "begin_execute",
+      "sign_input",
+      "request_withdrawal",
+      "fast_approve",
+    ]);
+    const attempt = report.attempts.find((a) => a.method === "fast_approve")!;
+    expect(attempt.category).toBe("fast_approval");
+    expect(attempt.args).toEqual({ op_id: report.rounds[0]!.request_op_id });
+    expect([attempt.actual, attempt.expected_match, attempt.window_result]).toEqual([
+      "ERR_UNAUTHORIZED",
+      true,
+      "own_code",
+    ]);
+    expect(attempt.unexpected).toBe(false);
+  });
+
+  it("is in every round of the 100-attempt dry run, each refused", async () => {
+    const { report } = await runAttack(await dryRunPorts(), DRY);
+    const approvals = report.attempts.filter((a) => a.method === "fast_approve");
+    expect(approvals).toHaveLength(report.rounds.length);
+    for (const a of approvals) expect(a.expected).toContain(a.actual);
+  });
+});
+
 describe("Recovery Address redirect (TH-12)", () => {
   const isRedirect = (a: { method: string | null; args: unknown }) =>
     a.method === "propose_policy_change" &&
@@ -515,11 +554,12 @@ describe("failures (exit 1)", () => {
   it("no Clawback seen: the round is marked, its fill skipped, and the run fails", async () => {
     const ports = await dryRunPorts();
     ports.watcher = { tick: async () => null };
-    const { report, exitCode } = await runAttack(ports, { ...SHORT, n: 14 });
+    // One more than the 14 scripted attempts, so a fill slot exists to be skipped.
+    const { report, exitCode } = await runAttack(ports, { ...SHORT, n: 15 });
     expect(exitCode).toBe(1);
     expect(report.rounds[0]?.clawback_seen).toBe(false);
     expect(report.summary.clawback_missing).toEqual([1]);
-    expect(report.attempts.length).toBeLessThan(14); // no fill
+    expect(report.attempts.length).toBeLessThan(15); // no fill
   });
 });
 

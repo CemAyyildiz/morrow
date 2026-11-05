@@ -5,7 +5,8 @@
 //! environment. After every step three invariant families are checked:
 //!
 //! 1. No signature outside the Policy: every MPC sign request is for an op whose freeze was
-//!    legal, triggered by an authorised caller, on the op's own path, for the sighash this file
+//!    legal (a withdrawal at or after `min(request + Delay, min over its Fast Approvals of
+//!    approval time + the floor then in effect)`), triggered by an authorised caller, on the op's own path, for the sighash this file
 //!    recomputes (BIP143) from the frozen transaction, and that transaction pays only what the
 //!    Policy allows.
 //! 2. No fee above the cap, recomputed here from the transaction's inputs and outputs.
@@ -233,6 +234,8 @@ enum Time {
     /// A pending change's `effective_at` plus -1, 0 or +1 ns.
     EffectiveAt(u8, i8),
     Delay,
+    /// The Main Vault's Fast Approval floor, as a Trusted Contact's approval waits.
+    Floor,
     Day,
     Random(u64),
 }
@@ -243,6 +246,9 @@ enum Plant {
     ExecutableAtOneNanoEarlier(u8),
     /// Test-only hook: moves a pending change's stored `effective_at` 1 ns earlier.
     EffectiveAtOneNanoEarlier(u8),
+    /// Test-only hook: a Fast Approval by the Trusted Contact that sets `executable_at` 1 ns
+    /// below `now + floor`.
+    ApprovalOneNanoBelowFloor(u8),
 }
 
 #[derive(Clone, Debug)]
@@ -326,6 +332,10 @@ enum Action {
         who: Who,
         change: u8,
     },
+    FastApprove {
+        who: Who,
+        op: u8,
+    },
     TopUp {
         who: Who,
         vault: VaultPick,
@@ -341,6 +351,12 @@ struct Setup {
     allowance_limit: u64,
     fee_cap: u64,
     pool: Vec<u64>,
+    /// The Main Vault's Fast Approval and floor at creation.
+    fast_approval: bool,
+    floor: u64,
+    /// The Kind of the Main Vault's second Guardian (Backup) and of the Other Vault's Guardian.
+    backup_kind: GuardianKind,
+    other_kind: GuardianKind,
 }
 
 #[derive(Clone, Debug)]
@@ -499,6 +515,7 @@ fn time() -> impl Strategy<Value = Time> {
         6 => (any::<u8>(), -1i8..=1).prop_map(|(op, d)| Time::ExecutableAt(op, d)),
         6 => (any::<u8>(), -1i8..=1).prop_map(|(change, d)| Time::EffectiveAt(change, d)),
         3 => Just(Time::Delay),
+        3 => Just(Time::Floor),
         3 => Just(Time::Day),
         2 => (0..=40 * DAY_NS).prop_map(Time::Random),
     ]
@@ -546,6 +563,7 @@ fn action() -> impl Strategy<Value = Action> {
         1 => (who(3, 3), any::<u8>(), optional_env())
             .prop_map(|(who, change, env)| Action::Veto { who, change, env }),
         4 => (who(2, 2), any::<u8>()).prop_map(|(who, change)| Action::Apply { who, change }),
+        6 => (who(2, 6), any::<u8>()).prop_map(|(who, op)| Action::FastApprove { who, op }),
         1 => (who(1, 1), vault_pick(), 0u8..3)
             .prop_map(|(who, vault, deposit)| Action::TopUp { who, vault, deposit }),
         8 => time().prop_map(Action::Advance),
@@ -560,12 +578,27 @@ fn case() -> impl Strategy<Value = Case> {
             select(vec![600u64, 10_000, 60_000, 150_000, 1_000_000, 5_000_000]),
             POOL_SIZE,
         ),
+        prop_oneof![3 => Just(true), 1 => Just(false)],
+        select(vec![10 * MINUTE_NS, HOUR_NS, 6 * HOUR_NS, DAY_NS]),
+        select(vec![GuardianKind::BackupDevice, GuardianKind::AutoClawback]),
+        select(vec![
+            GuardianKind::AutoClawback,
+            GuardianKind::TrustedContact,
+        ]),
     )
-        .prop_map(|(allowance_limit, fee_cap, pool)| Setup {
-            allowance_limit,
-            fee_cap,
-            pool,
-        });
+        .prop_map(
+            |(allowance_limit, fee_cap, pool, fast_approval, floor, backup_kind, other_kind)| {
+                Setup {
+                    allowance_limit,
+                    fee_cap,
+                    pool,
+                    fast_approval,
+                    floor,
+                    backup_kind,
+                    other_kind,
+                }
+            },
+        );
     (setup, vec(action(), 1..=MAX_STEPS)).prop_map(|(setup, steps)| Case { setup, steps })
 }
 
@@ -964,6 +997,8 @@ struct ModelOp {
     utxos: Vec<Outpoint>,
     /// The Delay in effect when the withdrawal was requested.
     delay_at_request: u64,
+    /// The earliest `approval time + floor in effect` over the withdrawal's Fast Approvals.
+    approved_until: Option<u64>,
     frozen: Option<Frozen>,
     /// The signatures stored per input, as `on_signed` returned them.
     signatures: Vec<Option<String>>,
@@ -981,13 +1016,21 @@ impl ModelOp {
             destination: String::new(),
             utxos: Vec::new(),
             delay_at_request: 0,
+            approved_until: None,
             frozen: None,
             signatures: Vec::new(),
         }
     }
 
-    fn executable_at(&self) -> u64 {
+    /// The end of the Delay: `request + Delay` at request time.
+    fn delay_ends_at(&self) -> u64 {
         self.created_at.saturating_add(self.delay_at_request)
+    }
+
+    /// The earliest legal freeze: the end of the Delay, or a Fast Approval's floor if earlier.
+    fn executable_at(&self) -> u64 {
+        self.approved_until
+            .map_or(self.delay_ends_at(), |at| at.min(self.delay_ends_at()))
     }
 }
 
@@ -1015,6 +1058,10 @@ struct Stats {
     executes_1ns_early: u64,
     /// `apply_policy_change` attempts at exactly `effective_at - 1`.
     applies_1ns_early: u64,
+    /// Accepted `fast_approve` calls.
+    fast_approvals: u64,
+    /// Withdrawals frozen before the end of their Delay, after a Fast Approval.
+    fast_freezes: u64,
     /// Refusals by error code (`ERR_…`, or near-sdk's private-method refusal).
     refused_with: BTreeMap<String, u64>,
 }
@@ -1032,6 +1079,8 @@ impl Stats {
         self.changes_stopped += other.changes_stopped;
         self.executes_1ns_early += other.executes_1ns_early;
         self.applies_1ns_early += other.applies_1ns_early;
+        self.fast_approvals += other.fast_approvals;
+        self.fast_freezes += other.fast_freezes;
         for (code, n) in &other.refused_with {
             *self.refused_with.entry(code.clone()).or_default() += n;
         }
@@ -1054,7 +1103,7 @@ impl Stats {
                 .join(", ")
         };
         format!(
-"Coverage: {} steps, {} refusals; frozen: {}; sign requests: {}; {} signatures stored; {} Policy Changes applied, {} vetoed or withdrawn; {} executes and {} applies 1 ns early",
+"Coverage: {} steps, {} refusals; frozen: {}; sign requests: {}; {} signatures stored; {} Policy Changes applied, {} vetoed or withdrawn; {} executes and {} applies 1 ns early; {} Fast Approvals, {} withdrawals frozen before their Delay ended",
             self.steps,
             self.refusals,
             per_kind(&self.freezes),
@@ -1064,10 +1113,12 @@ impl Stats {
             self.changes_stopped,
             self.executes_1ns_early,
             self.applies_1ns_early,
+            self.fast_approvals,
+            self.fast_freezes,
         )
     }
 
-    /// Every signing path and both 1 ns boundaries were reached.
+    /// Every signing path, both 1 ns boundaries and a Fast-Approved freeze were reached.
     fn reaches_every_path(&self) -> bool {
         self.freezes.iter().all(|n| *n > 0)
             && self.sign_requests.iter().all(|n| *n > 0)
@@ -1076,6 +1127,8 @@ impl Stats {
             && self.changes_stopped > 0
             && self.executes_1ns_early > 0
             && self.applies_1ns_early > 0
+            && self.fast_approvals > 0
+            && self.fast_freezes > 0
     }
 }
 
@@ -1332,6 +1385,12 @@ impl Harness {
             Policy {
                 allowance_limit_sats: U64(setup.allowance_limit),
                 fee_cap_sats: U64(setup.fee_cap),
+                fast_approval: setup.fast_approval,
+                fast_approval_floor_ns: U64(setup.floor),
+                guardians: vec![
+                    guardian("22", EMMA, GuardianKind::TrustedContact),
+                    guardian("33", BACKUP, setup.backup_kind),
+                ],
                 ..standard_policy()
             },
         );
@@ -1340,7 +1399,8 @@ impl Harness {
         let _ = contract.create_vault(
             OTHER_OWNER_KEY.to_string(),
             Policy {
-                guardians: vec![guardian("66", OTHER_GUARDIAN, GuardianKind::AutoClawback)],
+                guardians: vec![guardian("66", OTHER_GUARDIAN, setup.other_kind)],
+                fast_approval: true,
                 ..standard_policy()
             },
         );
@@ -1755,12 +1815,16 @@ impl Harness {
                         let executable_at = m.executable_at();
                         if self.now < executable_at {
                             return Err(signature(format!(
-                                "withdrawal {op_id} frozen at {}, {} ns before executable_at {executable_at} (requested at {} with a Delay of {} ns)",
+                                "withdrawal {op_id} frozen at {}, {} ns before executable_at {executable_at} (requested at {} with a Delay of {} ns; Fast Approval floor {:?})",
                                 self.now,
                                 executable_at - self.now,
                                 m.created_at,
-                                m.delay_at_request
+                                m.delay_at_request,
+                                m.approved_until
                             )));
+                        }
+                        if self.now < m.delay_ends_at() {
+                            self.stats.fast_freezes += 1;
                         }
                         self.freeze(op_id, &op, m)
                     }
@@ -2122,6 +2186,7 @@ impl Harness {
                 self.stats.changes_applied += 1;
                 Ok(())
             }
+            Action::FastApprove { who, op } => self.fast_approve(*who, *op),
             Action::TopUp {
                 who,
                 vault,
@@ -2173,6 +2238,7 @@ impl Harness {
                         }
                     }
                     Time::Delay => self.now + self.vaults[&MAIN].policy.delay_ns.0,
+                    Time::Floor => self.now + self.vaults[&MAIN].policy.fast_approval_floor_ns.0,
                     Time::Day => self.now + DAY_NS,
                     Time::Random(ns) => self.now + ns,
                 };
@@ -2184,6 +2250,17 @@ impl Harness {
                 let op_id = self.pick_op(*pick, |m| {
                     m.kind == SpendOpKind::Withdrawal && m.state == SpendOpState::Pending
                 });
+                if let Some(op) = self.contract.ops.get_mut(&op_id) {
+                    op.executable_at = op.executable_at.map(|t| U64(t.0 - 1));
+                }
+                Ok(())
+            }
+            Action::Plant(Plant::ApprovalOneNanoBelowFloor(pick)) => {
+                let op_id = self.pick_op(*pick, |m| {
+                    m.kind == SpendOpKind::Withdrawal && m.state == SpendOpState::Pending
+                });
+                // A real approval, then its stored result 1 ns lower, as a buggy `min` would.
+                self.fast_approve(Who::Emma, *pick)?;
                 if let Some(op) = self.contract.ops.get_mut(&op_id) {
                     op.executable_at = op.executable_at.map(|t| U64(t.0 - 1));
                 }
@@ -2201,6 +2278,56 @@ impl Harness {
                 Ok(())
             }
         }
+    }
+
+    /// `fast_approve` by `who`. Accepted only from a Trusted Contact Guardian of the op's open
+    /// Vault, with Fast Approval on in the Policy in effect, for a Pending withdrawal; it must set
+    /// `executable_at` to `min(executable_at, now + floor in effect)`, never later or earlier.
+    fn fast_approve(&mut self, who: Who, op: u8) -> Checked {
+        let op_id = self.pick_op(op, |m| {
+            m.kind == SpendOpKind::Withdrawal && m.state == SpendOpState::Pending
+        });
+        let caller = who.account();
+        let before = self.ops.get(&op_id).cloned();
+        let Ok(((), requests)) = self.call(caller, NearToken::from_yoctonear(0), |c| {
+            c.fast_approve(U64(op_id))
+        }) else {
+            return Ok(());
+        };
+        no_sign_requests(&requests, "fast_approve")?;
+        let m = before
+            .ok_or_else(|| signature(format!("fast_approve succeeded on unknown op {op_id}")))?;
+        let v = &self.vaults[&m.vault];
+        let kind = v
+            .policy
+            .guardians
+            .iter()
+            .find(|g| g.guardian_account.as_str() == caller)
+            .map(|g| g.kind);
+        let legal = !v.closed
+            && v.policy.fast_approval
+            && kind == Some(GuardianKind::TrustedContact)
+            && m.kind == SpendOpKind::Withdrawal
+            && m.state == SpendOpState::Pending;
+        if !legal {
+            return Err(signature(format!(
+                "fast_approve of {:?} op {op_id} in state {:?} accepted from {caller} (Guardian Kind {kind:?}, Fast Approval {}, closed: {})",
+                m.kind, m.state, v.policy.fast_approval, v.closed
+            )));
+        }
+        let floor_at = self.now.saturating_add(v.policy.fast_approval_floor_ns.0);
+        let expected = m.executable_at().min(floor_at);
+        let stored = self.contract.get_op(U64(op_id)).executable_at.map(|t| t.0);
+        if stored != Some(expected) {
+            return Err(signature(format!(
+                "fast_approve set executable_at of op {op_id} to {stored:?}, not min(executable_at {}, now + floor {floor_at}) = {expected}",
+                m.executable_at()
+            )));
+        }
+        let m = self.ops.get_mut(&op_id).expect("seen above");
+        m.approved_until = Some(m.approved_until.map_or(floor_at, |at| at.min(floor_at)));
+        self.stats.fast_approvals += 1;
+        Ok(())
     }
 
     /// An Owner method succeeded: it must have come from the Vault's Owner, with a valid
@@ -2808,6 +2935,10 @@ fn fixed_setup() -> Setup {
         allowance_limit: 100_000,
         fee_cap: 100_000,
         pool: vec![150_000; POOL_SIZE],
+        fast_approval: true,
+        floor: HOUR_NS,
+        backup_kind: GuardianKind::BackupDevice,
+        other_kind: GuardianKind::AutoClawback,
     }
 }
 
@@ -2951,6 +3082,80 @@ fn property_a_planted_early_freeze_is_reported() {
         .unwrap_or_else(|(step, v)| panic!("step {step}: {}", v.message));
     assert_eq!(harness.stats.refusals, 1);
     assert_eq!(harness.stats.freezes[0], 1);
+}
+
+fn emma_approves() -> Action {
+    Action::FastApprove {
+        who: Who::Emma,
+        op: 0,
+    }
+}
+
+#[test]
+fn property_a_planted_approval_below_the_floor_is_reported() {
+    install_quiet_panic_hook();
+    // Requested at NOW (Delay 24 h); approved at NOW + 2 h with a 1 h floor; the planted
+    // approval stores NOW + 3 h − 1 ns, and the Owner executes then.
+    let below = [
+        owner_request(0),
+        Action::Advance(Time::Random(2 * HOUR_NS)),
+        Action::Plant(Plant::ApprovalOneNanoBelowFloor(0)),
+        Action::Advance(Time::ExecutableAt(0, -1)),
+        owner_execute(),
+    ];
+    let mut harness = Harness::new(&fixed_setup());
+    let (step, violation) = harness
+        .run(&below)
+        .expect_err("a withdrawal frozen 1 ns below the Fast Approval floor must be reported");
+    assert_eq!(step, 5);
+    assert_eq!(harness.now, NOW + 3 * HOUR_NS - 1);
+    assert_eq!(violation.family, 1, "{}", violation.message);
+    assert!(
+        violation.message.contains("1 ns before executable_at"),
+        "{}",
+        violation.message
+    );
+
+    // Control: a real approval is refused at floor − 1 ns and frozen at the floor, before the
+    // Delay ends; a Backup Device, the Owner and a stranger are refused.
+    let mut harness = Harness::new(&fixed_setup());
+    harness
+        .run(&[
+            owner_request(0),
+            Action::Advance(Time::Random(2 * HOUR_NS)),
+            Action::FastApprove {
+                who: Who::Backup,
+                op: 0,
+            },
+            Action::FastApprove {
+                who: Who::Owner,
+                op: 0,
+            },
+            Action::FastApprove {
+                who: Who::OtherGuardian,
+                op: 0,
+            },
+            emma_approves(),
+            Action::Advance(Time::ExecutableAt(0, -1)),
+            owner_execute(),
+            Action::Advance(Time::OneNano),
+            owner_execute(),
+            emma_approves(),
+        ])
+        .unwrap_or_else(|(step, v)| panic!("step {step}: {}", v.message));
+    assert_eq!(harness.now, NOW + 3 * HOUR_NS);
+    assert_eq!(harness.stats.fast_approvals, 1);
+    assert_eq!(harness.stats.fast_freezes, 1);
+    assert_eq!(harness.stats.freezes[0], 1);
+    let refused = |code: &str| harness.stats.refused_with.get(code).copied();
+    assert_eq!(refused("ERR_NOT_TRUSTED_CONTACT"), Some(1));
+    assert_eq!(refused("ERR_UNAUTHORIZED"), Some(2));
+    assert_eq!(refused("ERR_NOT_EXECUTABLE"), Some(1));
+    assert_eq!(
+        refused("ERR_BAD_OP_STATE"),
+        Some(1),
+        "a Frozen op is not approved"
+    );
 }
 
 /// A hand-built frozen op of `kind` whose transaction pays `paid` to the place its kind may pay.

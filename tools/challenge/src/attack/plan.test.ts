@@ -99,6 +99,7 @@ describe("CATEGORIES", () => {
     expect(CATEGORIES.refresh.story).toBe("4.1");
     expect(CATEGORIES.spend_allowance.story).toBe("5.2");
     expect(CATEGORIES.policy_change.story).toBe("5.1");
+    expect(CATEGORIES.fast_approval.story).toBe("8.4");
   });
 });
 
@@ -107,6 +108,7 @@ describe("notDeployed", () => {
     expect(LIVE_METHODS).toContain("refresh");
     expect(LIVE_METHODS).toContain("propose_policy_change");
     expect(LIVE_METHODS).toContain("spend_allowance");
+    expect(LIVE_METHODS).toContain("fast_approve");
     expect(notDeployed(live)).toEqual([]);
     expect(notDeployed(all)).toEqual([]);
   });

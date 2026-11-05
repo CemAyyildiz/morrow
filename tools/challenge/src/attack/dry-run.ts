@@ -225,6 +225,8 @@ async function dispatch(mock: MockContractClient, plan: CallPlan): Promise<unkno
       return mock.proposePolicyChange(args as never);
     case "apply_policy_change":
       return mock.applyPolicyChange(args.change_id as string);
+    case "fast_approve":
+      return mock.fastApprove(args.op_id as string);
     default:
       throw new Error(`unknown method ${plan.method}`);
   }

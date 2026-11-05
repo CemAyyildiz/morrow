@@ -747,6 +747,9 @@ export class AttackRun {
       case "sign_after_clawback":
         if (ctx.ownOpId === null) return null;
         return call("sign_input", { op_id: ctx.ownOpId, input_index: 0 });
+      case "fast_approve_own_request":
+        if (ctx.ownOpId === null) return null;
+        return call("fast_approve", { op_id: ctx.ownOpId });
       case "refresh_after_clawback":
         return call("refresh", {
           vault_id: ctx.vaultId,

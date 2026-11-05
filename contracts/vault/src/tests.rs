@@ -2737,4 +2737,373 @@ mod policy_change_more {
     }
 }
 
+mod fast_approval {
+    use super::withdrawals_support::*;
+    use super::*;
+    use crate::core::policy::tests::guardian;
+    use crate::core::policy::{GuardianKind, HOUR_NS};
+    use crate::core::spend::{SpendOpKind, SpendOpState};
+    use near_sdk::serde_json::json;
+    use std::panic::AssertUnwindSafe;
+
+    const WEEK: u64 = 7 * DAY_NS;
+
+    /// Standard, with Fast Approval on and a 1 h floor.
+    fn fast_policy() -> Policy {
+        Policy {
+            fast_approval: true,
+            fast_approval_floor_ns: U64(HOUR_NS),
+            ..standard_policy()
+        }
+    }
+
+    /// A Vault with `policy` and a Pending withdrawal requested at NOW (Delay 24 h).
+    fn pending(policy: Policy) -> (VaultContract, U64, U64) {
+        let (mut contract, id) = active_vault_with(policy);
+        let op = request(&mut contract, id, vec![utxo(1, 200_000)], 100_000);
+        (contract, id, op)
+    }
+
+    fn approve(contract: &mut VaultContract, op: U64, caller: &str, at: u64) {
+        at_time(caller, at);
+        contract.fast_approve(op);
+    }
+
+    /// `caller` is refused with `expected` at `at`, and neither the op nor the log changes.
+    fn refused(contract: &mut VaultContract, op: U64, caller: &str, at: u64, expected: &str) {
+        let before = contract.ops.get(&op.0).cloned();
+        let events = contract.events_since(U64(0), 100).len();
+        let message = panic_message(AssertUnwindSafe(|| approve(contract, op, caller, at)));
+        assert!(
+            message.contains(expected),
+            "{caller}: expected {expected}, got {message}"
+        );
+        assert_eq!(
+            contract.ops.get(&op.0).cloned(),
+            before,
+            "the op is unchanged"
+        );
+        assert_eq!(contract.events_since(U64(0), 100).len(), events, "no event");
+    }
+
+    fn last_event(contract: &VaultContract) -> EventView {
+        contract.events_since(U64(0), 100).pop().unwrap()
+    }
+
+    #[test]
+    fn a_trusted_contact_shortens_the_wait_to_the_floor() {
+        let (mut contract, id, op) = pending(fast_policy());
+        let balance = contract.get_vault(id).storage_balance;
+        approve(&mut contract, op, "emma.testnet", NOW + 2 * HOUR_NS);
+        let approved_at = NOW + 3 * HOUR_NS;
+        assert_eq!(contract.get_op(op).executable_at, Some(U64(approved_at)));
+        assert_eq!(contract.get_op(op).state, SpendOpState::Pending);
+        let event = last_event(&contract);
+        assert_eq!(event.kind, "fast_approved");
+        assert_eq!(event.vault_id, id);
+        assert_eq!(
+            event.data,
+            json!({
+                "op_id": op.0.to_string(),
+                "by": "emma.testnet",
+                "executable_at": approved_at.to_string(),
+            })
+        );
+        assert!(
+            contract.get_vault(id).storage_balance.0 < balance.0,
+            "charged"
+        );
+
+        let message = panic_message(AssertUnwindSafe(|| {
+            at_time("owner.testnet", approved_at - 1);
+            contract.begin_execute(op, envelope());
+        }));
+        assert!(message.contains("ERR_NOT_EXECUTABLE"), "{message}");
+        at_time("owner.testnet", approved_at);
+        assert_eq!(
+            contract.begin_execute(op, envelope()).state,
+            SpendOpState::Frozen
+        );
+    }
+
+    #[test]
+    fn it_only_shortens() {
+        let (mut contract, _, op) = pending(fast_policy());
+        let delay_end = NOW + 24 * HOUR_NS;
+        approve(
+            &mut contract,
+            op,
+            "emma.testnet",
+            NOW + 23 * HOUR_NS + 30 * MINUTE_NS,
+        );
+        assert_eq!(contract.get_op(op).executable_at, Some(U64(delay_end)));
+        let event = last_event(&contract);
+        assert_eq!(event.kind, "fast_approved");
+        assert_eq!(event.data["executable_at"], delay_end.to_string());
+
+        // A second approval shortens again, but only to now + floor at that moment.
+        let (mut contract, _, op) = pending(fast_policy());
+        approve(&mut contract, op, "emma.testnet", NOW + 10 * HOUR_NS);
+        assert_eq!(
+            contract.get_op(op).executable_at,
+            Some(U64(NOW + 11 * HOUR_NS))
+        );
+        approve(&mut contract, op, "emma.testnet", NOW + 2 * HOUR_NS);
+        assert_eq!(
+            contract.get_op(op).executable_at,
+            Some(U64(NOW + 3 * HOUR_NS))
+        );
+        approve(
+            &mut contract,
+            op,
+            "emma.testnet",
+            NOW + 2 * HOUR_NS + 30 * MINUTE_NS,
+        );
+        assert_eq!(
+            contract.get_op(op).executable_at,
+            Some(U64(NOW + 3 * HOUR_NS)),
+            "a later approval never extends"
+        );
+    }
+
+    #[test]
+    fn disabled_fast_approval_is_refused() {
+        let (mut contract, _, op) = pending(standard_policy());
+        refused(
+            &mut contract,
+            op,
+            "emma.testnet",
+            NOW + HOUR_NS,
+            "ERR_FAST_APPROVAL_DISABLED",
+        );
+    }
+
+    #[test]
+    fn only_a_trusted_contact_approves() {
+        let (mut contract, _, op) = pending(fast_policy());
+        refused(
+            &mut contract,
+            op,
+            "backup.testnet",
+            NOW + HOUR_NS,
+            "ERR_NOT_TRUSTED_CONTACT",
+        );
+
+        let auto = Policy {
+            guardians: vec![
+                guardian("22", "emma.testnet", GuardianKind::TrustedContact),
+                guardian("33", "auto.testnet", GuardianKind::AutoClawback),
+            ],
+            ..fast_policy()
+        };
+        let (mut contract, _, op) = pending(auto);
+        refused(
+            &mut contract,
+            op,
+            "auto.testnet",
+            NOW + HOUR_NS,
+            "ERR_NOT_TRUSTED_CONTACT",
+        );
+    }
+
+    #[test]
+    fn a_caller_who_is_not_a_guardian_is_refused() {
+        let (mut contract, _, op) = pending(fast_policy());
+        // The Trusted Contact of another Vault on the same contract.
+        context("carol.testnet", MIN_VAULT_STORAGE);
+        create(
+            &mut contract,
+            Policy {
+                guardians: vec![guardian(
+                    "55",
+                    "frank.testnet",
+                    GuardianKind::TrustedContact,
+                )],
+                ..fast_policy()
+            },
+        );
+        for caller in [
+            "owner.testnet",
+            "stranger.testnet",
+            "frank.testnet",
+            "carol.testnet",
+        ] {
+            refused(&mut contract, op, caller, NOW + HOUR_NS, "ERR_UNAUTHORIZED");
+        }
+    }
+
+    #[test]
+    fn the_owner_key_on_the_challenge_vault_is_refused() {
+        // The Challenge Vault: allowance 0, Fast Approval off, the attacker holds the Owner key.
+        let challenge = Policy {
+            allowance_limit_sats: U64(0),
+            ..standard_policy()
+        };
+        let (mut contract, _, op) = pending(challenge);
+        refused(
+            &mut contract,
+            op,
+            "owner.testnet",
+            NOW + HOUR_NS,
+            "ERR_UNAUTHORIZED",
+        );
+    }
+
+    #[test]
+    fn only_a_pending_withdrawal_can_be_approved() {
+        refused(
+            &mut active_vault_with(fast_policy()).0,
+            U64(1),
+            "emma.testnet",
+            NOW,
+            "ERR_OP_NOT_FOUND",
+        );
+
+        // A Refresh and an Allowance spend.
+        let (mut contract, id) = active_vault_with(fast_policy());
+        as_caller("owner.testnet");
+        let refresh = contract.refresh(id, vec![utxo(1, 200_000)], 2, envelope(), None);
+        refused(
+            &mut contract,
+            refresh.op_id,
+            "emma.testnet",
+            NOW,
+            "ERR_BAD_OP_STATE",
+        );
+        as_caller("owner.testnet");
+        let spend = contract.spend_allowance(
+            id,
+            U64(50_000),
+            DESTINATION.into(),
+            2,
+            vec![utxo(2, 200_000)],
+            envelope(),
+        );
+        refused(
+            &mut contract,
+            spend.op_id,
+            "emma.testnet",
+            NOW,
+            "ERR_BAD_OP_STATE",
+        );
+
+        // Frozen, then Signed.
+        let (mut contract, _, op) = pending(fast_policy());
+        at_time("owner.testnet", NOW + 24 * HOUR_NS);
+        contract.begin_execute(op, envelope());
+        refused(
+            &mut contract,
+            op,
+            "emma.testnet",
+            NOW + 24 * HOUR_NS,
+            "ERR_BAD_OP_STATE",
+        );
+        contract.on_signed(op, 0, Ok(signing_mpc(0x11)));
+        assert_eq!(contract.get_op(op).state, SpendOpState::Signed);
+        refused(
+            &mut contract,
+            op,
+            "emma.testnet",
+            NOW + 24 * HOUR_NS,
+            "ERR_BAD_OP_STATE",
+        );
+
+        // Cancelled.
+        let (mut contract, _, op) = pending(fast_policy());
+        as_caller("owner.testnet");
+        contract.cancel(op, Some(envelope()));
+        refused(&mut contract, op, "emma.testnet", NOW, "ERR_BAD_OP_STATE");
+    }
+
+    #[test]
+    fn a_clawback_or_voided_op_on_an_active_vault_is_refused() {
+        // A real Clawback closes the Vault (see below), so these states are planted to pin the
+        // op checks themselves: a clawback-kind op, a voided withdrawal, a withdrawal without
+        // `executable_at`.
+        let plant = |edit: fn(&mut SpendOp)| {
+            let (mut contract, _, op) = pending(fast_policy());
+            if let Some(stored) = contract.ops.get_mut(&op.0) {
+                edit(stored);
+            }
+            contract.ops.flush();
+            refused(&mut contract, op, "emma.testnet", NOW, "ERR_BAD_OP_STATE");
+        };
+        plant(|op| op.kind = SpendOpKind::Clawback);
+        plant(|op| op.state = SpendOpState::Voided);
+        plant(|op| op.executable_at = None);
+    }
+
+    #[test]
+    fn a_clawed_back_vault_is_refused() {
+        let (mut contract, id, op) = pending(fast_policy());
+        as_caller("backup.testnet");
+        let clawback = contract.begin_clawback(id, vec![utxo(3, 100_000)], 2, None);
+        assert_eq!(contract.get_op(op).state, SpendOpState::Voided);
+        refused(&mut contract, op, "emma.testnet", NOW, "ERR_CLAWED_BACK");
+        refused(
+            &mut contract,
+            clawback,
+            "emma.testnet",
+            NOW,
+            "ERR_CLAWED_BACK",
+        );
+    }
+
+    #[test]
+    fn the_policy_in_effect_at_the_call_counts() {
+        let (mut contract, id, op) = pending(standard_policy());
+        as_caller("owner.testnet");
+        let change = contract.propose_policy_change(
+            id,
+            json!({ "fast_approval": true, "fast_approval_floor_ns": HOUR_NS.to_string() }),
+            envelope(),
+        );
+        refused(
+            &mut contract,
+            op,
+            "emma.testnet",
+            NOW + 2 * HOUR_NS,
+            "ERR_FAST_APPROVAL_DISABLED",
+        );
+
+        // Applied a week later: a new request can be fast-approved under the new floor.
+        at_time("anyone.testnet", NOW + WEEK);
+        contract.apply_policy_change(change);
+        at_time("owner.testnet", NOW + WEEK);
+        let later = contract.request_withdrawal(
+            id,
+            U64(50_000),
+            DESTINATION.into(),
+            2,
+            vec![utxo(4, 100_000)],
+            envelope(),
+        );
+        approve(
+            &mut contract,
+            later,
+            "emma.testnet",
+            NOW + WEEK + 2 * HOUR_NS,
+        );
+        assert_eq!(
+            contract.get_op(later).executable_at,
+            Some(U64(NOW + WEEK + 3 * HOUR_NS))
+        );
+    }
+
+    #[test]
+    fn a_guardian_call_never_fails_on_storage() {
+        let (mut contract, id, op) = pending(fast_policy());
+        if let Some(vault) = contract.vaults.get_mut(&id.0) {
+            vault.storage_balance = U128(0);
+        }
+        contract.vaults.flush();
+        approve(&mut contract, op, "emma.testnet", NOW + 2 * HOUR_NS);
+        assert_eq!(
+            contract.get_op(op).executable_at,
+            Some(U64(NOW + 3 * HOUR_NS))
+        );
+        assert_eq!(contract.get_vault(id).storage_balance, U128(0));
+    }
+}
+
 mod property;

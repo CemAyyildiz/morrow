@@ -33,6 +33,8 @@ pub enum ErrorCode {
     ChangeNotFound,
     ChangeNotEffective,
     AllowanceLimit,
+    FastApprovalDisabled,
+    NotTrustedContact,
 }
 
 impl ErrorCode {
@@ -69,6 +71,8 @@ impl ErrorCode {
             Self::ChangeNotFound => "ERR_CHANGE_NOT_FOUND",
             Self::ChangeNotEffective => "ERR_CHANGE_NOT_EFFECTIVE",
             Self::AllowanceLimit => "ERR_ALLOWANCE_LIMIT",
+            Self::FastApprovalDisabled => "ERR_FAST_APPROVAL_DISABLED",
+            Self::NotTrustedContact => "ERR_NOT_TRUSTED_CONTACT",
         }
     }
 }
