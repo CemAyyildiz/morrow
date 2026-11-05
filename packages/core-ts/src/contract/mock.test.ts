@@ -61,6 +61,18 @@ describe("MockContractClient: I/O matrix", () => {
     );
   });
 
+  it("refuses a withdrawal below dust and stores nothing, as the contract does", async () => {
+    const { mock, vaultId } = await setup();
+    for (const amount of ["6", "545"]) {
+      await expectCode(
+        mock.requestWithdrawal({ ...withdrawal(vaultId, 1, amount), fee_rate_sat_vb: 0 }),
+        "ERR_INSUFFICIENT_FUNDS",
+      );
+    }
+    // Nothing was stored: the coin is free and the next op takes id 1.
+    expect(await mock.requestWithdrawal(withdrawal(vaultId, 1, "546"))).toBe("1");
+  });
+
   it("rejects a second request on the same outpoint with ERR_OUTPOINT_RESERVED", async () => {
     const { mock, vaultId } = await setup();
     await mock.requestWithdrawal(withdrawal(vaultId, 1));

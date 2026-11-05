@@ -211,7 +211,10 @@ export class MockContractClient implements ContractClient {
     const vault = this.ownerAction(args.vault_id, args.envelope);
     assertAddress(args.destination, vault.policy.btc_network);
     this.checkInputs(args.utxos, false);
-    this.checkFunds(args.utxos, assertU64(args.amount_sats, "amount_sats"));
+    const amount = assertU64(args.amount_sats, "amount_sats");
+    this.checkFunds(args.utxos, amount);
+    // A payment output below dust is non-standard: Bitcoin nodes would not relay the spend.
+    if (amount < DUST_LIMIT_SATS) this.fail("ERR_INSUFFICIENT_FUNDS", "amount is below dust");
     const executableAt = this.nowNs + BigInt(vault.policy.delay_ns);
     const op = this.newOp(vault, "withdrawal", "pending", args.amount_sats, args.destination, args);
     op.executable_at = executableAt.toString();

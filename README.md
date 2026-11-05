@@ -43,13 +43,23 @@ Run one Scenario with its command, or all of them with `make demo`. The expected
 
 `make kill-near-demo` (not run in CI) runs S-5 with NEAR made unreachable on purpose, and prints `NEAR is gone: the contract cannot be reached` before the Escape.
 
-**Property suite.** "The contract never co-signs outside the Policy" is also checked against random hostile call sequences, not only examples. Each case runs up to 30 calls on the real contract in the NEAR unit-test environment: Owner, Guardians, a stranger and another Vault's Guardian call every spend and Policy method with bad envelopes, foreign or invalid addresses, empty, duplicate, reserved or fake coins, edge amounts and fee rates, and jump time to 1 ns around each `executable_at` and `effective_at`. After every call the suite checks three things. Every MPC sign request is for a legally frozen op, comes from an authorised caller, and carries the BIP143 sighash it recomputes itself; that transaction pays only what the Policy allows. No fee is above its cap. No Script-bound field changes, and a Policy field changes only through an applied Policy Change. CI runs it on every push:
+**Property suite.** "The contract never co-signs outside the Policy" is also tested with random hostile call sequences, not only with hand-written examples. Each case runs up to 30 steps against the real contract in the NEAR unit-test environment. In those steps the Owner, both Guardians, a stranger and another Vault's Owner and Guardian call every spend, signing, callback and Policy method. They use bad envelopes, foreign or invalid addresses, empty, duplicate, reserved or fake coins, edge amounts and fee rates, and jump time to 1 ns around each `executable_at` and `effective_at`. After every step the suite checks three invariant families with its own transaction decoder and BIP143 code:
+
+1. **No signature outside the Policy.** Every MPC sign request is for a legally frozen op, comes from an authorised caller, uses the op's path and carries the recomputed sighash. Its transaction pays only what the Policy allows.
+2. **No fee above the cap.** min(Fee Cap, 5 %), or min(2 × Fee Cap, 10 %) for a Clawback.
+3. **No change to Script-bound data.** A Policy field changes only through an applied Policy Change after its `effective_at`.
+
+CI runs it on every push:
 
 ```sh
-cargo test -p morrow-vault --release property -- --nocapture
+cargo test -p morrow-vault --profile proptest property -- --nocapture
 ```
 
-It prints `Property suite: <N> cases, seed <hex>, 0 violations` (by default `Property suite: 1000 cases, seed 0x6d6f72726f77, 0 violations`). `MORROW_PROPTEST_SEED=<hex>` replays another seed and `MORROW_PROPTEST_CASES=<n>` runs more cases. Meta-tests plant a bug for each check (a withdrawal frozen 1 ns early, a fee 1 sat over the cap, a changed Guardian list) and assert that the suite reports it.
+It prints `Property suite: <N> cases, seed <hex>, 0 violations`; by default `Property suite: 1000 cases, seed 0x6d6f72726f77, 0 violations`. `MORROW_PROPTEST_SEED=<hex>` replays another seed and `MORROW_PROPTEST_CASES=<n>` runs more cases. Meta-tests plant bugs and assert that the suite reports each one:
+
+- **Signatures:** a withdrawal frozen 1 ns early; a stranger's freeze; an allowance over its rolling limit; a change output redirected; an extra output; an allowance paying 1 sat more; a Clawback paying elsewhere; a foreign coin; a wrong version, lock time, sequence or dust output; a forged sign request; a stray sign call; a stored signature that the signer did not return; a panic without an error code.
+- **Fees:** a fee 1 sat over each cap.
+- **Script-bound data:** each Script-bound field edited; a Policy field edited directly; a change applied 1 ns before `effective_at`; a vetoed change brought back.
 
 ## You hold the Owner keys: try to rob it
 

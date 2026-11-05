@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { mkdirSync, mkdtempSync, symlinkSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { test } from "node:test";
@@ -12,6 +12,7 @@ import {
   loadJudge,
   parseReadmeTable,
   parseScenarios,
+  propertyLine,
 } from "./check-readme.mjs";
 
 const SCRIPT = fileURLToPath(new URL("./check-readme.mjs", import.meta.url));
@@ -59,6 +60,16 @@ export async function runEscapeScenario(ctx) {
   "tools/judge/package.json": JSON.stringify({
     dependencies: { "@morrow/core-ts": "workspace:*", "near-api-js": "7.4.0" },
   }),
+  "contracts/vault/src/tests/property.rs": `
+const DEFAULT_SEED: u64 = 0x6d6f_7272_6f77; // "morrow"
+const DEFAULT_CASES: u32 = 1_000;
+fn main() {
+    println!(
+        "Property suite: {} cases, seed 0x{seed:x}, 0 violations",
+        run.cases
+    );
+}
+`,
   "contracts/vault/Cargo.toml": `
 [dependencies]
 near-sdk.workspace = true
@@ -118,6 +129,7 @@ function readme({
   rob = ROB,
   kill = KILL,
   libraries = "`near-api-js`, `near-sdk`, `sha2`",
+  property = "It prints `Property suite: <N> cases, seed <hex>, 0 violations`; by default `Property suite: 1000 cases, seed 0x6d6f72726f77, 0 violations`.",
 } = {}) {
   return `# Morrow
 
@@ -128,6 +140,8 @@ function readme({
 ${rows.join("\n")}
 
 ${kill}
+
+${property}
 ${rob === null ? "" : `\n## You hold the Owner keys: try to rob it\n\n\`\`\`text\n${rob.join("\n")}\n\`\`\`\n`}
 ## How this was built
 
@@ -337,6 +351,38 @@ test("the make kill-near-demo line must be printed by S-5 and labelled not run i
 test("every runtime dependency must be named under How this was built", () => {
   assert.deepEqual(checkReadme(readme({ libraries: "`near-api-js`, `near-sdk`" }), judge), [
     'dependency `sha2` (contracts/vault) is not listed under "How this was built"',
+  ]);
+});
+
+// --- Property suite line ----------------------------------------------------------------------
+
+test("the property suite line is the println! format with DEFAULT_CASES and DEFAULT_SEED", () => {
+  assert.deepEqual(judge.property, {
+    line: "Property suite: 1000 cases, seed 0x6d6f72726f77, 0 violations",
+  });
+  const real = readFileSync(
+    fileURLToPath(new URL("../../contracts/vault/src/tests/property.rs", import.meta.url)),
+    "utf8",
+  );
+  assert.match(
+    propertyLine(real).line,
+    /^Property suite: \d+ cases, seed 0x[0-9a-f]+, 0 violations$/,
+  );
+  assert.match(propertyLine("const DEFAULT_CASES: u32 = 1;").error, /expected DEFAULT_CASES/);
+  const odd = FILES["contracts/vault/src/tests/property.rs"].replace("{seed:x}", "{seed}");
+  assert.match(propertyLine(odd).error, /unexpected `Property suite:` format/);
+});
+
+test("a README property suite line that the suite does not print fails", () => {
+  assert.deepEqual(checkReadme(OK, judge), []);
+  const wrong = readme({
+    property: "It prints `Property suite: 500 cases, seed 0x6d6f72726f77, 0 violations`.",
+  });
+  assert.deepEqual(checkReadme(wrong, judge), [
+    "README property suite line `Property suite: 500 cases, seed 0x6d6f72726f77, 0 violations` is not printed; expected `Property suite: 1000 cases, seed 0x6d6f72726f77, 0 violations`",
+  ]);
+  assert.deepEqual(checkReadme(readme({ property: "" }), judge), [
+    "README must quote the property suite line `Property suite: 1000 cases, seed 0x6d6f72726f77, 0 violations`",
   ]);
 });
 

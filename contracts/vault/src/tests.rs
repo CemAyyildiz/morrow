@@ -523,11 +523,11 @@ mod withdrawals {
     #[test]
     fn reserves_outpoints_until_cancelled() {
         rejects("ERR_OUTPOINT_RESERVED", |c, id| {
-            request(c, id, vec![utxo(1, 10)], 5);
-            request(c, id, vec![utxo(1, 10)], 5);
+            request(c, id, vec![utxo(1, 10_000)], 5_000);
+            request(c, id, vec![utxo(1, 10_000)], 5_000);
         });
         let (mut contract, id) = active_vault();
-        let op_id = request(&mut contract, id, vec![utxo(1, 10)], 5);
+        let op_id = request(&mut contract, id, vec![utxo(1, 10_000)], 5_000);
         as_caller("emma.testnet");
         contract.cancel(op_id, None);
         assert_eq!(contract.get_op(op_id).state, SpendOpState::Cancelled);
@@ -535,27 +535,27 @@ mod withdrawals {
             contract.events_since(U64(0), 100).pop().unwrap().kind,
             "withdrawal_cancelled"
         );
-        request(&mut contract, id, vec![utxo(1, 10)], 5);
+        request(&mut contract, id, vec![utxo(1, 10_000)], 5_000);
     }
 
     #[test]
     fn owner_cancels_with_an_envelope_and_strangers_cannot() {
         let (mut contract, id) = active_vault();
-        let op_id = request(&mut contract, id, vec![utxo(1, 10)], 5);
+        let op_id = request(&mut contract, id, vec![utxo(1, 10_000)], 5_000);
         contract.cancel(op_id, Some(envelope()));
         assert_eq!(contract.get_op(op_id).state, SpendOpState::Cancelled);
 
         rejects("ERR_BAD_ENVELOPE", |c, id| {
-            let op = request(c, id, vec![utxo(1, 10)], 5);
+            let op = request(c, id, vec![utxo(1, 10_000)], 5_000);
             c.cancel(op, None);
         });
         rejects("ERR_UNAUTHORIZED", |c, id| {
-            let op = request(c, id, vec![utxo(1, 10)], 5);
+            let op = request(c, id, vec![utxo(1, 10_000)], 5_000);
             as_caller("stranger.testnet");
             c.cancel(op, None);
         });
         rejects("ERR_BAD_OP_STATE", |c, id| {
-            let op = request(c, id, vec![utxo(1, 10)], 5);
+            let op = request(c, id, vec![utxo(1, 10_000)], 5_000);
             as_caller("emma.testnet");
             c.cancel(op, None);
             c.cancel(op, None);
@@ -568,7 +568,7 @@ mod withdrawals {
             let mut contract = testnet_contract(vec![]);
             context("owner.testnet", MIN_VAULT_STORAGE);
             let id = create(&mut contract, standard_policy());
-            request(&mut contract, id, vec![utxo(1, 10)], 5);
+            request(&mut contract, id, vec![utxo(1, 10_000)], 5_000);
         });
         assert!(message.contains("ERR_VAULT_NOT_ACTIVE"), "{message}");
     }
@@ -577,7 +577,7 @@ mod withdrawals {
     fn charges_storage_to_the_vault() {
         let (mut contract, id) = active_vault();
         let before = contract.get_vault(id).storage_balance.0;
-        request(&mut contract, id, vec![utxo(1, 10)], 5);
+        request(&mut contract, id, vec![utxo(1, 10_000)], 5_000);
         assert!(contract.get_vault(id).storage_balance.0 < before);
     }
 }
@@ -644,6 +644,49 @@ mod execution {
             contract.begin_execute(op, envelope());
         });
         assert!(message.contains("ERR_FEE_TOO_HIGH"), "{message}");
+    }
+
+    /// Regression (Story 7.4 property suite, seed 0x3, case 502): a 6-sat withdrawal from a
+    /// 600-sat coin at 0 sat/vB used to freeze with a 6-sat payment output, below dust.
+    #[test]
+    fn a_withdrawal_below_dust_is_refused() {
+        let policy = Policy {
+            allowance_limit_sats: U64(0),
+            fee_cap_sats: U64(10_000),
+            ..standard_policy()
+        };
+        let withdraw = |contract: &mut VaultContract, id: U64, coin: u64, amount: u64| {
+            as_caller("owner.testnet");
+            contract.request_withdrawal(
+                id,
+                U64(amount),
+                DESTINATION.into(),
+                0,
+                vec![utxo(1, coin)],
+                envelope(),
+            )
+        };
+        for amount in [6, 545] {
+            let (mut contract, id) = active_vault_with(policy.clone());
+            let message = panic_message(std::panic::AssertUnwindSafe(|| {
+                withdraw(&mut contract, id, 600, amount);
+            }));
+            assert!(
+                message.contains("ERR_INSUFFICIENT_FUNDS") && message.contains("below dust"),
+                "{amount}: {message}"
+            );
+            assert_eq!(contract.next_op_id, 1, "a refused request stores no op");
+        }
+
+        // 546 is accepted and pays exactly 546.
+        let (mut contract, id) = active_vault_with(policy);
+        let op = withdraw(&mut contract, id, 10_000, 546);
+        at_time("owner.testnet", NOW + 24 * HOUR_NS);
+        let frozen = contract.begin_execute(op, envelope());
+        assert_eq!(frozen.state, SpendOpState::Frozen);
+        let paid = outputs(frozen.unsigned_tx_hex.as_deref().unwrap());
+        assert_eq!(paid[0].0, 546);
+        assert!(paid.iter().all(|(value, _)| *value >= 546));
     }
 
     #[test]

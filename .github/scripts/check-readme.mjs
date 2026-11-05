@@ -10,7 +10,9 @@
 // built or not); every row has the exact command and result line; every progress line, every line
 // of the "You hold the Owner keys" excerpt and the `make kill-near-demo` line is a whole string
 // literal in that Scenario's own file (or runner.ts / session.ts), where `${…}` in a template
-// stands for one token; every runtime dependency is named under "How this was built".
+// stands for one token; every runtime dependency is named under "How this was built"; every
+// `Property suite: …` line the README quotes is the line contracts/vault/src/tests/property.rs
+// prints with its DEFAULT_CASES and DEFAULT_SEED.
 // Log: each result line is a whole line of the log, each progress line sits between the previous
 // result line and its own, and the excerpt's lines appear in that order in S-3's output.
 import { existsSync, readFileSync, readdirSync, realpathSync, statSync } from "node:fs";
@@ -22,6 +24,7 @@ const JUDGE_SRC = "tools/judge/src";
 const SHARED_FILES = ["runner.ts", "session.ts"];
 const WORKSPACE_DIRS = ["apps", "packages", "services", "tools"];
 const ELISION = "…";
+const PROPERTY_SUITE = "contracts/vault/src/tests/property.rs";
 
 // ---------------------------------------------------------------------------------------------
 // TypeScript source: comments blanked, string interiors masked, literals collected.
@@ -269,6 +272,36 @@ export function parseKillNear(readme) {
 }
 
 // ---------------------------------------------------------------------------------------------
+// The property suite's printed line.
+
+/**
+ * The line the property suite prints on a default run: its `Property suite:` `println!` format
+ * with `DEFAULT_CASES` and `DEFAULT_SEED` filled in. `{ line }`, or `{ error }`.
+ */
+export function propertyLine(source) {
+  const cases = /\bconst DEFAULT_CASES: u32 = ([0-9_]+);/.exec(source);
+  const seed = /\bconst DEFAULT_SEED: u64 = 0x([0-9a-fA-F_]+);/.exec(source);
+  const prints = [...source.matchAll(/println!\(\s*"(Property suite: [^"]*)"/g)];
+  if (!cases || !seed || prints.length !== 1) {
+    return {
+      error: `${PROPERTY_SUITE}: expected DEFAULT_CASES, DEFAULT_SEED and one \`Property suite:\` println!`,
+    };
+  }
+  const format = prints[0][1];
+  // The format takes the case count as its first argument, `{}`, and the seed as `{seed:x}`.
+  if (!format.includes("{}") || !format.includes("0x{seed:x}")) {
+    return { error: `${PROPERTY_SUITE}: unexpected \`Property suite:\` format "${format}"` };
+  }
+  const line = format
+    .replace("{}", BigInt(cases[1].replaceAll("_", "")).toString())
+    .replace("{seed:x}", BigInt(`0x${seed[1].replaceAll("_", "")}`).toString(16));
+  if (/[{}]/.test(line)) {
+    return { error: `${PROPERTY_SUITE}: unexpected \`Property suite:\` format "${format}"` };
+  }
+  return { line };
+}
+
+// ---------------------------------------------------------------------------------------------
 // Checks.
 
 /** The line tools/judge prints when a Scenario ends without a FAIL. */
@@ -352,6 +385,20 @@ export function checkReadme(readme, judge) {
     errors.push(`\`make kill-near-demo\` line "${kill.quoted}" is not printed by S-5`);
   }
   if (kill && !kill.labelled) errors.push("`make kill-near-demo` must be labelled not run in CI");
+
+  if (judge.property?.error) errors.push(judge.property.error);
+  else if (judge.property) {
+    const { line } = judge.property;
+    // `<N>`-style placeholders describe the format; every concrete line must be the real one.
+    const quoted = [...readme.matchAll(/`(Property suite: [^`]*)`/g)]
+      .map((m) => m[1])
+      .filter((q) => !q.includes("<"));
+    if (quoted.length === 0) errors.push(`README must quote the property suite line \`${line}\``);
+    for (const q of quoted) {
+      if (q !== line)
+        errors.push(`README property suite line \`${q}\` is not printed; expected \`${line}\``);
+    }
+  }
 
   const built = section(readme, /^##\s+How this was built/)?.join("\n") ?? "";
   for (const { where, name } of judge.dependencies) {
@@ -472,7 +519,11 @@ export function loadJudge(root) {
       dependencies.push({ where: `contracts/${name}`, name: dep });
     }
   }
-  return { scenarios, errors, files, shared, dependencies };
+  const propertyFile = join(root, PROPERTY_SUITE);
+  const property = existsSync(propertyFile)
+    ? propertyLine(readFileSync(propertyFile, "utf8"))
+    : null;
+  return { scenarios, errors, files, shared, dependencies, property };
 }
 
 // ---------------------------------------------------------------------------------------------

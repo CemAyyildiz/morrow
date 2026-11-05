@@ -18,3 +18,11 @@ lto = true
 debug = false
 panic = "abort"
 overflow-checks = true
+
+# The property suite (contracts/vault/src/tests/property.rs): release checks, built for speed
+# rather than the size-tuned wasm release profile.
+[profile.proptest]
+inherits = "release"
+opt-level = 3
+lto = false
+codegen-units = 16

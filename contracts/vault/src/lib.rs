@@ -353,6 +353,13 @@ impl VaultContract {
         }
         let total = check_inputs(&utxos).unwrap_or_else(|r| reject(&r));
         check_amount(amount_sats.0, total).unwrap_or_else(|r| reject(&r));
+        // A payment output below dust is non-standard: Bitcoin nodes would not relay the spend.
+        if amount_sats.0 < DUST_LIMIT_SATS {
+            reject(&Rejection::with(
+                ErrorCode::InsufficientFunds,
+                "amount is below dust",
+            ));
+        }
         self.check_unreserved(&utxos);
 
         let op_id = self.next_op_id;

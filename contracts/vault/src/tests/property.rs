@@ -16,7 +16,7 @@
 //! contract's builder. A panicking call is a refusal: the contract struct and the storage are
 //! rolled back to before the call, as NEAR reverts a failed receipt.
 //!
-//! Run: `cargo test -p morrow-vault --release property -- --nocapture`. `MORROW_PROPTEST_SEED`
+//! Run: `cargo test -p morrow-vault --profile proptest property -- --nocapture`. `MORROW_PROPTEST_SEED`
 //! (hex) picks the seed; `MORROW_PROPTEST_CASES` the number of cases (default 1,000).
 
 use super::withdrawals_support::{envelope, signing_mpc, DESTINATION, NOW};
@@ -24,7 +24,6 @@ use super::*;
 use crate::core::policy::tests::{guardian, standard_policy, RECOVERY_SIGNET};
 use crate::core::policy::{Guardian, GuardianKind, HOUR_NS};
 use crate::core::spend::{Outpoint, SpendOp, SpendOpKind, SpendOpState, SpendSource};
-use crate::core::tx::{clawback_fee_cap, withdrawal_fee_cap};
 use near_sdk::mock::MockAction;
 use near_sdk::serde_json::Map;
 use near_sdk::test_utils::get_created_receipts;
@@ -32,7 +31,9 @@ use proptest::collection::vec;
 use proptest::prelude::*;
 use proptest::sample::select;
 use proptest::strategy::ValueTree;
-use proptest::test_runner::{Config, RngAlgorithm, TestCaseError, TestError, TestRng, TestRunner};
+use proptest::test_runner::{
+    noop_result_cache, Config, RngAlgorithm, RngSeed, TestCaseError, TestError, TestRng, TestRunner,
+};
 use sha2::{Digest, Sha256};
 use std::cell::{Cell, RefCell};
 use std::collections::{BTreeMap, BTreeSet, HashMap};
@@ -49,6 +50,8 @@ const BACKUP: &str = "backup.testnet";
 const STRANGER: &str = "stranger.testnet";
 const OTHER_OWNER: &str = "other-owner.testnet";
 const OTHER_GUARDIAN: &str = "other-guardian.testnet";
+/// The Other Vault has its own Owner Key and Co-signer keys.
+const OTHER_OWNER_KEY: &str = "027777777777777777777777777777777777777777777777777777777777777777";
 /// The contract's own account in the unit-test context: the MPC callback comes from it.
 const SELF: &str = "alice.near";
 
@@ -227,8 +230,8 @@ enum Time {
     OneNano,
     /// A pending withdrawal's `executable_at` plus -1, 0 or +1 ns.
     ExecutableAt(u8, i8),
-    /// The Main Vault's pending change's `effective_at` plus -1, 0 or +1 ns.
-    EffectiveAt(i8),
+    /// A pending change's `effective_at` plus -1, 0 or +1 ns.
+    EffectiveAt(u8, i8),
     Delay,
     Day,
     Random(u64),
@@ -238,6 +241,8 @@ enum Time {
 enum Plant {
     /// Test-only hook: moves a pending withdrawal's stored `executable_at` 1 ns earlier.
     ExecutableAtOneNanoEarlier(u8),
+    /// Test-only hook: moves a pending change's stored `effective_at` 1 ns earlier.
+    EffectiveAtOneNanoEarlier(u8),
 }
 
 #[derive(Clone, Debug)]
@@ -256,10 +261,26 @@ enum Action {
         op: u8,
         env: Env,
     },
+    /// `sign_input`; when `deliver`, the MPC answer comes back at once, otherwise it stays in
+    /// flight until a later `SignedCallback`.
     Sign {
         who: Who,
         op: u8,
         input: u8,
+        deliver: bool,
+    },
+    /// `on_signed` called directly: by `who`, or by the contract itself (`None`) for a sign
+    /// request still in flight, a duplicate, an op no longer Frozen or an index out of range.
+    SignedCallback {
+        who: Option<Who>,
+        target: u8,
+        input: u8,
+        ok: bool,
+    },
+    /// `on_keys_derived` called directly: by `who`, or by the contract itself (`None`).
+    KeysCallback {
+        who: Option<Who>,
+        vault: VaultPick,
     },
     Cancel {
         who: Who,
@@ -476,7 +497,7 @@ fn time() -> impl Strategy<Value = Time> {
         1 => Just(Time::Zero),
         1 => Just(Time::OneNano),
         6 => (any::<u8>(), -1i8..=1).prop_map(|(op, d)| Time::ExecutableAt(op, d)),
-        3 => (-1i8..=1).prop_map(Time::EffectiveAt),
+        6 => (any::<u8>(), -1i8..=1).prop_map(|(change, d)| Time::EffectiveAt(change, d)),
         3 => Just(Time::Delay),
         3 => Just(Time::Day),
         2 => (0..=40 * DAY_NS).prop_map(Time::Random),
@@ -492,8 +513,17 @@ fn action() -> impl Strategy<Value = Action> {
         ),
         6 => (owner_side(), any::<u8>(), env_pick())
             .prop_map(|(who, op, env)| Action::Execute { who, op, env }),
-        8 => (who(8, 3), any::<u8>(), any::<u8>())
-            .prop_map(|(who, op, input)| Action::Sign { who, op, input }),
+        8 => (who(8, 3), any::<u8>(), any::<u8>(), prop_oneof![4 => Just(true), 1 => Just(false)])
+            .prop_map(|(who, op, input, deliver)| Action::Sign { who, op, input, deliver }),
+        2 => (
+            prop_oneof![3 => Just(None), 1 => who(1, 1).prop_map(Some)],
+            any::<u8>(),
+            any::<u8>(),
+            prop_oneof![4 => Just(true), 1 => Just(false)],
+        )
+            .prop_map(|(who, target, input, ok)| Action::SignedCallback { who, target, input, ok }),
+        1 => (prop_oneof![1 => Just(None), 2 => who(1, 1).prop_map(Some)], vault_pick())
+            .prop_map(|(who, vault)| Action::KeysCallback { who, vault }),
         2 => (who(6, 3), any::<u8>(), optional_env())
             .prop_map(|(who, op, env)| Action::Cancel { who, op, env }),
         3 => (owner_side(), vault_pick(), utxos(), rate(), env_pick(), source()).prop_map(
@@ -515,7 +545,7 @@ fn action() -> impl Strategy<Value = Action> {
             .prop_map(|(who, vault, change, env)| Action::Propose { who, vault, change, env }),
         1 => (who(3, 3), any::<u8>(), optional_env())
             .prop_map(|(who, change, env)| Action::Veto { who, change, env }),
-        3 => (who(2, 2), any::<u8>()).prop_map(|(who, change)| Action::Apply { who, change }),
+        4 => (who(2, 2), any::<u8>()).prop_map(|(who, change)| Action::Apply { who, change }),
         1 => (who(1, 1), vault_pick(), 0u8..3)
             .prop_map(|(who, vault, deposit)| Action::TopUp { who, vault, deposit }),
         8 => time().prop_map(Action::Advance),
@@ -587,6 +617,9 @@ fn signet_script(address: &str) -> Option<Vec<u8>> {
         return None;
     }
     let version = version.to_u8();
+    if version > 1 {
+        return None;
+    }
     let opcode = if version == 0 { 0x00 } else { 0x50 + version };
     Some([vec![opcode, u8::try_from(program.len()).ok()?], program].concat())
 }
@@ -775,6 +808,7 @@ impl Violation {
 /// The Script-bound data of a Vault: fixed for its whole life.
 #[derive(Clone, Debug, PartialEq, Eq)]
 struct ScriptBound {
+    owner_account: AccountId,
     owner_key: String,
     cosigner_pubkeys: Option<KeyPair>,
     addresses: Option<KeyPair>,
@@ -787,6 +821,7 @@ struct ScriptBound {
 impl ScriptBound {
     fn of(vault: &Vault) -> Self {
         Self {
+            owner_account: vault.owner_account.clone(),
             owner_key: vault.owner_key.clone(),
             cosigner_pubkeys: vault.cosigner_pubkeys.clone(),
             addresses: vault.addresses.clone(),
@@ -804,6 +839,7 @@ impl ScriptBound {
                 changed.push(name);
             }
         };
+        note(self.owner_account != now.owner_account, "owner_account");
         note(self.owner_key != now.owner_key, "owner_key");
         note(
             self.cosigner_pubkeys != now.cosigner_pubkeys,
@@ -929,7 +965,8 @@ struct ModelOp {
     /// The Delay in effect when the withdrawal was requested.
     delay_at_request: u64,
     frozen: Option<Frozen>,
-    signed: Vec<bool>,
+    /// The signatures stored per input, as `on_signed` returned them.
+    signatures: Vec<Option<String>>,
 }
 
 impl ModelOp {
@@ -945,7 +982,7 @@ impl ModelOp {
             utxos: Vec::new(),
             delay_at_request: 0,
             frozen: None,
-            signed: Vec::new(),
+            signatures: Vec::new(),
         }
     }
 
@@ -965,7 +1002,7 @@ const fn kind_index(kind: SpendOpKind) -> usize {
 
 const KIND_NAMES: [&str; 4] = ["withdrawal", "allowance", "refresh", "clawback"];
 
-#[derive(Clone, Debug, Default)]
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
 struct Stats {
     steps: u64,
     refusals: u64,
@@ -974,7 +1011,11 @@ struct Stats {
     signatures_stored: u64,
     changes_applied: u64,
     changes_stopped: u64,
-    /// Refusals by error code (`ERR_…`, or the panic text if it has none).
+    /// `begin_execute` attempts at exactly `executable_at - 1`.
+    executes_1ns_early: u64,
+    /// `apply_policy_change` attempts at exactly `effective_at - 1`.
+    applies_1ns_early: u64,
+    /// Refusals by error code (`ERR_…`, or near-sdk's private-method refusal).
     refused_with: BTreeMap<String, u64>,
 }
 
@@ -989,6 +1030,8 @@ impl Stats {
         self.signatures_stored += other.signatures_stored;
         self.changes_applied += other.changes_applied;
         self.changes_stopped += other.changes_stopped;
+        self.executes_1ns_early += other.executes_1ns_early;
+        self.applies_1ns_early += other.applies_1ns_early;
         for (code, n) in &other.refused_with {
             *self.refused_with.entry(code.clone()).or_default() += n;
         }
@@ -1011,7 +1054,7 @@ impl Stats {
                 .join(", ")
         };
         format!(
-            "Coverage: {} steps, {} refusals; frozen: {}; sign requests: {}; {} signatures stored; {} Policy Changes applied, {} vetoed or withdrawn",
+"Coverage: {} steps, {} refusals; frozen: {}; sign requests: {}; {} signatures stored; {} Policy Changes applied, {} vetoed or withdrawn; {} executes and {} applies 1 ns early",
             self.steps,
             self.refusals,
             per_kind(&self.freezes),
@@ -1019,7 +1062,20 @@ impl Stats {
             self.signatures_stored,
             self.changes_applied,
             self.changes_stopped,
+            self.executes_1ns_early,
+            self.applies_1ns_early,
         )
+    }
+
+    /// Every signing path and both 1 ns boundaries were reached.
+    fn reaches_every_path(&self) -> bool {
+        self.freezes.iter().all(|n| *n > 0)
+            && self.sign_requests.iter().all(|n| *n > 0)
+            && self.signatures_stored > 0
+            && self.changes_applied > 0
+            && self.changes_stopped > 0
+            && self.executes_1ns_early > 0
+            && self.applies_1ns_early > 0
     }
 }
 
@@ -1029,6 +1085,24 @@ struct SignRequest {
     receiver: String,
     payload: String,
     path: String,
+}
+
+/// Every action the call scheduled on the MPC signer other than a `sign` function call.
+fn other_signer_actions() -> Vec<String> {
+    get_created_receipts()
+        .into_iter()
+        .filter(|receipt| receipt.receiver_id.as_str() == SIGNER)
+        .flat_map(|receipt| receipt.actions)
+        .filter_map(|action| match action {
+            MockAction::FunctionCallWeight { method_name, .. } if method_name == b"sign" => None,
+            MockAction::FunctionCallWeight { method_name, .. } => Some(format!(
+                "function call {}",
+                String::from_utf8_lossy(&method_name)
+            )),
+            MockAction::CreateReceipt { .. } => None,
+            other => Some(format!("{other:?}")),
+        })
+        .collect()
 }
 
 fn scheduled_sign_requests() -> Vec<SignRequest> {
@@ -1128,6 +1202,82 @@ fn install_chain(caller: &str, now: u64, deposit: NearToken, storage: HashMap<Ve
     ));
 }
 
+/// The guard near-sdk generates in the wasm entry point of a `#[private]` method, which unit
+/// tests skip by calling the Rust method directly. `property_the_callbacks_are_private_in_lib_rs`
+/// checks that lib.rs still marks both callbacks `#[private]`.
+fn private_entry(method: &str) {
+    if env::current_account_id() != env::predecessor_account_id() {
+        env::panic_str(&format!("Method {method} is private"));
+    }
+}
+
+/// A refusal's code: an `ERR_…` code, or near-sdk's private-method refusal. Any other panic
+/// (overflow, unwrap, index) is not a refusal but a contract bug.
+fn refusal_code(message: &str) -> Option<String> {
+    // The mocked `env::panic_str` wraps its message: `…GuestPanic { panic_msg: "…" }…`.
+    let message = message
+        .split_once("panic_msg: \"")
+        .and_then(|(_, rest)| rest.rsplit_once("\" }"))
+        .map_or(message, |(inner, _)| inner);
+    if let Some(start) = message.find("ERR_") {
+        return Some(
+            message[start..]
+                .chars()
+                .take_while(|c| c.is_ascii_uppercase() || *c == '_')
+                .collect(),
+        );
+    }
+    let private = message
+        .strip_prefix("Method ")
+        .and_then(|rest| rest.strip_suffix(" is private"))
+        .is_some_and(|name| !name.is_empty() && !name.contains(' '));
+    private.then(|| "private method".to_string())
+}
+
+/// 1 to 5 distinct outpoints with 32-byte lowercase-hex txids.
+fn coins_well_formed(utxos: &[Outpoint], method: &str) -> Checked {
+    let lower_hex = |t: &str| {
+        t.len() == 64
+            && t.bytes()
+                .all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b))
+    };
+    let distinct = utxos
+        .iter()
+        .enumerate()
+        .all(|(i, u)| utxos[..i].iter().all(|o| o.key() != u.key()));
+    if (1..=5).contains(&utxos.len()) && distinct && utxos.iter().all(|u| lower_hex(&u.txid)) {
+        Ok(())
+    } else {
+        Err(signature(format!(
+            "{method} accepted malformed coins {utxos:?}"
+        )))
+    }
+}
+
+/// The adjustable Policy bounds on signet, written out here independently of the contract:
+/// `Err` names the first field out of bounds.
+fn within_signet_bounds(policy: &Policy) -> Result<(), &'static str> {
+    let delay = policy.delay_ns.0;
+    let change_delay = policy.policy_change_delay_ns.0;
+    let floor = policy.fast_approval_floor_ns.0;
+    if !(HOUR_NS..=30 * DAY_NS).contains(&delay) {
+        return Err("delay_ns");
+    }
+    if !(7 * DAY_NS..=90 * DAY_NS).contains(&change_delay) || change_delay < delay {
+        return Err("policy_change_delay_ns");
+    }
+    if !(10_000..=1_000_000).contains(&policy.fee_cap_sats.0) {
+        return Err("fee_cap_sats");
+    }
+    if floor < 10 * MINUTE_NS || floor > delay {
+        return Err("fast_approval_floor_ns");
+    }
+    if signet_script(&policy.recovery_address).is_none() {
+        return Err("recovery_address");
+    }
+    Ok(())
+}
+
 fn derived(byte: u8) -> String {
     let mut point = [byte; 64];
     point[63] = 1;
@@ -1145,6 +1295,17 @@ struct Harness {
     ops: BTreeMap<u64, ModelOp>,
     /// Vetoed or withdrawn changes: never to be applied.
     stopped: BTreeSet<u64>,
+    /// Policy Changes ever proposed.
+    changes_proposed: u64,
+    /// Sign requests whose MPC answer has not come back.
+    in_flight: BTreeSet<(u64, u32)>,
+    /// Every (op, input) a sign request was ever made for.
+    requested: BTreeSet<(u64, u32)>,
+    /// Outpoints a Clawback has swept.
+    swept: BTreeSet<String>,
+    /// A violation found inside `call` (a panic without an error code, a call to the signer that
+    /// is not `sign`); reported after the step.
+    late: Option<Violation>,
     stats: Stats,
 }
 
@@ -1176,14 +1337,15 @@ impl Harness {
         );
         contract.on_keys_derived(main, Ok(derived(0x11)), Ok(derived(0x55)));
         next_call(OTHER_OWNER, NOW, MIN_VAULT_STORAGE);
-        let other = create(
-            &mut contract,
+        let _ = contract.create_vault(
+            OTHER_OWNER_KEY.to_string(),
             Policy {
                 guardians: vec![guardian("66", OTHER_GUARDIAN, GuardianKind::AutoClawback)],
                 ..standard_policy()
             },
         );
-        contract.on_keys_derived(other, Ok(derived(0x11)), Ok(derived(0x55)));
+        let other = U64(contract.next_vault_id - 1);
+        contract.on_keys_derived(other, Ok(derived(0x66)), Ok(derived(0x99)));
         assert_eq!((main.0, other.0), (MAIN, OTHER));
 
         let mut vaults = BTreeMap::new();
@@ -1196,6 +1358,8 @@ impl Harness {
                 .expect("an active Vault has addresses");
             let vault_script = decode_hex(&kit.vault_script_hex).unwrap();
             let allowance_script = decode_hex(&kit.allowance_script_hex).unwrap();
+            // The bounds table in `within_signet_bounds` is for signet.
+            assert_eq!(vault.policy.btc_network, BtcNetwork::Signet);
             // The scripts the checker signs with are the ones the addresses commit to.
             assert_eq!(signet_script(&addresses.vault), Some(p2wsh(&vault_script)));
             assert_eq!(
@@ -1223,15 +1387,25 @@ impl Harness {
                 },
             );
         }
-        Self {
+        let harness = Self {
             contract,
             now: NOW,
             pool: setup.pool.clone(),
             vaults,
             ops: BTreeMap::new(),
             stopped: BTreeSet::new(),
+            changes_proposed: 0,
+            in_flight: BTreeSet::new(),
+            requested: BTreeSet::new(),
+            swept: BTreeSet::new(),
+            late: None,
             stats: Stats::default(),
-        }
+        };
+        assert_ne!(
+            harness.vaults[&MAIN].script_bound.cosigner_pubkeys,
+            harness.vaults[&OTHER].script_bound.cosigner_pubkeys
+        );
+        harness
     }
 
     /// Runs every step and checks the invariants after each. On a violation returns its step
@@ -1240,7 +1414,10 @@ impl Harness {
         self.check_state().map_err(|v| (0, v))?;
         for (i, action) in steps.iter().enumerate() {
             self.stats.steps += 1;
-            self.step(action)
+            let stepped = self.step(action);
+            self.late
+                .take()
+                .map_or(stepped, Err)
                 .and_then(|()| self.check_state())
                 .map_err(|v| (i + 1, v))?;
         }
@@ -1267,7 +1444,15 @@ impl Harness {
         let outcome = std::panic::catch_unwind(AssertUnwindSafe(|| f(&mut self.contract)));
         QUIET.with(|quiet| quiet.set(false));
         match outcome {
-            Ok(value) => Ok((value, scheduled_sign_requests())),
+            Ok(value) => {
+                let other = other_signer_actions();
+                if !other.is_empty() && self.late.is_none() {
+                    self.late = Some(signature(format!(
+                        "a call scheduled {other:?} on the MPC signer; only `sign` is allowed"
+                    )));
+                }
+                Ok((value, scheduled_sign_requests()))
+            }
             Err(payload) => {
                 // The failed call's writes are discarded: drop its contract (whose collections
                 // flush into the failed call's storage) and restore the storage from before.
@@ -1280,11 +1465,15 @@ impl Harness {
                     .cloned()
                     .or_else(|| payload.downcast_ref::<&str>().map(|s| s.to_string()))
                     .unwrap_or_default();
-                *self
-                    .stats
-                    .refused_with
-                    .entry(error_code(&message))
-                    .or_default() += 1;
+                let Some(code) = refusal_code(&message) else {
+                    if self.late.is_none() {
+                        self.late = Some(signature(format!(
+                            "a call panicked without an error code: {message:?}"
+                        )));
+                    }
+                    return Err(message);
+                };
+                *self.stats.refused_with.entry(code).or_default() += 1;
                 Err(message)
             }
         }
@@ -1509,6 +1698,7 @@ impl Harness {
                 };
                 no_sign_requests(&requests, "request_withdrawal")?;
                 self.owner_call_allowed(vault_id, caller, *env, "request_withdrawal")?;
+                coins_well_formed(&utxos, "request_withdrawal")?;
                 self.fresh_op(op_id.0)?;
                 let delay = self.vaults[&vault_id].policy.delay_ns.0;
                 self.ops.insert(
@@ -1535,6 +1725,13 @@ impl Harness {
                 });
                 let (caller, envelope) = (who.account(), env.text());
                 let before = self.ops.get(&op_id).cloned();
+                if before.as_ref().is_some_and(|m| {
+                    m.kind == SpendOpKind::Withdrawal
+                        && m.state == SpendOpState::Pending
+                        && self.now.checked_add(1) == Some(m.executable_at())
+                }) {
+                    self.stats.executes_1ns_early += 1;
+                }
                 let Ok((op, requests)) =
                     self.call(caller, zero, |c| c.begin_execute(U64(op_id), envelope))
                 else {
@@ -1581,21 +1778,73 @@ impl Harness {
                     ))),
                 }
             }
-            Action::Sign { who, op, input } => self.sign(*who, *op, *input),
+            Action::Sign {
+                who,
+                op,
+                input,
+                deliver,
+            } => self.sign(*who, *op, *input, *deliver),
+            Action::SignedCallback {
+                who,
+                target,
+                input,
+                ok,
+            } => {
+                let (op_id, index) = self.pick_callback(*target, *input);
+                self.signed_callback(*who, op_id, index, *ok)
+            }
+            Action::KeysCallback { who, vault } => {
+                let caller = who.map_or(SELF, Who::account);
+                let vault_id = vault.id();
+                let Ok((_, requests)) = self.call(caller, zero, |c| {
+                    private_entry("on_keys_derived");
+                    c.on_keys_derived(U64(vault_id), Ok(derived(0x22)), Ok(derived(0x33)))
+                }) else {
+                    return Ok(());
+                };
+                no_sign_requests(&requests, "on_keys_derived")?;
+                // Accepted only as the contract's own callback; check_state then holds the keys.
+                if caller != SELF {
+                    return Err(bound(format!("on_keys_derived accepted from {caller}")));
+                }
+                Ok(())
+            }
             Action::Cancel { who, op, env } => {
                 let op_id = self.pick_op(*op, |m| !m.state.is_terminal());
+                let caller = who.account();
                 let envelope = env.map(Env::text);
+                let before = self.ops.get(&op_id).cloned();
                 let Ok(((), requests)) =
-                    self.call(who.account(), zero, |c| c.cancel(U64(op_id), envelope))
+                    self.call(caller, zero, |c| c.cancel(U64(op_id), envelope))
                 else {
                     return Ok(());
                 };
                 no_sign_requests(&requests, "cancel")?;
-                let m = self
-                    .ops
-                    .get_mut(&op_id)
+                let m = before
                     .ok_or_else(|| signature(format!("cancel succeeded on unknown op {op_id}")))?;
-                m.state = SpendOpState::Cancelled;
+                let v = &self.vaults[&m.vault];
+                let by_owner = caller == v.owner && *env == Some(Env::Valid);
+                let unsigned = m.signatures.iter().any(Option::is_none);
+                let allowed = !v.closed
+                    && match m.kind {
+                        SpendOpKind::Withdrawal => {
+                            m.state == SpendOpState::Pending
+                                && (by_owner || v.guardians.iter().any(|g| g == caller))
+                        }
+                        SpendOpKind::Refresh | SpendOpKind::Allowance => {
+                            m.state == SpendOpState::Frozen && unsigned && by_owner
+                        }
+                        SpendOpKind::Clawback => false,
+                    };
+                if !allowed {
+                    return Err(signature(format!(
+                        "cancel of {:?} op {op_id} in state {:?} accepted from {caller} with envelope {env:?}",
+                        m.kind, m.state
+                    )));
+                }
+                if let Some(m) = self.ops.get_mut(&op_id) {
+                    m.state = SpendOpState::Cancelled;
+                }
                 Ok(())
             }
             Action::Refresh {
@@ -1616,6 +1865,7 @@ impl Harness {
                 };
                 no_sign_requests(&requests, "refresh")?;
                 self.owner_call_allowed(vault_id, caller, *env, "refresh")?;
+                coins_well_formed(&utxos, "refresh")?;
                 self.fresh_op(op.op_id.0)?;
                 let source = source.unwrap_or_default();
                 let m = ModelOp {
@@ -1652,6 +1902,7 @@ impl Harness {
                 };
                 no_sign_requests(&requests, "spend_allowance")?;
                 self.owner_call_allowed(vault_id, caller, *env, "spend_allowance")?;
+                coins_well_formed(&utxos, "spend_allowance")?;
                 self.fresh_op(op.op_id.0)?;
                 let limit = self.vaults[&vault_id].policy.allowance_limit_sats.0;
                 let window = self.window(vault_id) + u128::from(amount);
@@ -1699,9 +1950,19 @@ impl Harness {
                         "begin_clawback on Vault {vault_id} by {caller}, not one of its Guardians"
                     )));
                 }
+                coins_well_formed(&utxos, "begin_clawback")?;
+                // A clawed-back Vault still takes Clawbacks of late deposits, but no outpoint
+                // is ever swept twice.
+                if let Some(again) = utxos.iter().find(|u| self.swept.contains(&u.key())) {
+                    return Err(signature(format!(
+                        "begin_clawback swept {} a second time",
+                        again.key()
+                    )));
+                }
                 self.fresh_op(op_id.0)?;
                 let op = self.contract.get_op(op_id);
                 let source = source.unwrap_or_default();
+                let swept: Vec<String> = utxos.iter().map(Outpoint::key).collect();
                 let m = ModelOp {
                     destination: v.policy.recovery_address.clone(),
                     utxos,
@@ -1709,6 +1970,7 @@ impl Harness {
                 };
                 // The tx is checked against the Policy in effect at the Clawback.
                 self.freeze(op_id.0, &op, m)?;
+                self.swept.extend(swept);
                 for m in self.ops.values_mut() {
                     if m.vault == vault_id
                         && m.kind != SpendOpKind::Clawback
@@ -1763,6 +2025,19 @@ impl Harness {
                         change_id.0, pending.id
                     )));
                 }
+                if proposed.is_empty() {
+                    return Err(bound("an empty Policy Change was accepted"));
+                }
+                let mut next = v.policy.clone();
+                for field in &proposed {
+                    field.apply(&mut next);
+                }
+                if let Err(field) = within_signet_bounds(&next) {
+                    return Err(bound(format!(
+                        "a Policy Change {proposed:?} was accepted with {field} out of bounds"
+                    )));
+                }
+                self.changes_proposed += 1;
                 v.pending = Some(ModelChange {
                     id: change_id.0,
                     fields: proposed,
@@ -1772,24 +2047,45 @@ impl Harness {
             }
             Action::Veto { who, change, env } => {
                 let change_id = self.pick_change(*change);
+                let caller = who.account();
                 let envelope = env.map(Env::text);
-                let Ok(((), requests)) = self.call(who.account(), zero, |c| {
+                let Ok(((), requests)) = self.call(caller, zero, |c| {
                     c.veto_policy_change(U64(change_id), envelope)
                 }) else {
                     return Ok(());
                 };
                 no_sign_requests(&requests, "veto_policy_change")?;
-                for v in self.vaults.values_mut() {
-                    if v.pending.as_ref().is_some_and(|c| c.id == change_id) {
-                        v.pending = None;
-                        self.stopped.insert(change_id);
-                        self.stats.changes_stopped += 1;
-                    }
+                let v = self
+                    .vaults
+                    .values_mut()
+                    .find(|v| v.pending.as_ref().is_some_and(|c| c.id == change_id))
+                    .ok_or_else(|| {
+                        bound(format!(
+                            "a veto of change {change_id}, which is not pending, succeeded"
+                        ))
+                    })?;
+                let by_guardian = v.guardians.iter().any(|g| g == caller);
+                let by_owner = caller == v.owner && *env == Some(Env::Valid);
+                if v.closed || !(by_guardian || by_owner) {
+                    return Err(bound(format!(
+                        "a veto of change {change_id} was accepted from {caller} with envelope {env:?}"
+                    )));
                 }
+                v.pending = None;
+                self.stopped.insert(change_id);
+                self.stats.changes_stopped += 1;
                 Ok(())
             }
             Action::Apply { who, change } => {
                 let change_id = self.pick_change(*change);
+                let one_ns_early = self.vaults.values().any(|v| {
+                    v.pending.as_ref().is_some_and(|c| {
+                        c.id == change_id && self.now.checked_add(1) == Some(c.effective_at)
+                    })
+                });
+                if one_ns_early {
+                    self.stats.applies_1ns_early += 1;
+                }
                 let Ok(((), requests)) = self.call(who.account(), zero, |c| {
                     c.apply_policy_change(U64(change_id))
                 }) else {
@@ -1864,10 +2160,18 @@ impl Harness {
                             offset_by(pending[usize::from(pick) % pending.len()], offset)
                         }
                     }
-                    Time::EffectiveAt(offset) => self.vaults[&MAIN]
-                        .pending
-                        .as_ref()
-                        .map_or(self.now, |c| offset_by(c.effective_at, offset)),
+                    Time::EffectiveAt(pick, offset) => {
+                        let pending: Vec<u64> = self
+                            .vaults
+                            .values()
+                            .filter_map(|v| v.pending.as_ref().map(|c| c.effective_at))
+                            .collect();
+                        if pending.is_empty() {
+                            self.now
+                        } else {
+                            offset_by(pending[usize::from(pick) % pending.len()], offset)
+                        }
+                    }
                     Time::Delay => self.now + self.vaults[&MAIN].policy.delay_ns.0,
                     Time::Day => self.now + DAY_NS,
                     Time::Random(ns) => self.now + ns,
@@ -1882,6 +2186,17 @@ impl Harness {
                 });
                 if let Some(op) = self.contract.ops.get_mut(&op_id) {
                     op.executable_at = op.executable_at.map(|t| U64(t.0 - 1));
+                }
+                Ok(())
+            }
+            Action::Plant(Plant::EffectiveAtOneNanoEarlier(pick)) => {
+                let change_id = self.pick_change(*pick);
+                if let Some(change) = self.contract.changes.get_mut(&change_id) {
+                    change.effective_at = U64(change.effective_at.0 - 1);
+                    let earlier = change.clone();
+                    if let Some(vault) = self.contract.vaults.get_mut(&earlier.vault_id.0) {
+                        vault.pending_change = Some(earlier);
+                    }
                 }
                 Ok(())
             }
@@ -1928,7 +2243,7 @@ impl Harness {
         let v = &self.vaults[&m.vault];
         check_tx(&tx, &op.sighashes, &m, v, &v.policy)?;
         m.state = SpendOpState::Frozen;
-        m.signed = vec![false; m.utxos.len()];
+        m.signatures = vec![None; m.utxos.len()];
         m.frozen = Some(Frozen {
             tx_hex,
             sighashes: op.sighashes.clone(),
@@ -1938,7 +2253,7 @@ impl Harness {
         Ok(())
     }
 
-    fn sign(&mut self, who: Who, op: u8, input: u8) -> Checked {
+    fn sign(&mut self, who: Who, op: u8, input: u8, deliver: bool) -> Checked {
         let op_id = self.pick_op(op, |m| m.state == SpendOpState::Frozen);
         let caller = who.account();
         let before = self.ops.get(&op_id).cloned();
@@ -1961,10 +2276,18 @@ impl Harness {
         }) else {
             return Ok(());
         };
-        if stored.is_some() && !requests.is_empty() {
-            return Err(signature(
-                "sign_input returned a stored signature and also asked the signer",
-            ));
+        if let Some(returned) = stored {
+            no_sign_requests(&requests, "sign_input returning a stored signature")?;
+            // Only a signature the MPC network returned for this very op and input.
+            let model = before
+                .as_ref()
+                .and_then(|m| m.signatures.get(index as usize).cloned().flatten());
+            if model.as_deref() != Some(returned.as_str()) {
+                return Err(signature(format!(
+                    "sign_input returned {returned} for input {index} of op {op_id}; its stored signature is {model:?}"
+                )));
+            }
+            return Ok(());
         }
         if requests.len() > 1 {
             return Err(signature(format!(
@@ -1978,23 +2301,95 @@ impl Harness {
         self.check_sign_request(op_id, index, caller, request, before.as_ref())?;
         let kind = before.as_ref().map_or(0, |m| kind_index(m.kind));
         self.stats.sign_requests[kind] += 1;
-
-        // The MPC network answers with a well-formed signature; the callback stores it.
-        let byte = (op_id as u8).wrapping_mul(31).wrapping_add(input) | 1;
-        if let Ok((_, more)) = self.call(SELF, NearToken::from_yoctonear(0), |c| {
-            c.on_signed(U64(op_id), index, Ok(signing_mpc(byte)))
-        }) {
-            no_sign_requests(&more, "on_signed")?;
-            let m = self
-                .ops
-                .get_mut(&op_id)
-                .expect("checked by check_sign_request");
-            m.signed[index as usize] = true;
-            if m.signed.iter().all(|s| *s) {
-                m.state = SpendOpState::Signed;
-            }
-            self.stats.signatures_stored += 1;
+        self.requested.insert((op_id, index));
+        self.in_flight.insert((op_id, index));
+        if deliver {
+            // The MPC network answers with a well-formed signature at once.
+            self.signed_callback(None, op_id, index, true)?;
         }
+        Ok(())
+    }
+
+    /// An (op, input) for a direct `on_signed`: a request in flight, one already answered, an
+    /// op that is not Frozen, or an index past the op's inputs. Never an unrequested input of a
+    /// Frozen op: only the contract's own `sign_input` schedules this callback, so NEAR never
+    /// delivers one.
+    fn pick_callback(&self, target: u8, input: u8) -> (u64, u32) {
+        let in_flight: Vec<_> = self.in_flight.iter().copied().collect();
+        let requested: Vec<_> = self.requested.iter().copied().collect();
+        let not_frozen: Vec<u64> = self
+            .ops
+            .iter()
+            .filter(|(_, m)| m.state != SpendOpState::Frozen)
+            .map(|(id, _)| *id)
+            .collect();
+        let at = usize::from(target);
+        match target {
+            0..=119 if !in_flight.is_empty() => in_flight[at % in_flight.len()],
+            0..=179 if !requested.is_empty() => requested[at % requested.len()],
+            0..=219 if !not_frozen.is_empty() => {
+                (not_frozen[at % not_frozen.len()], u32::from(input % 7))
+            }
+            _ => match self.ops.iter().nth(at % self.ops.len().max(1)) {
+                // Past the op's last input.
+                Some((id, m)) => (*id, (m.utxos.len() + usize::from(input % 3)) as u32),
+                None => (self.contract.next_op_id + 1, 0),
+            },
+        }
+    }
+
+    /// `on_signed(op_id, index)` with a well-formed signature (`ok`) or a failed signer call,
+    /// from `who` or, for `None`, from the contract itself. Only the contract's own callback for
+    /// a request in flight on a Frozen op may store a signature; anything else stores nothing.
+    fn signed_callback(&mut self, who: Option<Who>, op_id: u64, index: u32, ok: bool) -> Checked {
+        let caller = who.map_or(SELF, Who::account);
+        let before = self.ops.get(&op_id).cloned();
+        let byte = (op_id as u8).wrapping_mul(31).wrapping_add(index as u8) | 1;
+        let result = if ok {
+            Ok(signing_mpc(byte))
+        } else {
+            Err(near_sdk::PromiseError::Failed)
+        };
+        let Ok((stored, requests)) = self.call(caller, NearToken::from_yoctonear(0), |c| {
+            private_entry("on_signed");
+            c.on_signed(U64(op_id), index, result)
+        }) else {
+            return Ok(());
+        };
+        no_sign_requests(&requests, "on_signed")?;
+        if caller != SELF {
+            return Err(signature(format!("on_signed accepted from {caller}")));
+        }
+        if !ok {
+            return Err(signature(format!(
+                "on_signed accepted a failed signer call for input {index} of op {op_id}"
+            )));
+        }
+        let m = before
+            .ok_or_else(|| signature(format!("on_signed succeeded for unknown op {op_id}")))?;
+        let i = index as usize;
+        let existing = m.signatures.get(i).cloned().flatten();
+        let fresh = m.state == SpendOpState::Frozen
+            && existing.is_none()
+            && i < m.signatures.len()
+            && self.in_flight.contains(&(op_id, index));
+        self.in_flight.remove(&(op_id, index));
+        if !fresh {
+            // A duplicate answer returns the stored signature and changes nothing.
+            if existing.as_deref() != Some(stored.as_str()) {
+                return Err(signature(format!(
+                    "on_signed stored {stored} for input {index} of {:?} op {op_id}, which had no sign request in flight",
+                    m.state
+                )));
+            }
+            return Ok(());
+        }
+        let m = self.ops.get_mut(&op_id).expect("seen above");
+        m.signatures[i] = Some(stored);
+        if m.signatures.iter().all(Option::is_some) {
+            m.state = SpendOpState::Signed;
+        }
+        self.stats.signatures_stored += 1;
         Ok(())
     }
 
@@ -2076,6 +2471,17 @@ impl Harness {
     /// Invariants after every step: Script-bound data and the Policy as the model has them, and
     /// every op's state and frozen transaction unchanged behind the model's back.
     fn check_state(&self) -> Checked {
+        // No op or Policy Change exists that the model did not see created.
+        let (ops, changes) = (self.contract.next_op_id, self.contract.next_change_id);
+        if ops != self.ops.len() as u64 + 1 || changes != self.changes_proposed + 1 {
+            return Err(signature(format!(
+                "the contract counts {} ops and {} Policy Changes; the model saw {} and {}",
+                ops - 1,
+                changes - 1,
+                self.ops.len(),
+                self.changes_proposed
+            )));
+        }
         for (id, v) in &self.vaults {
             let stored = self.contract.get_vault(U64(*id));
             let changed = v.script_bound.changed_fields(&ScriptBound::of(&stored));
@@ -2124,22 +2530,15 @@ impl Harness {
                     )));
                 }
             }
+            if stored.signatures != m.signatures {
+                return Err(signature(format!(
+                    "op {id} stores signatures {:?}; the MPC network returned {:?}",
+                    stored.signatures, m.signatures
+                )));
+            }
         }
         Ok(())
     }
-}
-
-/// The `ERR_…` code of a refusal, or its text when it has none.
-fn error_code(message: &str) -> String {
-    message
-        .find("ERR_")
-        .map(|start| {
-            message[start..]
-                .chars()
-                .take_while(|c| c.is_ascii_uppercase() || *c == '_')
-                .collect()
-        })
-        .unwrap_or_else(|| message.to_string())
 }
 
 fn offset_by(at: u64, offset: i8) -> u64 {
@@ -2170,6 +2569,23 @@ fn check_tx(
     if !same_coins {
         return Err(signature(format!(
             "the {name} transaction spends coins other than the op's"
+        )));
+    }
+    if tx.version != 2u32.to_le_bytes() || tx.lock_time != [0; 4] {
+        return Err(signature(format!(
+            "the {name} transaction has version {:?} and lock time {:?}, not 2 and 0",
+            tx.version, tx.lock_time
+        )));
+    }
+    if let Some(input) = tx.inputs.iter().find(|i| i.sequence != 0xffff_fffd) {
+        return Err(signature(format!(
+            "the {name} transaction has an input with sequence {:#x}, not 0xfffffffd",
+            input.sequence
+        )));
+    }
+    if let Some((value, _)) = tx.outputs.iter().find(|(value, _)| *value < 546) {
+        return Err(signature(format!(
+            "the {name} transaction has a {value}-sat output, below dust"
         )));
     }
 
@@ -2216,10 +2632,12 @@ fn check_tx(
     })?;
     let moved = u64::try_from(inputs).unwrap_or(u64::MAX);
     let fee_cap = policy.fee_cap_sats.0;
+    // min(Fee Cap, 5 %) of the amount paid (withdrawal, allowance) or moved (refresh);
+    // min(2 × Fee Cap, 10 %) of the amount moved for a Clawback.
     let cap = match m.kind {
-        SpendOpKind::Withdrawal | SpendOpKind::Allowance => withdrawal_fee_cap(fee_cap, m.amount),
-        SpendOpKind::Refresh => withdrawal_fee_cap(fee_cap, moved),
-        SpendOpKind::Clawback => clawback_fee_cap(fee_cap, moved),
+        SpendOpKind::Withdrawal | SpendOpKind::Allowance => fee_cap.min(m.amount / 20),
+        SpendOpKind::Refresh => fee_cap.min(moved / 20),
+        SpendOpKind::Clawback => fee_cap.saturating_mul(2).min(moved / 10),
     };
     if fee_sats > u128::from(cap) {
         return Err(fee(format!(
@@ -2283,11 +2701,23 @@ fn runner(seed: u64, cases: u32) -> TestRunner {
     let mut material = b"morrow property suite".to_vec();
     material.extend(seed.to_le_bytes());
     let rng_seed: [u8; 32] = Sha256::digest(&material).into();
+    // Every field set here: `Config::default()` would read `PROPTEST_*` from the environment.
     let config = Config {
         cases,
+        max_local_rejects: 65_536,
+        max_global_rejects: 1_024,
+        max_flat_map_regens: 1_000_000,
         failure_persistence: None,
         source_file: None,
-        ..Config::default()
+        test_name: None,
+        max_shrink_time: 120_000,
+        max_shrink_iters: 4_096,
+        max_default_size_range: 100,
+        result_cache: noop_result_cache,
+        verbose: 0,
+        rng_algorithm: RngAlgorithm::ChaCha,
+        rng_seed: RngSeed::Fixed(seed),
+        _non_exhaustive: (),
     };
     TestRunner::new_with_rng(config, TestRng::from_seed(RngAlgorithm::ChaCha, &rng_seed))
 }
@@ -2304,47 +2734,68 @@ fn report(step: usize, violation: &Violation, steps: &[Action]) -> String {
     )
 }
 
+struct SuiteRun {
+    result: Result<(), TestError<Case>>,
+    /// Cases generated, not counting shrink iterations.
+    cases: u32,
+    stats: Stats,
+}
+
+/// Runs `cases` generated cases; stops counting (cases and stats) at the first failure, so
+/// shrink iterations are not counted.
+fn run_suite(seed: u64, cases: u32) -> SuiteRun {
+    install_quiet_panic_hook();
+    let ran = Cell::new(0u32);
+    let failed = Cell::new(false);
+    let totals = RefCell::new(Stats::default());
+    let result = runner(seed, cases).run(&case(), |case| {
+        let mut harness = Harness::new(&case.setup);
+        let outcome = harness.run(&case.steps);
+        if !failed.get() {
+            ran.set(ran.get() + 1);
+            totals.borrow_mut().add(&harness.stats);
+            failed.set(outcome.is_err());
+        }
+        outcome.map_err(|(step, v)| TestCaseError::fail(report(step, &v, &case.steps)))
+    });
+    SuiteRun {
+        result,
+        cases: ran.get(),
+        stats: totals.into_inner(),
+    }
+}
+
 #[test]
 fn property_signer_discipline_suite() {
     let seed = parse_seed(std::env::var("MORROW_PROPTEST_SEED").ok().as_deref())
         .unwrap_or_else(|e| panic!("{e}"));
     let cases = parse_cases(std::env::var("MORROW_PROPTEST_CASES").ok().as_deref())
         .unwrap_or_else(|e| panic!("{e}"));
-    install_quiet_panic_hook();
-    let ran = Cell::new(0u32);
-    let totals = RefCell::new(Stats::default());
-    let result = runner(seed, cases).run(&case(), |case| {
-        ran.set(ran.get() + 1);
-        let mut harness = Harness::new(&case.setup);
-        let outcome = harness.run(&case.steps);
-        totals.borrow_mut().add(&harness.stats);
-        outcome.map_err(|(step, v)| TestCaseError::fail(report(step, &v, &case.steps)))
-    });
-    match result {
+    let run = run_suite(seed, cases);
+    let replay = format!("MORROW_PROPTEST_SEED=0x{seed:x} MORROW_PROPTEST_CASES={cases}");
+    match run.result {
         Ok(()) => {
-            println!("Property suite: {cases} cases, seed 0x{seed:x}, 0 violations");
-            let totals = totals.into_inner();
-            println!("{}", totals.line());
-            println!("{}", totals.refusals_line());
-            // The suite must exercise every signing path, not only refusals.
-            if cases >= DEFAULT_CASES {
-                assert!(
-                    totals.freezes.iter().all(|n| *n > 0)
-                        && totals.sign_requests.iter().all(|n| *n > 0)
-                        && totals.signatures_stored > 0
-                        && totals.changes_applied > 0
-                        && totals.changes_stopped > 0,
-                    "the suite no longer reaches every path: {}",
-                    totals.line()
-                );
+            println!(
+                "Property suite: {} cases, seed 0x{seed:x}, 0 violations",
+                run.cases
+            );
+            println!("{}", run.stats.line());
+            println!("{}", run.stats.refusals_line());
+            // The default run must exercise every signing path and both 1 ns boundaries, not
+            // only refusals. Another seed or a smaller run only warns.
+            if !run.stats.reaches_every_path() {
+                if seed == DEFAULT_SEED && cases >= DEFAULT_CASES {
+                    panic!("the suite no longer reaches every path: {}", run.stats.line());
+                }
+                println!("warning: this run does not reach every path ({replay})");
             }
         }
         Err(TestError::Fail(reason, case)) => panic!(
-            "Property suite: violation after {} cases, seed 0x{seed:x} (rerun with MORROW_PROPTEST_SEED=0x{seed:x}): {reason}\nShrunk case: {case:#?}",
-            ran.get()
+            "Property suite: violation in case {}, seed 0x{seed:x} (rerun with {replay}): {reason}\nShrunk case: {case:#?}",
+            run.cases
         ),
         Err(TestError::Abort(reason)) => {
-            panic!("Property suite aborted, seed 0x{seed:x}: {reason}")
+            panic!("Property suite aborted, seed 0x{seed:x} ({replay}): {reason}")
         }
     }
 }
@@ -2413,6 +2864,13 @@ fn property_seed_parsing_and_determinism() {
     };
     assert_eq!(first(7), first(7));
     assert_ne!(first(7), first(8));
+
+    // Two whole runs with the same seed take the same steps with the same outcomes.
+    let (a, b) = (run_suite(7, 40), run_suite(7, 40));
+    assert!(a.result.is_ok() && b.result.is_ok());
+    assert_eq!((a.cases, &a.stats), (b.cases, &b.stats));
+    assert!(a.stats.steps > 0);
+    assert_ne!(a.stats, run_suite(8, 40).stats);
 }
 
 #[test]
@@ -2667,7 +3125,10 @@ fn property_a_forged_sign_request_is_reported() {
 #[test]
 fn property_a_mutated_script_bound_field_is_reported() {
     type Mutation = fn(&mut Vault);
-    let mutations: [(&str, Mutation); 9] = [
+    let mutations: [(&str, Mutation); 10] = [
+        ("owner_account", |v| {
+            v.owner_account = STRANGER.parse().unwrap()
+        }),
         ("guardians", |v| {
             v.policy.guardians[0].guardian_account = STRANGER.parse().unwrap()
         }),
@@ -2781,6 +3242,7 @@ fn property_an_honest_sequence_reaches_every_signing_path() {
         who: Who::Owner,
         op,
         input: 0,
+        deliver: true,
     };
     harness
         .run(&[
@@ -2816,10 +3278,412 @@ fn property_an_honest_sequence_reaches_every_signing_path() {
                 who: Who::Emma,
                 op: 0,
                 input: 0,
+                deliver: true,
             },
         ])
         .unwrap_or_else(|(step, v)| panic!("step {step}: {}", v.message));
     assert_eq!(harness.stats.freezes, [1, 1, 1, 1]);
     assert_eq!(harness.stats.sign_requests.iter().sum::<u64>(), 2);
     assert_eq!(harness.stats.refusals, 0);
+}
+
+fn owner_propose() -> Action {
+    Action::Propose {
+        who: Who::Owner,
+        vault: VaultPick::Main,
+        change: Change::Fields(vec![Field::Limit(1_000_000)]),
+        env: Env::Valid,
+    }
+}
+
+fn stranger_apply() -> Action {
+    Action::Apply {
+        who: Who::Stranger,
+        change: 0,
+    }
+}
+
+#[test]
+fn property_a_planted_early_apply_is_reported() {
+    install_quiet_panic_hook();
+    let early = [
+        owner_propose(),
+        Action::Advance(Time::EffectiveAt(0, -1)),
+        Action::Plant(Plant::EffectiveAtOneNanoEarlier(0)),
+        stranger_apply(),
+    ];
+    let (step, violation) = Harness::new(&fixed_setup())
+        .run(&early)
+        .expect_err("a change applied 1 ns early must be reported");
+    assert_eq!(step, 4);
+    assert_eq!(violation.family, 3, "{}", violation.message);
+    assert!(
+        violation.message.contains("1 ns before effective_at"),
+        "{}",
+        violation.message
+    );
+
+    // Control: without the plant the contract refuses at -1 ns and applies at effective_at.
+    let mut harness = Harness::new(&fixed_setup());
+    harness
+        .run(&[
+            owner_propose(),
+            Action::Advance(Time::EffectiveAt(0, -1)),
+            stranger_apply(),
+            Action::Advance(Time::OneNano),
+            stranger_apply(),
+        ])
+        .unwrap_or_else(|(step, v)| panic!("step {step}: {}", v.message));
+    assert_eq!(
+        harness.stats.refused_with.get("ERR_CHANGE_NOT_EFFECTIVE"),
+        Some(&1)
+    );
+    assert_eq!(harness.stats.applies_1ns_early, 1);
+    assert_eq!(harness.stats.changes_applied, 1);
+    assert_eq!(
+        harness.vaults[&MAIN].policy.allowance_limit_sats,
+        U64(1_000_000)
+    );
+}
+
+/// `check_tx` on a hand-built op after `edit`; returns its violation.
+fn edited(kind: SpendOpKind, edit: impl FnOnce(&mut Tx, &mut ModelOp, &Harness)) -> Violation {
+    let harness = Harness::new(&fixed_setup());
+    let (mut tx, _, mut m) = hand_built(&harness, kind, 100_000, 95_000);
+    let v = &harness.vaults[&MAIN];
+    edit(&mut tx, &mut m, &harness);
+    let script = v.witness_script(m.source);
+    let sighashes: Vec<String> = (0..tx.inputs.len())
+        .map(|i| {
+            let value = m.utxos.get(i).map_or(100_000, |u| u.value_sats.0);
+            to_hex(&bip143(&tx, i, script, value))
+        })
+        .collect();
+    check_tx(&tx, &sighashes, &m, v, &v.policy).expect_err("the edit must be reported")
+}
+
+#[test]
+fn property_a_transaction_paying_outside_its_policy_is_reported() {
+    type TxEdit = fn(&mut Tx, &mut ModelOp, &Harness);
+    let cases: [(&str, SpendOpKind, TxEdit, &str); 10] = [
+        (
+            "withdrawal change redirected",
+            SpendOpKind::Withdrawal,
+            |tx, _, _| tx.outputs[1].1 = signet_script(TAPROOT_SIGNET).unwrap(),
+            "outside its Policy",
+        ),
+        (
+            "withdrawal with a third output",
+            SpendOpKind::Withdrawal,
+            |tx, _, _| {
+                tx.outputs[1].0 -= 1_000;
+                tx.outputs
+                    .push((1_000, signet_script(DESTINATION).unwrap()));
+            },
+            "outside its Policy",
+        ),
+        (
+            "allowance paying amount + 1",
+            SpendOpKind::Allowance,
+            |tx, _, _| {
+                tx.outputs[0].0 += 1;
+                tx.outputs[1].0 -= 1;
+            },
+            "outside its Policy",
+        ),
+        (
+            "Clawback paying the destination",
+            SpendOpKind::Clawback,
+            |tx, _, _| tx.outputs[0].1 = signet_script(DESTINATION).unwrap(),
+            "outside its Policy",
+        ),
+        (
+            "spending another coin",
+            SpendOpKind::Refresh,
+            |tx, _, _| tx.inputs[0].vout = 7,
+            "coins other than the op's",
+        ),
+        (
+            "an extra input",
+            SpendOpKind::Refresh,
+            |tx, _, _| tx.inputs.push(tx.inputs[0].clone()),
+            "coins other than the op's",
+        ),
+        (
+            "version 1",
+            SpendOpKind::Refresh,
+            |tx, _, _| tx.version = 1u32.to_le_bytes(),
+            "version",
+        ),
+        (
+            "a lock time",
+            SpendOpKind::Withdrawal,
+            |tx, _, _| tx.lock_time = 1u32.to_le_bytes(),
+            "lock time",
+        ),
+        (
+            "a final sequence",
+            SpendOpKind::Clawback,
+            |tx, _, _| tx.inputs[0].sequence = 0xffff_ffff,
+            "sequence",
+        ),
+        (
+            "a dust change output",
+            SpendOpKind::Withdrawal,
+            |tx, _, _| tx.outputs[1].0 = 545,
+            "below dust",
+        ),
+    ];
+    for (name, kind, edit, expected) in cases {
+        let violation = edited(kind, edit);
+        assert_eq!(violation.family, 1, "{name}: {}", violation.message);
+        assert!(
+            violation.message.contains(expected),
+            "{name}: {}",
+            violation.message
+        );
+    }
+}
+
+#[test]
+fn property_a_stranger_freeze_is_reported() {
+    install_quiet_panic_hook();
+    let mut harness = Harness::new(&fixed_setup());
+    // Planted bug: the contract takes the stranger for the Owner.
+    harness
+        .contract
+        .vaults
+        .get_mut(&MAIN)
+        .unwrap()
+        .owner_account = STRANGER.parse().unwrap();
+    let violation = harness
+        .step(&Action::Refresh {
+            who: Who::Stranger,
+            vault: VaultPick::Main,
+            utxos: pool_coins(&[0]),
+            rate: Rate::Normal(2),
+            env: Env::Valid,
+            source: None,
+        })
+        .expect_err("a stranger's freeze must be reported");
+    assert_eq!(violation.family, 1);
+    assert!(
+        violation.message.contains("succeeded for stranger.testnet"),
+        "{}",
+        violation.message
+    );
+}
+
+#[test]
+fn property_an_allowance_over_the_window_is_reported() {
+    install_quiet_panic_hook();
+    let mut harness = Harness::new(&fixed_setup());
+    // Planted bug: the contract reads a higher limit than the Policy in effect (100,000).
+    harness
+        .contract
+        .vaults
+        .get_mut(&MAIN)
+        .unwrap()
+        .policy
+        .allowance_limit_sats = U64(1_000_000);
+    let violation = harness
+        .step(&Action::Allowance {
+            who: Who::Owner,
+            vault: VaultPick::Main,
+            amount: Amount::Sats(150_000),
+            dest: Dest::Main,
+            rate: Rate::Normal(2),
+            utxos: pool_coins(&[1, 2]),
+            env: Env::Valid,
+        })
+        .expect_err("a spend over the rolling limit must be reported");
+    assert_eq!(violation.family, 1);
+    assert!(
+        violation.message.contains("over the limit 100000"),
+        "{}",
+        violation.message
+    );
+}
+
+#[test]
+fn property_an_edited_op_is_reported_by_check_state() {
+    install_quiet_panic_hook();
+    type Edit = fn(&mut SpendOp);
+    let edits: [(&str, Edit); 3] = [
+        ("is Cancelled", |op| op.state = SpendOpState::Cancelled),
+        ("frozen transaction", |op| {
+            op.unsigned_tx_hex = op
+                .unsigned_tx_hex
+                .as_ref()
+                .map(|t| t.replace("fdffffff", "ffffffff"))
+        }),
+        ("stores signatures", |op| {
+            op.signatures[0] = Some("02".repeat(65))
+        }),
+    ];
+    for (expected, edit) in edits {
+        let mut harness = Harness::new(&fixed_setup());
+        harness
+            .run(&[Action::Refresh {
+                who: Who::Owner,
+                vault: VaultPick::Main,
+                utxos: pool_coins(&[0]),
+                rate: Rate::Normal(2),
+                env: Env::Valid,
+                source: None,
+            }])
+            .unwrap_or_else(|(step, v)| panic!("step {step}: {}", v.message));
+        edit(harness.contract.ops.get_mut(&1).unwrap());
+        let violation = harness.check_state().unwrap_err();
+        assert_eq!(violation.family, 1);
+        assert!(
+            violation.message.contains(expected),
+            "{expected}: {}",
+            violation.message
+        );
+    }
+    // An op the model never saw created.
+    let mut harness = Harness::new(&fixed_setup());
+    harness.contract.next_op_id += 1;
+    assert!(harness
+        .check_state()
+        .unwrap_err()
+        .message
+        .contains("counts 1 ops"));
+}
+
+#[test]
+fn property_a_stray_sign_request_or_panic_is_reported() {
+    install_quiet_panic_hook();
+    let request = SignRequest {
+        receiver: SIGNER.into(),
+        payload: "00".repeat(32),
+        path: format!("morrow/v1/{MAIN}/vault"),
+    };
+    assert_eq!(
+        no_sign_requests(&[], "cancel").map_err(|v| v.family),
+        Ok(())
+    );
+    let violation = no_sign_requests(&[request], "cancel").unwrap_err();
+    assert_eq!(violation.family, 1);
+    assert!(violation.message.contains("only sign_input may"));
+
+    // A panic without an error code is not a refusal.
+    let mut harness = Harness::new(&fixed_setup());
+    let zero = NearToken::from_yoctonear(0);
+    assert!(harness
+        .call(OWNER, zero, |_| env::panic_str("ERR_UNAUTHORIZED"))
+        .is_err());
+    assert!(harness
+        .call(SELF, zero, |_| private_entry("on_signed"))
+        .is_ok());
+    assert!(harness
+        .call(OWNER, zero, |_| private_entry("on_signed"))
+        .is_err());
+    assert!(harness.late.is_none());
+    let _ = harness.call(OWNER, zero, |_| -> u64 {
+        [1u64][usize::from(OWNER.len() > 1)]
+    });
+    let violation = harness.late.take().expect("an index panic is reported");
+    assert!(
+        violation.message.contains("without an error code"),
+        "{}",
+        violation.message
+    );
+}
+
+#[test]
+fn property_a_stored_signature_must_match_and_late_callbacks_store_nothing() {
+    install_quiet_panic_hook();
+    let mut harness = Harness::new(&fixed_setup());
+    let refresh = Action::Refresh {
+        who: Who::Owner,
+        vault: VaultPick::Main,
+        utxos: pool_coins(&[0, 1]),
+        rate: Rate::Normal(2),
+        env: Env::Valid,
+        source: None,
+    };
+    let sign = |input, deliver| Action::Sign {
+        who: Who::Owner,
+        op: 0,
+        input,
+        deliver,
+    };
+    harness
+        .run(&[
+            refresh,
+            sign(0, true),
+            // Returns the stored signature.
+            sign(0, true),
+            // In flight, then the op is clawed back: the late answer stores nothing.
+            sign(1, false),
+            Action::Clawback {
+                who: Who::Emma,
+                vault: VaultPick::Main,
+                utxos: pool_coins(&[5]),
+                rate: Rate::Normal(2),
+                source: None,
+            },
+            Action::SignedCallback {
+                who: None,
+                target: 0,
+                input: 0,
+                ok: true,
+            },
+            // From anyone but the contract: refused.
+            Action::SignedCallback {
+                who: Some(Who::Owner),
+                target: 150,
+                input: 0,
+                ok: true,
+            },
+            Action::KeysCallback {
+                who: Some(Who::Stranger),
+                vault: VaultPick::Main,
+            },
+            Action::KeysCallback {
+                who: None,
+                vault: VaultPick::Main,
+            },
+        ])
+        .unwrap_or_else(|(step, v)| panic!("step {step}: {}", v.message));
+    assert_eq!(harness.stats.signatures_stored, 1);
+    assert_eq!(harness.stats.refused_with.get("private method"), Some(&2));
+    assert_eq!(harness.contract.get_op(U64(1)).state, SpendOpState::Voided);
+
+    // A stored signature that is not the one the MPC network returned is reported.
+    let mut harness = Harness::new(&fixed_setup());
+    harness
+        .run(&[
+            Action::Refresh {
+                who: Who::Owner,
+                vault: VaultPick::Main,
+                utxos: pool_coins(&[0, 1]),
+                rate: Rate::Normal(2),
+                env: Env::Valid,
+                source: None,
+            },
+            sign(0, true),
+        ])
+        .unwrap_or_else(|(step, v)| panic!("step {step}: {}", v.message));
+    harness.ops.get_mut(&1).unwrap().signatures[0] = Some("03".repeat(65));
+    let violation = harness.step(&sign(0, true)).unwrap_err();
+    assert!(
+        violation.message.contains("its stored signature"),
+        "{}",
+        violation.message
+    );
+}
+
+#[test]
+fn property_the_callbacks_are_private_in_lib_rs() {
+    // `private_entry` stands in for the guard near-sdk generates from these attributes.
+    let lib = include_str!("../lib.rs");
+    for method in ["on_keys_derived", "on_signed"] {
+        assert!(
+            lib.contains(&format!("#[private]\n    pub fn {method}(")),
+            "{method} must stay #[private]"
+        );
+    }
 }
