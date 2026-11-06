@@ -420,18 +420,26 @@ export function expectedLines(readme) {
 }
 
 /**
- * Deployments older than Policy Changes (Story 5.1). Against one of these, S-6 ends
- * `S-6 Policy Change SKIP (<contract> predates Policy Changes)` and sends nothing, and the log
- * check accepts that line in place of S-6's PASS. Against any other contract the PASS is required,
- * so once the default contract moves on (Story 7.5b) the SKIP no longer counts.
+ * Deployments older than Policy Changes (Story 5.1) and Fast Approval (Story 8.4), which first
+ * ship together (Story 7.5b). Against one of these, each Scenario in `LEGACY_SKIPS` ends
+ * `<id> <name> SKIP (<contract> <reason>)` and sends nothing, and the log check accepts that line
+ * in place of its PASS. Against any other contract the PASS is required, so once the default
+ * contract moves on the SKIP no longer counts.
  */
 export const LEGACY_CONTRACTS = ["morrow-vault-dev3.testnet"];
 
-/** The lines a log may hold in place of a row's expected line: only S-6's legacy SKIP. */
+/** The Scenarios that skip on a legacy contract, and the reason each one gives. */
+export const LEGACY_SKIPS = {
+  "S-6": "predates Policy Changes",
+  "S-7": "predates Fast Approval",
+};
+
+/** The lines a log may hold in place of a row's expected line: only its own legacy SKIP. */
 function substitutes(row) {
-  if (row.id !== "S-6" || row.expected !== `${row.id} ${row.name} PASS`) return [];
+  if (!Object.hasOwn(LEGACY_SKIPS, row.id)) return [];
+  if (row.expected !== `${row.id} ${row.name} PASS`) return [];
   return LEGACY_CONTRACTS.map(
-    (contract) => `${row.id} ${row.name} SKIP (${contract} predates Policy Changes)`,
+    (contract) => `${row.id} ${row.name} SKIP (${contract} ${LEGACY_SKIPS[row.id]})`,
   );
 }
 

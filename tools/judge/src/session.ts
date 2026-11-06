@@ -61,7 +61,8 @@ export function judgeSession(config: JudgeConfig = loadJudgeConfig()): Promise<J
       await funder.createSubAccount({
         accountOrPrefix: ownerId,
         publicKey: ownerKey.getPublicKey(),
-        nearToTransfer: 2_500_000_000_000_000_000_000_000n,
+        // Six Vaults at 0.5 NEAR of storage each, the Guardian and S-6's and S-7's own accounts.
+        nearToTransfer: 5_000_000_000_000_000_000_000_000n,
       });
     } else {
       await createTestnetAccount(ownerId, ownerKey.getPublicKey().toString());
@@ -126,6 +127,11 @@ export async function createJudgeSubAccount(
   return { accountId, client };
 }
 
+/** A fresh compressed secp256k1 public key, for a Guardian whose Bitcoin key nobody needs. */
+export function freshGuardianKey(): string {
+  return publicKeyHex(secp256k1.utils.randomSecretKey());
+}
+
 /** The session's Guardian, a `backup_device`. */
 export function judgeGuardian(session: JudgeSession): Guardian {
   return {
@@ -137,12 +143,14 @@ export function judgeGuardian(session: JudgeSession): Guardian {
 
 /**
  * Judge Mode Policy: regtest with the 1-minute lower bounds, so Scenarios finish in minutes. Its
- * only Guardian is the session's, unless a Scenario passes its own list.
+ * only Guardian is the session's, unless a Scenario passes its own list; `overrides` replace
+ * single fields (S-7's Fast Approval timing).
  */
 export function judgePolicy(
   session: JudgeSession,
   recoveryAddress: string,
   guardians: Guardian[] = [judgeGuardian(session)],
+  overrides: Partial<Policy> = {},
 ): Policy {
   return {
     ...presetPolicy("standard", {
@@ -156,18 +164,19 @@ export function judgePolicy(
     policy_change_delay_ns: MINUTE_NS.toString(),
     fast_approval_floor_ns: MINUTE_NS.toString(),
     escape_timelock_blocks: 6,
+    ...overrides,
   };
 }
 
 /** Creates an active Judge Mode Vault for the session's account. */
 export async function createJudgeVault(
   session: JudgeSession,
-  { guardians }: { guardians?: Guardian[] } = {},
+  { guardians, overrides }: { guardians?: Guardian[]; overrides?: Partial<Policy> } = {},
 ): Promise<{ vaultId: string; tx: string }> {
   const recovery = await session.regtest.newAddress();
   const vaultId = await session.client.createVault({
     owner_key: session.ownerKey,
-    policy: judgePolicy(session, recovery, guardians),
+    policy: judgePolicy(session, recovery, guardians, overrides),
     deposit_yocto: MIN_VAULT_STORAGE_YOCTO.toString(),
   });
   return { vaultId, tx: session.client.lastTransactionHash ?? "" };

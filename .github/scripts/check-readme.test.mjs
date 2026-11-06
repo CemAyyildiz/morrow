@@ -7,6 +7,7 @@ import { test } from "node:test";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import {
   LEGACY_CONTRACTS,
+  LEGACY_SKIPS,
   checkLog,
   checkReadme,
   expectedLines,
@@ -455,6 +456,38 @@ test("a legacy contract's S-6 SKIP stands for the PASS; any other contract's doe
     "S-5 Escape SKIP (morrow-vault-dev3.testnet predates Policy Changes)",
   );
   assert.deepEqual(checkLog(built, s5), ["S-5 Escape PASS"]);
+});
+
+test("each legacy Scenario has its own SKIP reason, held to the same rules", () => {
+  assert.deepEqual(LEGACY_SKIPS, {
+    "S-6": "predates Policy Changes",
+    "S-7": "predates Fast Approval",
+  });
+  const s6 = "Unconfirmed loosening change auto-vetoed by the Guardian Watcher";
+  const s7 = "Fast-approved by the Trusted Contact: the Delay now ends at the Fast Approval Floor";
+  const built = readme({
+    rows: Object.values({
+      ...ROWS,
+      "S-6": row("S-6", "Policy Change", "S-6 Policy Change PASS", s6),
+      "S-7": row("S-7", "Fast Approval", "S-7 Fast Approval PASS", s7),
+    }),
+  });
+  const skip6 = "S-6 Policy Change SKIP (morrow-vault-dev3.testnet predates Policy Changes)";
+  const skip7 = (contract, reason = "predates Fast Approval") =>
+    `S-7 Fast Approval SKIP (${contract} ${reason})`;
+  const log = (s7Output) =>
+    LOG.replace("S-6 Policy Change SKIP (not built)", `${skip6}\n${s7Output}`);
+  assert.deepEqual(checkLog(built, log(skip7("morrow-vault-dev3.testnet"))), []);
+  assert.deepEqual(checkLog(built, log(`  ${s7}\nS-7 Fast Approval PASS`)), []);
+  for (const loosened of [
+    skip7("morrow-vault-dev4.testnet"),
+    skip7("morrow-vault-dev3.testnet", "predates Policy Changes"),
+    `  ${s7}\n${skip7("morrow-vault-dev3.testnet")}`,
+    `S-7 Fast Approval FAIL: ERR_UNAUTHORIZED expected\n${skip7("morrow-vault-dev3.testnet")}`,
+    `  ${skip7("morrow-vault-dev3.testnet")}`,
+  ]) {
+    assert.deepEqual(checkLog(built, log(loosened)), ["S-7 Fast Approval PASS"], loosened);
+  }
 });
 
 test("log mismatch lists every missing line, and a longer line does not count", () => {
