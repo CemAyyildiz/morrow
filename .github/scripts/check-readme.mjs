@@ -438,7 +438,9 @@ function substitutes(row) {
 /**
  * Log check: what the log lacks. A Scenario's output runs from the line after the previous
  * unindented line (banner or result) to its own result line. A legacy SKIP (`substitutes`) stands
- * for the expected line and its progress line, as that Scenario printed nothing.
+ * for the expected line and its progress line, but only as the Scenario's whole output (the
+ * unindented result line alone, with no progress line before it) and only in a log without a FAIL
+ * line for that Scenario.
  */
 export function checkLog(readme, log) {
   const lines = log.split(/\r?\n/).map((line) => line.trimEnd());
@@ -452,11 +454,14 @@ export function checkLog(readme, log) {
     while (from > 0 && /^\s/.test(lines[from - 1])) from--;
     return lines.slice(from, at + 1);
   };
+  const legacySkip = (row) =>
+    !lines.some((line) => line.startsWith(`${row.id} ${row.name} FAIL`)) &&
+    substitutes(row).some((skip) => outputOf(skip)?.length === 1);
   for (const row of rows) {
     if (!row.expected) continue;
     const output = outputOf(row.expected);
     if (!output) {
-      if (!substitutes(row).some((line) => lines.includes(line))) missing.push(row.expected);
+      if (!legacySkip(row)) missing.push(row.expected);
       continue;
     }
     if (row.progress && !output.some((line) => line.trim() === row.progress)) {

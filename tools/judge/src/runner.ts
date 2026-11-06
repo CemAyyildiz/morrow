@@ -4,7 +4,8 @@ export type Outcome = "PASS" | "FAIL" | "SKIP (not built)" | `SKIP (${string})`;
 
 /**
  * Thrown by a Scenario that cannot run against this deployment, before it sends anything. Its
- * outcome is `SKIP (<reason>)`, never a FAIL, even for a mandatory Scenario in a release build.
+ * outcome is `SKIP (<reason>)`, except that a release build fails a mandatory Scenario that skips,
+ * as it does one that is not built.
  */
 export class ScenarioSkip extends Error {
   override readonly name = "ScenarioSkip";
@@ -67,14 +68,15 @@ export async function runScenarios(
         await scenario.run({ log: (message) => options.write(`  ${message}`) });
         result = { scenario, outcome: "PASS" };
       } catch (error) {
-        result =
-          error instanceof ScenarioSkip
-            ? { scenario, outcome: `SKIP (${error.reason})` }
-            : {
-                scenario,
-                outcome: "FAIL",
-                detail: error instanceof Error ? error.message : String(error),
-              };
+        result = !(error instanceof ScenarioSkip)
+          ? {
+              scenario,
+              outcome: "FAIL",
+              detail: error instanceof Error ? error.message : String(error),
+            }
+          : options.release && scenario.mandatory
+            ? { scenario, outcome: "FAIL", detail: `mandatory Scenario skipped: ${error.reason}` }
+            : { scenario, outcome: `SKIP (${error.reason})` };
       }
     }
     options.write(formatResult(result));

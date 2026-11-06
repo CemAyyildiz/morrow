@@ -58,22 +58,28 @@ describe("judge runner", () => {
     expect(code).toBe(1);
   });
 
-  it("reports a ScenarioSkip as SKIP with its reason, never FAIL, even mandatory in a release", async () => {
+  it("reports a ScenarioSkip as SKIP with its reason, and exits 0", async () => {
     const skip = async () => {
       throw new ScenarioSkip("morrow-vault-dev3.testnet predates Policy Changes");
     };
-    const { lines, code } = await run(
-      [
-        { id: "S-6", name: "Policy Change", mandatory: false, run: skip },
-        { id: "S-1", name: "Create", mandatory: true, run: skip },
-      ],
-      true,
-    );
+    const scenarios: Scenario[] = [
+      { id: "S-6", name: "Policy Change", mandatory: false, run: skip },
+      { id: "S-1", name: "Create", mandatory: true, run: skip },
+    ];
+    const { lines, code } = await run(scenarios);
     expect(lines).toEqual([
       "S-6 Policy Change SKIP (morrow-vault-dev3.testnet predates Policy Changes)",
       "S-1 Create SKIP (morrow-vault-dev3.testnet predates Policy Changes)",
     ]);
     expect(code).toBe(0);
+
+    // A release build fails a mandatory Scenario that skips; a non-mandatory one still skips.
+    const release = await run(scenarios, true);
+    expect(release.lines).toEqual([
+      "S-6 Policy Change SKIP (morrow-vault-dev3.testnet predates Policy Changes)",
+      "S-1 Create FAIL: mandatory Scenario skipped: morrow-vault-dev3.testnet predates Policy Changes",
+    ]);
+    expect(release.code).toBe(1);
   });
 });
 

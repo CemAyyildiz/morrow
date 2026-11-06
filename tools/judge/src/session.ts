@@ -28,6 +28,8 @@ export interface JudgeSession {
   guardianClient: NearContractClient;
   guardianSecret: Uint8Array;
   guardianKey: string;
+  /** The Owner account's NEAR key, for sub-accounts a Scenario needs of its own (S-6). */
+  ownerNearKey: KeyPair;
   watcher: EnvelopeKeypair;
   rpc: BitcoindRpc;
   regtest: RegtestControl;
@@ -92,6 +94,7 @@ export function judgeSession(config: JudgeConfig = loadJudgeConfig()): Promise<J
       guardianClient: guardian.client,
       guardianSecret,
       guardianKey: publicKeyHex(guardianSecret),
+      ownerNearKey: ownerKey,
       watcher: await generateEnvelopeKeypair(),
       rpc,
       regtest: new RegtestControl(rpc),
@@ -100,25 +103,51 @@ export function judgeSession(config: JudgeConfig = loadJudgeConfig()): Promise<J
   return current;
 }
 
+/** A funded sub-account `<prefix>.<owner>` with a fresh key, and a contract client signed by it. */
+export async function createJudgeSubAccount(
+  session: JudgeSession,
+  prefix: string,
+  nearToTransfer: bigint,
+): Promise<{ accountId: string; client: NearContractClient }> {
+  const { config } = session;
+  const key = KeyPair.fromRandom("ed25519");
+  const accountId = `${prefix}.${session.accountId}`;
+  const provider = new JsonRpcProvider({ url: config.nearRpcUrl });
+  await new Account(
+    session.accountId,
+    provider,
+    new KeyPairSigner(session.ownerNearKey),
+  ).createSubAccount({ accountOrPrefix: accountId, publicKey: key.getPublicKey(), nearToTransfer });
+  const client = new NearContractClient({
+    contractId: config.vaultContract,
+    rpcUrl: config.nearRpcUrl,
+    signer: { accountId, secretKey: key.toString() },
+  });
+  return { accountId, client };
+}
+
+/** The session's Guardian, a `backup_device`. */
+export function judgeGuardian(session: JudgeSession): Guardian {
+  return {
+    guardian_key: session.guardianKey,
+    guardian_account: session.guardianAccountId,
+    kind: "backup_device",
+  };
+}
+
 /**
- * Judge Mode Policy: regtest with the 1-minute lower bounds, so Scenarios finish in minutes. The
- * session's Guardian is a `backup_device` unless a Scenario asks for another kind.
+ * Judge Mode Policy: regtest with the 1-minute lower bounds, so Scenarios finish in minutes. Its
+ * only Guardian is the session's, unless a Scenario passes its own list.
  */
 export function judgePolicy(
   session: JudgeSession,
   recoveryAddress: string,
-  guardianKind: Guardian["kind"] = "backup_device",
+  guardians: Guardian[] = [judgeGuardian(session)],
 ): Policy {
   return {
     ...presetPolicy("standard", {
       plannedDepositSats: 10_000_000n,
-      guardians: [
-        {
-          guardian_key: session.guardianKey,
-          guardian_account: session.guardianAccountId,
-          kind: guardianKind,
-        },
-      ],
+      guardians,
       recoveryAddress,
       network: "regtest",
       watcherX25519Pk: session.watcher.publicKeyHex,
@@ -133,12 +162,12 @@ export function judgePolicy(
 /** Creates an active Judge Mode Vault for the session's account. */
 export async function createJudgeVault(
   session: JudgeSession,
-  { guardianKind }: { guardianKind?: Guardian["kind"] } = {},
+  { guardians }: { guardians?: Guardian[] } = {},
 ): Promise<{ vaultId: string; tx: string }> {
   const recovery = await session.regtest.newAddress();
   const vaultId = await session.client.createVault({
     owner_key: session.ownerKey,
-    policy: judgePolicy(session, recovery, guardianKind),
+    policy: judgePolicy(session, recovery, guardians),
     deposit_yocto: MIN_VAULT_STORAGE_YOCTO.toString(),
   });
   return { vaultId, tx: session.client.lastTransactionHash ?? "" };

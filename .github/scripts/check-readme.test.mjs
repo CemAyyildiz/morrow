@@ -436,6 +436,20 @@ test("a legacy contract's S-6 SKIP stands for the PASS; any other contract's doe
   // A PASS still needs its progress line, and the SKIP stands in for S-6 only.
   const bare = LOG.replace("S-6 Policy Change SKIP (not built)", "S-6 Policy Change PASS");
   assert.deepEqual(checkLog(built, bare), [`${progress} (in S-6's output)`]);
+  // The SKIP must be S-6's whole output, in a log with no S-6 FAIL.
+  const dev3 = "S-6 Policy Change SKIP (morrow-vault-dev3.testnet predates Policy Changes)";
+  const withFail = LOG.replace(
+    "S-6 Policy Change SKIP (not built)",
+    `S-6 Policy Change FAIL: ERR_SCRIPT_BOUND expected\n${dev3}`,
+  );
+  assert.deepEqual(checkLog(built, withFail), ["S-6 Policy Change PASS"]);
+  const withProgress = LOG.replace(
+    "S-6 Policy Change SKIP (not built)",
+    `  Script-bound change rejected: ERR_SCRIPT_BOUND\n${dev3}`,
+  );
+  assert.deepEqual(checkLog(built, withProgress), ["S-6 Policy Change PASS"]);
+  const indented = LOG.replace("S-6 Policy Change SKIP (not built)", `  ${dev3}`);
+  assert.deepEqual(checkLog(built, indented), ["S-6 Policy Change PASS"]);
   const s5 = skipped("morrow-vault-dev3.testnet").replace(
     "S-5 Escape PASS",
     "S-5 Escape SKIP (morrow-vault-dev3.testnet predates Policy Changes)",
