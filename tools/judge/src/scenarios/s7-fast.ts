@@ -198,9 +198,14 @@ export async function runFast(ctx: ScenarioContext, deps: FastScenarioDeps): Pro
       `executable_at ${iso(lowered)} is below the Fast Approval Floor (approval time + 1 minute = ${iso(floorAt)})`,
     );
   }
-  if (lowered - floorAt > FLOOR_SLACK_NS || approval.data.executable_at !== lowered.toString()) {
+  if (lowered - floorAt > FLOOR_SLACK_NS) {
     throw new Error(
       `executable_at ${iso(lowered)} is not approval time + the Fast Approval Floor (${iso(floorAt)})`,
+    );
+  }
+  if (approval.data.executable_at !== lowered.toString()) {
+    throw new Error(
+      `The fast_approved event has executable_at ${approval.data.executable_at}, get_op has ${lowered}`,
     );
   }
   ctx.log("Fast-approved by the Trusted Contact: the Delay now ends at the Fast Approval Floor");
@@ -240,13 +245,19 @@ export async function runFast(ctx: ScenarioContext, deps: FastScenarioDeps): Pro
       `Withdrawal ${opId} froze at ${iso(frozenAt)}, not before the original executable_at ${iso(original)}`,
     );
   }
+  if (frozenAt < lowered) {
+    throw new Error(
+      `Withdrawal ${opId} froze at ${iso(frozenAt)}, before its executable_at ${iso(lowered)}`,
+    );
+  }
   ctx.log(
     `Contract froze the transaction ${(original - frozenAt) / 1_000_000_000n} s before the original Delay would have ended`,
   );
 
   for (let i = 0; i < (frozen?.sighashes.length ?? 0); i++) {
     const started = Date.now();
-    await call("sign_input", () => owner.signInput(opId, i));
+    // An MPC signature can take a while: as long as the broadcast.
+    await within(3 * deps.rpcTimeoutMs, "sign_input", () => owner.signInput(opId, i));
     ctx.log(
       `Input ${i} co-signed by the NEAR MPC network in ${((Date.now() - started) / 1000).toFixed(1)} s`,
     );

@@ -5,6 +5,7 @@ import {
   MorrowContractError,
   generateEnvelopeKeypair,
   type ContractClient,
+  type Guardian,
   type MorrowEvent,
   type Policy,
   type SpendOp,
@@ -68,7 +69,12 @@ interface FixtureOptions {
   clock?: (mock: MockContractClient) => ChainClock;
   bitcoin?: Partial<FastBitcoin>;
   policy?: Partial<Policy>;
+  contactKind?: Guardian["kind"];
+  guardianKind?: Guardian["kind"];
 }
+
+/** Time between the withdrawal request and the approval, so the two cannot be confused. */
+const BEFORE_APPROVAL_NS = 30_000_000_000n;
 
 /**
  * S-7 against the mock contract, with fake regtest (one 0.01 BTC coin, a broadcast that pays the
@@ -104,11 +110,11 @@ async function fixture(options: FixtureOptions = {}) {
         session,
         RECOVERY,
         [
-          judgeGuardian(session),
+          { ...judgeGuardian(session), kind: options.guardianKind ?? "backup_device" },
           {
             guardian_key: `03${"33".repeat(32)}`,
             guardian_account: CONTACT,
-            kind: "trusted_contact",
+            kind: options.contactKind ?? "trusted_contact",
           },
         ],
         options.policy ?? S7_POLICY,
@@ -120,7 +126,16 @@ async function fixture(options: FixtureOptions = {}) {
       owner: wrap(options.owner, as(mock, OWNER)),
       guardian: wrap(options.guardian, as(mock, GUARDIAN)),
       guardianAccount: GUARDIAN,
-      contact: wrap(options.contact, as(mock, CONTACT)),
+      // The Trusted Contact approves 30 s after the request.
+      contact: wrap(
+        options.contact,
+        override(as(mock, CONTACT), {
+          fastApprove: async (opId: string) => {
+            mock.advance(BEFORE_APPROVAL_NS);
+            return as(mock, CONTACT).fastApprove(opId);
+          },
+        }),
+      ),
       contactAccount: CONTACT,
       envelopeKey,
       bitcoin,
@@ -153,6 +168,44 @@ const refuse = (code: ConstructorParameters<typeof MorrowContractError>[0]) => a
   throw new MorrowContractError(code);
 };
 
+/** Options whose reader shows `change(op)` for every `get_op` after the contact's approval. */
+function afterApproval(change: (op: SpendOp) => SpendOp): FixtureOptions {
+  let approved = false;
+  return {
+    contact: (client) =>
+      override(client, {
+        fastApprove: async (opId: string) => {
+          await client.fastApprove(opId);
+          approved = true;
+        },
+      }),
+    reader: (client) =>
+      override(client, {
+        getOp: async (opId: string) => {
+          const op = await client.getOp(opId);
+          return approved ? change(op) : op;
+        },
+      }),
+  };
+}
+
+/** A reader whose `events_since` passes each event through `map`. */
+const mapEvents =
+  (map: (event: MorrowEvent) => MorrowEvent | MorrowEvent[]): Wrap =>
+  (client) =>
+    override(client, {
+      eventsSince: async (cursor: string, limit: number) =>
+        (await client.eventsSince(cursor, limit)).flatMap(map),
+    });
+
+/** `op.executable_at` moved by `ns`. */
+const shifted = (op: SpendOp, ns: bigint): SpendOp => ({
+  ...op,
+  executable_at: (BigInt(op.executable_at ?? "0") + ns).toString(),
+});
+
+const POLICY_MISMATCH = "Vault 1 does not have the S-7 Fast Approval Policy";
+
 describe("S-7 Fast Approval", () => {
   it("refuses the Backup Device and the Owner, approves down to the Floor, executes early and pays", async () => {
     const { mock, deps, broadcasts } = await fixture();
@@ -167,7 +220,7 @@ describe("S-7 Fast Approval", () => {
       "  Fast-approved by the Trusted Contact: the Delay now ends at the Fast Approval Floor",
       "  Execute before the Fast Approval Floor rejected: ERR_NOT_EXECUTABLE",
       expect.stringMatching(/^ {2}Waiting for the Fast Approval Floor \(executable at \S+\)$/),
-      "  Contract froze the transaction 538 s before the original Delay would have ended",
+      "  Contract froze the transaction 508 s before the original Delay would have ended",
       expect.stringMatching(/^ {2}Input 0 co-signed by the NEAR MPC network in \S+ s$/),
       `  Bitcoin transaction ${TXID} confirmed; destination received 500,000 sats`,
       "S-7 Fast Approval PASS",
@@ -175,7 +228,8 @@ describe("S-7 Fast Approval", () => {
     expect(code).toBe(0);
     expect(broadcasts.map((op) => op.state)).toEqual(["signed"]);
     const op = await mock.getOp("1");
-    expect(BigInt(op.executable_at!) - BigInt(op.created_at)).toBe(MINUTE_NS);
+    // Approval time + the Floor, not request time + the Floor.
+    expect(BigInt(op.executable_at!) - BigInt(op.created_at)).toBe(BEFORE_APPROVAL_NS + MINUTE_NS);
   });
 
   it("skips a contract that predates Fast Approval, sends nothing and exits 0", async () => {
@@ -203,6 +257,37 @@ describe("S-7 Fast Approval", () => {
     const { deps } = await fixture({ policy: { ...S7_POLICY, fast_approval: false } });
     expect((await run(deps)).result).toBe(
       failed("Vault 1 does not have the S-7 Fast Approval Policy"),
+    );
+  });
+
+  it.each([
+    [
+      "a Delay other than 10 minutes",
+      { policy: { ...S7_POLICY, delay_ns: (9n * MINUTE_NS).toString() } },
+    ],
+    [
+      "a Floor other than 1 minute",
+      { policy: { ...S7_POLICY, fast_approval_floor_ns: (2n * MINUTE_NS).toString() } },
+    ],
+    ["a contact that is not a Trusted Contact", { contactKind: "backup_device" }],
+    ["a Backup Device that is a Trusted Contact", { guardianKind: "trusted_contact" }],
+  ] as [string, FixtureOptions][])("fails on a Vault with %s", async (_, options) => {
+    const { deps } = await fixture(options);
+    expect((await run(deps)).result).toBe(failed(POLICY_MISMATCH));
+  });
+
+  it("fails when executable_at is not one Delay after the request", async () => {
+    const { deps } = await fixture({
+      reader: (client) =>
+        override(client, {
+          getOp: async (opId: string) => {
+            const op = await client.getOp(opId);
+            return { ...op, created_at: (BigInt(op.created_at) + 1n).toString() };
+          },
+        }),
+    });
+    expect((await run(deps)).result).toBe(
+      failed("Withdrawal 1 is not executable one Delay after its request"),
     );
   });
 
@@ -242,51 +327,61 @@ describe("S-7 Fast Approval", () => {
   });
 
   it("fails when the new executable_at is below approval time + the Floor", async () => {
-    let approved = false;
-    const { deps } = await fixture({
-      contact: (client) =>
-        override(client, {
-          fastApprove: async (opId: string) => {
-            await client.fastApprove(opId);
-            approved = true;
-          },
-        }),
-      reader: (client) =>
-        override(client, {
-          getOp: async (opId: string) => {
-            const op = await client.getOp(opId);
-            if (!approved || op.executable_at === null) return op;
-            return { ...op, executable_at: (BigInt(op.executable_at) - 1n).toString() };
-          },
-        }),
-    });
+    const { deps } = await fixture(afterApproval((op) => shifted(op, -1n)));
     expect((await run(deps)).result).toMatch(
       /^S-7 Fast Approval FAIL: executable_at \S+ is below the Fast Approval Floor \(approval time \+ 1 minute = \S+\)$/,
     );
   });
 
-  it("fails when the new executable_at is well above approval time + the Floor", async () => {
-    let approved = false;
+  it("fails when the new executable_at is 6 s above approval time + the Floor", async () => {
+    const { deps } = await fixture(afterApproval((op) => shifted(op, 6_000_000_000n)));
+    expect((await run(deps)).result).toMatch(
+      /^S-7 Fast Approval FAIL: executable_at \S+ is not approval time \+ the Fast Approval Floor \(\S+\)$/,
+    );
+  });
+
+  it("fails when the fast_approved event and get_op disagree on executable_at", async () => {
     const { deps } = await fixture({
-      contact: (client) =>
-        override(client, {
-          fastApprove: async (opId: string) => {
-            await client.fastApprove(opId);
-            approved = true;
-          },
-        }),
-      reader: (client) =>
-        override(client, {
-          getOp: async (opId: string) => {
-            const op = await client.getOp(opId);
-            if (!approved || op.executable_at === null) return op;
-            return { ...op, executable_at: (BigInt(op.executable_at) + MINUTE_NS).toString() };
-          },
-        }),
+      reader: mapEvents((e) =>
+        e.kind === "fast_approved"
+          ? {
+              ...e,
+              data: { ...e.data, executable_at: (BigInt(e.data.executable_at) + 1n).toString() },
+            }
+          : e,
+      ),
     });
     expect((await run(deps)).result).toMatch(
-      /^S-7 Fast Approval FAIL: executable_at \S+ is not approval time \+ the Fast Approval Floor/,
+      /^S-7 Fast Approval FAIL: The fast_approved event has executable_at \d+, get_op has \d+$/,
     );
+  });
+
+  it("fails when the fast_approved event names another approver", async () => {
+    const { deps } = await fixture({
+      reader: mapEvents((e) =>
+        e.kind === "fast_approved" ? { ...e, data: { ...e.data, by: "stranger.test.near" } } : e,
+      ),
+    });
+    expect((await run(deps)).result).toBe(
+      failed("Withdrawal 1 was fast-approved by stranger.test.near"),
+    );
+  });
+
+  it("finds this withdrawal's events when another op's come first", async () => {
+    // Each fast_approved and op_frozen of op 1 is preceded by one of op 99 that would fail S-7.
+    const { deps } = await fixture({
+      reader: mapEvents((e) => {
+        if (e.kind === "fast_approved" && e.data.op_id === "1") {
+          const data = { ...e.data, op_id: "99", by: "stranger.test.near", executable_at: "1" };
+          return [{ ...e, block_timestamp: "1", data }, e];
+        }
+        if (e.kind === "op_frozen" && e.data.op_id === "1") {
+          return [{ ...e, block_timestamp: "1", data: { ...e.data, op_id: "99" } }, e];
+        }
+        return e;
+      }),
+    });
+    expect((await run(deps)).result).toBe("S-7 Fast Approval PASS");
   });
 
   it("fails when an Execute before the new executable_at is not refused", async () => {
@@ -336,6 +431,38 @@ describe("S-7 Fast Approval", () => {
     expect((await run(deps)).result).toMatch(
       /^S-7 Fast Approval FAIL: Withdrawal 1 froze at \S+, not before the original executable_at \S+$/,
     );
+  });
+
+  it("fails when the withdrawal froze before its lowered executable_at", async () => {
+    const { deps } = await fixture({
+      reader: mapEvents((e) =>
+        e.kind === "op_frozen"
+          ? { ...e, block_timestamp: (BigInt(e.block_timestamp) - 3_000_000_000n).toString() }
+          : e,
+      ),
+    });
+    expect((await run(deps)).result).toMatch(
+      /^S-7 Fast Approval FAIL: Withdrawal 1 froze at \S+, before its executable_at \S+$/,
+    );
+  });
+
+  it("fails when the op is not signed before the broadcast", async () => {
+    const { deps, broadcasts } = await fixture({
+      reader: (client) =>
+        override(client, {
+          getOp: async (opId: string) => {
+            const op = await client.getOp(opId);
+            return op.state === "signed" ? { ...op, state: "frozen" } : op;
+          },
+        }),
+    });
+    expect((await run(deps)).result).toBe(failed("Op 1 is frozen, expected signed"));
+    expect(broadcasts).toEqual([]);
+  });
+
+  it("fails when the destination is paid the wrong amount", async () => {
+    const { deps } = await fixture({ bitcoin: { received: async () => 499_999n } });
+    expect((await run(deps)).result).toBe(failed("Destination received 499999 sats"));
   });
 
   it("fails when the destination is not paid", async () => {
