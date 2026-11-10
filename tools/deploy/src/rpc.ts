@@ -242,6 +242,8 @@ export function nearSender(rpcUrl: string, accountId: string, key: KeyPair): TxS
         receiverId: accountId,
         actions: batch.map(toNearAction),
         throwOnFailure: true,
+        // The verify that follows reads the final block: wait until the batch is in it.
+        waitUntil: "FINAL",
       });
       return String(outcome.transaction.hash);
     },
