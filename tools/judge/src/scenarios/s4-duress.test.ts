@@ -362,8 +362,14 @@ describe("S-4 Duress", () => {
   it("fails, naming both times, when the job is due later than at once", async () => {
     const { deps } = await fixture({ jobs: new ShiftedJobs(HOUR_NS) });
     expect((await run(deps)).result).toMatch(
-      /^S-4 Duress FAIL: The duress Clawback is due at (\S+); min\(executable_at, signal \+ Delay\) − 65 min is (\S+), already passed, so it must be due at once: between the duress signal \S+ and NEAR time \S+$/,
+      /^S-4 Duress FAIL: The duress Clawback is due at (\S+); min\(executable_at, signal \+ Delay\) − 65 min is (\S+), already passed, so it must be due at once: between the duress signal \S+ \(less 10 s of finality lag\) and NEAR time \S+$/,
     );
+  });
+
+  it("accepts a job dated a moment before the signal, as a final-block clock reads it", async () => {
+    // Live CI: the handler's final-block "now" trailed the request's block by 0.6 s.
+    const { deps } = await fixture({ jobs: new ShiftedJobs(-600_000_000n) });
+    expect((await run(deps)).result).toBe("S-4 Duress PASS");
   });
 
   it("fails when the job is dated after the 8.2 time but before the duress signal", async () => {

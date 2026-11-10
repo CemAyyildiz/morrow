@@ -56,6 +56,11 @@ const JOB_WAIT_MS = 60_000;
 const SWEEP_WAIT_MS = 180_000;
 /** Reads of a NEAR clock that is still behind a job's `due_at`, one second apart. */
 const CLOCK_READS = 5;
+/**
+ * The Watcher reads "now" from the latest final block, which trails the block that holds the
+ * coerced request by a block or two; a job queued at once may so be dated just before the signal.
+ */
+const FINALITY_SLACK_NS = 10_000_000_000n;
 
 /** Bitcoin regtest, as S-4 and the Watcher's Clawback runner use it. */
 export interface DuressBitcoin {
@@ -391,9 +396,9 @@ async function duressScenario(
     await sleep(1_000);
     checkedAt = await call("block", () => clock.now());
   }
-  if (dueAt < signal || dueAt > checkedAt) {
+  if (dueAt < signal - FINALITY_SLACK_NS || dueAt > checkedAt) {
     throw new Error(
-      `The duress Clawback is due at ${iso(dueAt)}; min(executable_at, signal + Delay) − ${LEAD_MINUTES} min is ${iso(scheduled)}, already passed, so it must be due at once: between the duress signal ${iso(signal)} and NEAR time ${iso(checkedAt)}`,
+      `The duress Clawback is due at ${iso(dueAt)}; min(executable_at, signal + Delay) − ${LEAD_MINUTES} min is ${iso(scheduled)}, already passed, so it must be due at once: between the duress signal ${iso(signal)} (less ${FINALITY_SLACK_NS / 1_000_000_000n} s of finality lag) and NEAR time ${iso(checkedAt)}`,
     );
   }
   ctx.log(
