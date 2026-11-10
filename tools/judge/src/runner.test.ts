@@ -12,6 +12,11 @@ async function run(scenarios: Scenario[], release = false) {
 const UNBUILT: Scenario[] = SCENARIOS.map(({ id, name, mandatory }) => ({ id, name, mandatory }));
 
 describe("judge runner", () => {
+  it("has every Scenario built, S-4 Duress included", () => {
+    expect(SCENARIOS.filter((s) => !s.run).map((s) => s.id)).toEqual([]);
+    expect(SCENARIOS.find((s) => s.id === "S-4")).toMatchObject({ mandatory: false });
+  });
+
   it("prints one SKIP line per unbuilt Scenario and exits 0", async () => {
     const { lines, code } = await run(UNBUILT);
     expect(lines).toEqual([
