@@ -29,7 +29,14 @@ export interface GuardHealth {
  * Duress handler health: its loop's progress only. No Vault ids, flags or job counts, so the
  * heartbeat never tells that a Vault is in duress.
  */
-export type DuressHealth = Omit<GuardHealth, "scheduled">;
+export interface DuressHealth {
+  /** The duress loop's cursor. */
+  cursor: string;
+  /** Events the duress loop is behind the main loop's cursor (0 when it is ahead). */
+  lag: string;
+  /** The duress loop's last failure: an error code or class only. */
+  last_error: { at: string; error: string } | null;
+}
 
 export interface Heartbeat {
   last_seq: string;

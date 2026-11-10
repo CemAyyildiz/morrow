@@ -126,10 +126,16 @@ export class ClawbackRunner {
     this.sizer = options.sweepVsize ?? contractSweepVsize;
   }
 
-  /** Queues a job due now (NEAR block time); a Vault with an unfinished job keeps that one. */
+  /**
+   * Queues a job due now (NEAR block time); a Vault with an unfinished job keeps that one, and a
+   * still-queued one (such as a duress job due later) is brought forward to now.
+   */
   async enqueue(vaultId: U64, trigger: ClawbackTrigger = "manual"): Promise<ClawbackJob> {
     const now = await this.options.clock.now();
-    const job = await this.options.jobs.enqueue(vaultId, trigger, now.toString());
+    let job = await this.options.jobs.enqueue(vaultId, trigger, now.toString());
+    if (job.status === "queued" && BigInt(job.due_at) > now) {
+      job = (await this.options.jobs.advance(vaultId, now.toString())) ?? job;
+    }
     this.options.log("info", "clawback queued", {
       vault_id: vaultId,
       job_id: job.job_id,

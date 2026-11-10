@@ -72,7 +72,13 @@ export class DuressHandler implements EventHandler {
 
   async handle(event: MorrowEvent, { clock, log }: HandlerContext): Promise<void> {
     const envelope = ownerEnvelope(event);
-    if (envelope === null && event.kind !== "fast_approved") return;
+    if (
+      envelope === null &&
+      event.kind !== "fast_approved" &&
+      event.kind !== "policy_change_applied"
+    ) {
+      return;
+    }
     const { reader, store, guardianAccount, envelopeKeypair, challengeOwnerParent } = this.options;
     const vault = await reader.getVault(event.vault_id);
     if (!isGuarded(vault, guardianAccount)) return;
@@ -110,9 +116,16 @@ export class DuressHandler implements EventHandler {
 
     const state = await store.vault(vault.vault_id);
     if (!state || state.first_duress_signal_at === null) return;
-    // A duress signal (first or not, so a retried event still queues), or a withdrawal or a Fast
-    // Approval that can move the deadline earlier.
-    if (!signal && event.kind !== "withdrawal_requested" && event.kind !== "fast_approved") return;
+    // A duress signal (first or not, so a retried event still queues), or a withdrawal, a Fast
+    // Approval or an applied Policy Change (a lowered Delay) that can move the deadline earlier.
+    if (
+      !signal &&
+      event.kind !== "withdrawal_requested" &&
+      event.kind !== "fast_approved" &&
+      event.kind !== "policy_change_applied"
+    ) {
+      return;
+    }
     await this.schedule(vault, state, await clock.now());
   }
 

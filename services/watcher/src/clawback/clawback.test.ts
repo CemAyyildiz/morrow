@@ -591,6 +591,20 @@ describe("JobStore.advance", () => {
     expect((await jobs.job(job.job_id))?.due_at).toBe("100");
   });
 
+  it("a manual enqueue brings a duress job queued for later forward to now", async () => {
+    const t = await setup();
+    const later = (t.mock.now() + 23n * 3_600_000_000_000n).toString();
+    const duress = await t.jobs.enqueue(t.vaultId, "duress", later);
+    const job = await t.runner().enqueue(t.vaultId);
+    expect(job).toMatchObject({
+      job_id: duress.job_id,
+      trigger: "duress",
+      status: "queued",
+      due_at: t.mock.now().toString(),
+    });
+    expect(await t.jobs.jobs()).toMatchObject([{ due_at: t.mock.now().toString() }]);
+  });
+
   it("persists the earlier due_at in the jobs file", async () => {
     const dir = await mkdtemp(join(tmpdir(), "morrow-jobs-"));
     try {

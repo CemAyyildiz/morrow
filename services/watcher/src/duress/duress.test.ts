@@ -1,4 +1,5 @@
 import { mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/promises";
+import type { AddressInfo } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
@@ -20,7 +21,7 @@ import {
 import { afterEach, describe, expect, it } from "vitest";
 import { FileJobStore, InMemoryJobStore, type JobStore } from "../clawback/jobs.js";
 import { VETO_LEAD_NS, envelopeKeypair } from "../guard/handler.js";
-import { readHeartbeat } from "../heartbeat.js";
+import { createApiServer, readHeartbeat, type DuressHealthSource } from "../heartbeat.js";
 import type { LogLevel } from "../log.js";
 import { EventLoop } from "../loop.js";
 import { FileStore, InMemoryStore, type WatcherStore } from "../store.js";
@@ -328,7 +329,7 @@ describe("DuressHandler", () => {
     }
   });
 
-  it("moves due_at earlier for a later withdrawal with an earlier executable_at (lowered Delay)", async () => {
+  it("recomputes from the Delay now in force for a later withdrawal after a lowered Delay", async () => {
     const t = await setup();
     const t0 = t.mock.now();
     const change = await t.propose({ delay_ns: (2n * HOUR_NS).toString() });
@@ -350,6 +351,29 @@ describe("DuressHandler", () => {
       { job_id: queued!.job_id, status: "queued", due_at: expected.toString() },
     ]);
     expect(expected).toBeGreaterThan(t.mock.now());
+  });
+
+  it("moves due_at earlier when an applied Policy Change lowers the Delay, with no new withdrawal", async () => {
+    const t = await setup();
+    const t0 = t.mock.now();
+    const change = await t.propose({ delay_ns: (2n * HOUR_NS).toString() });
+    t.mock.setNow(t0 + 7n * DAY_NS - 10n * MINUTE_NS);
+    const signalAt = t.mock.now();
+    await t.withdraw("duress");
+    await t.loop.tick();
+    const [queued] = await t.vaultJobs();
+    expect(queued?.due_at).toBe((signalAt + 24n * HOUR_NS - LEAD).toString());
+
+    t.mock.setNow(t0 + 7n * DAY_NS);
+    await t.mock.applyPolicyChange(change);
+    await t.loop.tick();
+    expect(await t.vaultJobs()).toMatchObject([
+      {
+        job_id: queued!.job_id,
+        status: "queued",
+        due_at: (signalAt + 2n * HOUR_NS - LEAD).toString(),
+      },
+    ]);
   });
 
   it("leaves due_at unchanged for a later withdrawal that executes after the current minimum", async () => {
@@ -576,6 +600,28 @@ describe("duress restart", () => {
     expect((await store.vault(t.vaultId))?.first_duress_signal_at).toBe(signalAt.toString());
     expect(await t.vaultJobs()).toEqual([job]);
   });
+
+  it("quarantines a file whose vaults do not have the expected shape", async () => {
+    dir = await mkdtemp(join(tmpdir(), "morrow-duress-"));
+    const path = join(dir, "clawbacks.duress.json");
+    const good = { vault_id: "1", ops: ["2"], first_duress_signal_at: "5", updated_at: "" };
+    const bad = [
+      { "1": { ...good, vault_id: "2" } },
+      { "1": { ...good, ops: [2] } },
+      { "1": { ...good, ops: ["x"] } },
+      { "1": { ...good, first_duress_signal_at: 5 } },
+      { "1": { ...good, first_duress_signal_at: "soon" } },
+    ];
+    let resets = 0;
+    const store = new FileDuressStore(path, { onCorrupt: async () => void resets++ });
+    for (const vaults of bad) {
+      await writeFile(path, JSON.stringify({ vaults }));
+      await expect(store.vaults()).rejects.toThrow(/corrupt/);
+    }
+    expect(resets).toBe(bad.length);
+    await writeFile(path, JSON.stringify({ vaults: { "1": good } }));
+    expect(await store.vaults()).toEqual([good]);
+  });
 });
 
 describe("duress health", () => {
@@ -591,5 +637,38 @@ describe("duress health", () => {
     const heartbeat = await readHeartbeat(main, undefined, health);
     expect(heartbeat.duress).toEqual({ cursor: last!.seq, lag: "0", last_error: null });
     expect(Object.keys(heartbeat.duress ?? {})).toEqual(["cursor", "lag", "last_error"]);
+  });
+
+  it("serves the duress section on /heartbeat, and 503 when it cannot be read", async () => {
+    const main = new InMemoryStore();
+    const cursor = new InMemoryStore();
+    await main.commit("10", "1");
+    await cursor.commit("7", "1");
+    const lastError = { at: "2026-11-10T00:00:00.000Z", error: "ERR_UNKNOWN_OP" };
+    const health = duressHealth({ cursor, loop: { lastError } });
+    const serve = async (source: DuressHealthSource) => {
+      const server = createApiServer(main, undefined, undefined, undefined, source).listen(0);
+      await new Promise((resolve) => server.once("listening", resolve));
+      try {
+        const { port } = server.address() as AddressInfo;
+        const response = await fetch(`http://127.0.0.1:${port}/heartbeat`);
+        return { status: response.status, body: (await response.json()) as unknown };
+      } finally {
+        server.close();
+      }
+    };
+    expect(await serve(health)).toEqual({
+      status: 200,
+      body: {
+        last_seq: "10",
+        last_block_timestamp: "1",
+        updated_at: expect.any(String),
+        duress: { cursor: "7", lag: "3", last_error: lastError },
+      },
+    });
+    expect(await serve(() => Promise.reject(new Error("duress cursor unreadable")))).toEqual({
+      status: 503,
+      body: { error: "unavailable" },
+    });
   });
 });

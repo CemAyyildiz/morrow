@@ -15,7 +15,7 @@ export {
 } from "./guard/store.js";
 export { GuardTicker, type GuardTickerOptions } from "./guard/ticker.js";
 
-// Duress scheduling, for running in another process (Judge Mode S-4).
+// Duress scheduling, for driving the duress handler in-process (Judge Mode S-4).
 export {
   DuressHandler,
   duressDueAt,

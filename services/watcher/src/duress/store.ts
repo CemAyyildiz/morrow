@@ -131,8 +131,16 @@ export class FileDuressStore extends DuressStore {
       if (typeof vaults !== "object" || vaults === null || Array.isArray(vaults)) {
         throw new Error("no vaults object");
       }
-      for (const vault of Object.values(vaults)) {
-        if (!Array.isArray(vault?.ops)) throw new Error("a vault has no ops array");
+      const u64 = (value: unknown) => typeof value === "string" && /^\d+$/.test(value);
+      for (const [key, vault] of Object.entries(vaults)) {
+        if (vault?.vault_id !== key) throw new Error("a vault's id differs from its key");
+        if (!Array.isArray(vault.ops) || !vault.ops.every(u64)) {
+          throw new Error("a vault's ops are not u64 strings");
+        }
+        const first = vault.first_duress_signal_at;
+        if (first !== null && !u64(first)) {
+          throw new Error("a vault's first_duress_signal_at is not null or a u64 string");
+        }
       }
       return { vaults };
     } catch (error) {
