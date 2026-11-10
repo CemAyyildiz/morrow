@@ -14,7 +14,7 @@ pnpm install --frozen-lockfile
 make demo
 ```
 
-`make demo` starts Bitcoin Core regtest in Docker, creates fresh NEAR testnet accounts, and runs every Scenario against the Vault Contract on NEAR testnet (`morrow-vault-dev3.testnet`) and the live testnet MPC signer (`v1.signer-prod.testnet`). Each Scenario ends with one line: `PASS`, `FAIL`, `SKIP (not built)`, or `SKIP (<reason>)` when the deployment under test cannot run it. Any `FAIL` exits non-zero.
+`make demo` starts Bitcoin Core regtest in Docker, creates fresh NEAR testnet accounts, and runs every Scenario against the Vault Contract on NEAR testnet (`morrow-vault-v1.testnet`) and the live testnet MPC signer (`v1.signer-prod.testnet`). Each Scenario ends with one line: `PASS`, `FAIL`, `SKIP (not built)`, or `SKIP (<reason>)` when the deployment under test cannot run it. Any `FAIL` exits non-zero.
 
 Optional environment variables:
 
@@ -22,7 +22,7 @@ Optional environment variables:
 | -------------------------------------------------------- | -------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------- |
 | `MORROW_SCENARIOS`                                       | every Scenario                         | Comma-separated ids to run, such as `S-3` or `S-1,S-5`. An unknown id exits 1.                                                                 |
 | `MORROW_JUDGE_FUNDER_ACCOUNT`, `MORROW_JUDGE_FUNDER_KEY` | unset                                  | A funded testnet account and its secret key (`ed25519:...`). With both set, the run creates its accounts under it instead of using the faucet. |
-| `MORROW_VAULT_CONTRACT`                                  | `morrow-vault-dev3.testnet`            | The Vault Contract deployment to test.                                                                                                         |
+| `MORROW_VAULT_CONTRACT`                                  | `morrow-vault-v1.testnet`              | The Vault Contract deployment to test.                                                                                                         |
 | `MORROW_NEAR_RPC_URL`                                    | the public NEAR testnet RPC            | The NEAR RPC endpoint.                                                                                                                         |
 | `MORROW_REGTEST_RPC`                                     | `http://morrow:morrow@127.0.0.1:18443` | The Bitcoin Core regtest RPC that `make demo` starts.                                                                                          |
 | `MORROW_RELEASE`                                         | unset                                  | `1` reports a mandatory Scenario that is not built as `FAIL` instead of `SKIP (not built)`.                                                    |
@@ -201,7 +201,7 @@ BitVault sells spend delays by subscription, which shows people pay for this. Mo
 
 ## What is not done yet
 
-S-6 and S-7 run in full only against a deployment with Policy Changes and Fast Approval; against the default `morrow-vault-dev3.testnet` they end in a SKIP until the default contract is replaced (Story 7.5b). There is no Duress PIN or Duress Session UI yet (Story 8.1): S-4 checks the duress-mode labels that core-ts gives such a client. The Guardian Watcher's Telegram alerts for Fast Approval ("fast-approved by" a Guardian, and a possible-duress alert to Trusted Contacts only) are not built yet (Story 8.5b). The hosted link to the demo Vault's Proof Page, the hosted live demo, the Rob This Vault recording, the Mainnet Bounty and the locked deployment with its code hash come with their own stories and are not claimed here. Nothing in this repository is deployed on mainnet.
+The default deployment, `morrow-vault-v1.testnet`, is not locked yet: until its last access key is deleted (Story 7.5b), whoever holds that key can replace its code. Against the older `morrow-vault-dev3.testnet`, which predates Policy Changes and Fast Approval, S-6 and S-7 end in a SKIP. There is no Duress PIN or Duress Session UI yet (Story 8.1): S-4 checks the duress-mode labels that core-ts gives such a client. The Guardian Watcher's Telegram alerts for Fast Approval ("fast-approved by" a Guardian, and a possible-duress alert to Trusted Contacts only) are not built yet (Story 8.5b). The hosted link to the demo Vault's Proof Page, the hosted live demo, the Rob This Vault recording, the Mainnet Bounty and the locked deployment with its code hash come with their own stories and are not claimed here. Nothing in this repository is deployed on mainnet.
 
 ## Repository layout
 

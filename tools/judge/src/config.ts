@@ -10,7 +10,7 @@ export interface JudgeConfig {
 }
 
 /** The current public demo deployment on NEAR testnet. */
-export const DEFAULT_VAULT_CONTRACT = "morrow-vault-dev3.testnet";
+export const DEFAULT_VAULT_CONTRACT = "morrow-vault-v1.testnet";
 
 export function loadJudgeConfig(env: NodeJS.ProcessEnv = process.env): JudgeConfig {
   return {
