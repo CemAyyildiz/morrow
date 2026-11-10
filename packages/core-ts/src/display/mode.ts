@@ -1,4 +1,4 @@
-import { ERROR_CODES, MorrowContractError } from "../contract/errors.js";
+import { ERROR_CODES, MorrowContractError, type ErrorCode } from "../contract/errors.js";
 import type { PolicyChangeState, SpendOpState, VaultState } from "../contract/types.js";
 
 /**
@@ -38,30 +38,40 @@ export const NETWORK_BUSY = "Network busy, try again later.";
 
 const DURESS_OP_STATES: ReadonlySet<SpendOpState> = new Set(["voided", "cancelled"]);
 
-/** A request's state label. */
+/** Errors on Execute that a Duress Session shows as `NETWORK_BUSY`: a Clawback causes both. */
+const DURESS_EXECUTE_ERRORS: ReadonlySet<ErrorCode> = new Set([
+  "ERR_CLAWED_BACK",
+  "ERR_BAD_OP_STATE",
+]);
+
+/** A request's state label; an unknown state shows as itself. */
 export function opStateLabel(state: SpendOpState, mode: DisplayMode): string {
-  return mode === "duress" && DURESS_OP_STATES.has(state) ? PENDING : OP_STATE_LABELS[state];
+  if (mode === "duress" && DURESS_OP_STATES.has(state)) return PENDING;
+  return OP_STATE_LABELS[state] ?? String(state);
 }
 
-/** A Vault's state label. */
+/** A Vault's state label. A Duress Session shows a ClawedBack Vault as an active one. */
 export function vaultStateLabel(state: VaultState, mode: DisplayMode): string {
-  return mode === "duress" && state === "clawed_back" ? PENDING : VAULT_STATE_LABELS[state];
+  const shown = mode === "duress" && state === "clawed_back" ? "active" : state;
+  return VAULT_STATE_LABELS[shown] ?? String(shown);
 }
 
-/** A Policy Change's state label. */
+/** A Policy Change's state label; an unknown state shows as itself. */
 export function changeStateLabel(state: PolicyChangeState, mode: DisplayMode): string {
-  return mode === "duress" && state === "vetoed" ? PENDING : CHANGE_STATE_LABELS[state];
+  if (mode === "duress" && state === "vetoed") return PENDING;
+  return CHANGE_STATE_LABELS[state] ?? String(state);
 }
 
 /**
  * The message for a failed Execute: the contract error's meaning, except that a Duress Session
- * never shows `ERR_CLAWED_BACK` and shows `NETWORK_BUSY` instead. Errors that are not contract
- * errors keep their own message.
+ * shows `NETWORK_BUSY` for `ERR_CLAWED_BACK` and `ERR_BAD_OP_STATE` (Execute on a voided or
+ * cancelled request). Errors that are not contract errors keep their own message, and an unknown
+ * code shows as itself.
  */
 export function executeErrorMessage(error: unknown, mode: DisplayMode): string {
   if (error instanceof MorrowContractError) {
-    if (mode === "duress" && error.code === "ERR_CLAWED_BACK") return NETWORK_BUSY;
-    return ERROR_CODES[error.code];
+    if (mode === "duress" && DURESS_EXECUTE_ERRORS.has(error.code)) return NETWORK_BUSY;
+    return ERROR_CODES[error.code] ?? String(error.code);
   }
   return error instanceof Error ? error.message : String(error);
 }

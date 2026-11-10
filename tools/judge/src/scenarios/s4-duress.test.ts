@@ -1,4 +1,5 @@
 import {
+  ERROR_CODES,
   MIN_VAULT_STORAGE_YOCTO,
   MINUTE_NS,
   MockContractClient,
@@ -24,6 +25,7 @@ import {
   duressFields,
   runDuress,
   runDuressScenario,
+  keyShape,
   type DuressBitcoin,
   type DuressScenarioDeps,
 } from "./s4-duress.js";
@@ -33,7 +35,13 @@ const GUARDIAN = "guardian.test.near";
 const GUARDIAN_KEY = `02${"11".repeat(32)}`;
 const RECOVERY = `bcrt1q${"q".repeat(38)}`;
 const ATTACKER = `bcrt1q${"p".repeat(38)}`;
+const CONTROL_DESTINATION = `bcrt1q${"c".repeat(38)}`;
 const FUNDING_TXID = "ab".repeat(32);
+const CONTROL_TXID = "ac".repeat(32);
+const TEN_MINUTES = (10n * MINUTE_NS).toString();
+const S4_POLICY: Partial<Policy> = { delay_ns: TEN_MINUTES, policy_change_delay_ns: TEN_MINUTES };
+/** Clawback op 3 (after control op 1 and coerced op 2) and its fake txid. */
+const CLAWBACK_TXID = `c1${"3".padStart(62, "0")}`;
 const HOUR_NS = 60n * MINUTE_NS;
 
 /** A view of the shared mock that signs every call as `account`. */
@@ -70,7 +78,7 @@ const mapEvents =
     });
 
 /**
- * Fake regtest: funding adds one confirmed coin; a broadcast enters the mempool, and the next
+ * Fake regtest: each funding adds one confirmed coin; a broadcast enters the mempool, and the next
  * block confirms it, moving its coins to the Recovery Address (only confirmed coins are listed,
  * as with `scantxoutset`).
  */
@@ -91,14 +99,24 @@ class FakeBitcoin implements DuressBitcoin {
     getSpender: async () => null,
   };
 
+  private funded = 0;
+  private addresses = 0;
+
+  /** Like the live one, returns every coin at the address. */
   async fund(address: string, sats: bigint) {
-    const coin = { txid: FUNDING_TXID, vout: 0, value_sats: sats.toString(), height: 100 };
+    const txid = this.funded++ === 0 ? FUNDING_TXID : CONTROL_TXID;
+    const coin = { txid, vout: 0, value_sats: sats.toString(), height: 100 };
     this.coins.set(address, [...(this.coins.get(address) ?? []), coin]);
-    return [{ txid: coin.txid, vout: coin.vout, value_sats: coin.value_sats }];
+    return (this.coins.get(address) ?? []).map(({ txid, vout, value_sats }) => ({
+      txid,
+      vout,
+      value_sats,
+    }));
   }
 
+  /** The attacker's address first, then the control destination. */
   async newAddress() {
-    return ATTACKER;
+    return this.addresses++ === 0 ? ATTACKER : CONTROL_DESTINATION;
   }
 
   static txid(op: SpendOp) {
@@ -149,6 +167,8 @@ interface FixtureOptions {
   policy?: Partial<Policy>;
   guardianKind?: Guardian["kind"];
   envelopeKey?: EnvelopeKeypair;
+  /** The Guardian key S-4 is told the session Guardian has. */
+  guardianKey?: string;
 }
 
 /** S-4 against the mock contract and fake regtest, with a fake sleep that moves both clocks. */
@@ -171,7 +191,7 @@ async function fixture(options: FixtureOptions = {}) {
         session,
         RECOVERY,
         [{ ...judgeGuardian(session), kind: options.guardianKind ?? "auto_clawback" }],
-        options.policy,
+        options.policy ?? S4_POLICY,
       ),
       deposit_yocto: MIN_VAULT_STORAGE_YOCTO.toString(),
     });
@@ -180,7 +200,7 @@ async function fixture(options: FixtureOptions = {}) {
       owner: wrap(options.owner, as(mock, OWNER)),
       guardian: wrap(options.guardian, as(mock, GUARDIAN)),
       guardianAccount: GUARDIAN,
-      guardianKey: GUARDIAN_KEY,
+      guardianKey: options.guardianKey ?? GUARDIAN_KEY,
       envelopeKey: options.envelopeKey ?? envelopeKey,
       bitcoin,
     };
@@ -234,7 +254,7 @@ class BrokenJobs extends InMemoryJobStore {
   }
 }
 
-const POLICY_MISMATCH = `Vault 1 does not have the S-4 Policy (a 1-minute Delay, ${GUARDIAN} as its Auto-Clawback Guardian, the session watcher key)`;
+const POLICY_MISMATCH = `Vault 1 does not have the S-4 Policy (a 10-minute Delay, ${GUARDIAN} as its Auto-Clawback Guardian, the session watcher key)`;
 
 describe("S-4 Duress", () => {
   it("queues a duress Clawback at once, sweeps home, refuses the Execute and still shows Pending", async () => {
@@ -242,28 +262,33 @@ describe("S-4 Duress", () => {
     const { lines, code } = await run(deps);
     expect(lines).toEqual([
       `  Vault 1: the Watcher's duress handler and Clawback runner run in-process as its Auto-Clawback Guardian ${GUARDIAN}`,
-      "  Vault 1 holds 0.01 BTC on regtest",
-      "  You are coerced: the Owner requests 900,000 sats to the attacker, with a duress-flagged Watcher Envelope",
-      "  Withdrawal 1 looks normal on-chain: a 160-hex envelope like any other, and no duress field in the event or get_op",
+      "  Vault 1 holds 1,100,000 sats on regtest in 2 coins",
+      "  Control: the Owner requests 50,000 sats with a normal Watcher Envelope (withdrawal 1)",
+      "  You are coerced: the Owner requests 900,000 sats to the attacker, with a duress-flagged Watcher Envelope (withdrawal 2)",
+      "  Withdrawal 2 looks like the normal withdrawal 1 on-chain: 160-hex envelopes, the same fields in the event and get_op, and no duress field",
       expect.stringMatching(
-        /^ {2}Duress Clawback queued for \S+: min\(executable_at, signal \+ Delay\) − 65 min = \S+ has already passed with the 1-minute Delay, so it is due at once$/,
+        /^ {2}Duress Clawback queued for \S+: min\(executable_at, signal \+ Delay\) − 65 min = \S+ has already passed with the 10-minute Delay, so it is due at once$/,
       ),
-      "  No Vault Address spend before the scheduled time: the Vault coin is still unspent",
-      `  Clawback ${"c1" + "2".padStart(62, "0")} confirmed: 999612 sats back at the Recovery Address, co-signed by the NEAR MPC network and broadcast by the Watcher's runner`,
+      "  The Vault coins are still unspent when the Clawback runner starts",
+      `  Clawback ${CLAWBACK_TXID} confirmed: 1099332 sats back at the Recovery Address, co-signed by the NEAR MPC network and broadcast by the Watcher's runner`,
+      "  The Clawback began 600 s before either withdrawal could execute",
       "  Coerced Execute rejected: ERR_CLAWED_BACK",
       "  Attacker received 0 sats",
-      "  Normal mode shows withdrawal 1 as Clawed back and Execute as ERR_CLAWED_BACK",
-      "  Duress mode still shows the request as Pending, and Execute as network busy",
+      `  Normal mode shows withdrawal 2 as Clawed back, the Vault as Clawed back, and Execute as "${ERROR_CODES.ERR_CLAWED_BACK}"`,
+      "  Duress mode still shows the request as Pending, the Vault as Active, and Execute as network busy",
       "S-4 Duress PASS",
     ]);
     expect(code).toBe(0);
     const [job] = await jobs.jobs();
     expect(job).toMatchObject({ vault_id: "1", trigger: "duress", status: "done" });
     // The runner, not S-4, began and signed the Clawback, as the Auto-Clawback Guardian.
-    const clawback = await mock.getOp("2");
+    const clawback = await mock.getOp("3");
     expect(clawback).toMatchObject({ kind: "clawback", state: "signed", destination: RECOVERY });
-    expect(bitcoin.broadcasts.map((op) => op.op_id)).toEqual(["2"]);
+    expect(clawback.utxos.map((u) => u.txid).sort()).toEqual([FUNDING_TXID, CONTROL_TXID]);
+    expect(bitcoin.broadcasts.map((op) => op.op_id)).toEqual(["3"]);
     expect(await bitcoin.backend.getUtxos(ATTACKER)).toEqual([]);
+    expect(await bitcoin.backend.getUtxos(CONTROL_DESTINATION)).toEqual([]);
+    expect((await mock.getOp("1")).state).toBe("voided");
     const events = await mock.eventsSince("0", 100);
     expect(events.find((e) => e.kind === "vault_clawed_back")?.data).toMatchObject({
       by: GUARDIAN,
@@ -290,7 +315,7 @@ describe("S-4 Duress", () => {
   it.each([
     ["a Guardian that is not an Auto-Clawback Guardian", { guardianKind: "backup_device" }],
     [
-      "a Delay other than 1 minute",
+      "a Delay other than 10 minutes",
       {
         policy: {
           delay_ns: (2n * MINUTE_NS).toString(),
@@ -301,6 +326,21 @@ describe("S-4 Duress", () => {
   ] as [string, FixtureOptions][])("fails on a Vault with %s", async (_, options) => {
     const { deps } = await fixture(options);
     expect((await run(deps)).result).toBe(failed(POLICY_MISMATCH));
+  });
+
+  it("fails on a Guardian key that is not the Vault's", async () => {
+    const { deps } = await fixture({ guardianKey: `03${"44".repeat(32)}` });
+    expect((await run(deps)).result).toBe(failed(POLICY_MISMATCH));
+  });
+
+  it("finds key shapes at any depth, values ignored", () => {
+    expect(keyShape({ b: [{ c: 1 }, { d: 2 }], a: null })).toEqual([
+      ".a",
+      ".b",
+      ".b[].c",
+      ".b[].d",
+    ]);
+    expect(keyShape({ a: 1 })).toEqual(keyShape({ a: "x" }));
   });
 
   it("fails on a watcher key that is not the Vault's", async () => {
@@ -322,8 +362,14 @@ describe("S-4 Duress", () => {
   it("fails, naming both times, when the job is due later than at once", async () => {
     const { deps } = await fixture({ jobs: new ShiftedJobs(HOUR_NS) });
     expect((await run(deps)).result).toMatch(
-      /^S-4 Duress FAIL: The duress Clawback is due at (\S+); min\(executable_at, signal \+ Delay\) − 65 min is (\S+), already passed, so it must be due at once \(NEAR time \S+\)$/,
+      /^S-4 Duress FAIL: The duress Clawback is due at (\S+); min\(executable_at, signal \+ Delay\) − 65 min is (\S+), already passed, so it must be due at once: between the duress signal \S+ and NEAR time \S+$/,
     );
+  });
+
+  it("fails when the job is dated after the 8.2 time but before the duress signal", async () => {
+    // 30 minutes in the past: later than min(executable_at, signal + Delay) − 65 min, and still wrong.
+    const { deps } = await fixture({ jobs: new ShiftedJobs(-30n * MINUTE_NS) });
+    expect((await run(deps)).result).toMatch(/^S-4 Duress FAIL: The duress Clawback is due at /);
   });
 
   it("fails when the job is due before the 8.2 time", async () => {
@@ -409,7 +455,7 @@ describe("S-4 Duress", () => {
     });
     expect((await run(deps)).result).toBe(
       failed(
-        `The Recovery Address received 999611 sats from Clawback ${"c1" + "2".padStart(62, "0")}, expected 999612`,
+        `The Recovery Address received 1099331 sats from Clawback ${CLAWBACK_TXID}, expected 1099332`,
       ),
     );
   });
@@ -457,7 +503,7 @@ describe("S-4 Duress", () => {
     });
     expect((await run(deps)).result).toBe(
       failed(
-        "Duress leak: the withdrawal_requested envelope is 162 hex characters, a normal one 160",
+        "Duress leak: the withdrawal_requested envelope of withdrawal 2 is 162 hex characters, a normal one 160",
       ),
     );
     expect(await jobs.jobs()).toEqual([]);
@@ -472,7 +518,7 @@ describe("S-4 Duress", () => {
       ),
     });
     expect((await run(deps)).result).toBe(
-      failed("The withdrawal_requested event does not carry the envelope S-4 sent"),
+      failed("The withdrawal_requested event of withdrawal 2 does not carry the envelope S-4 sent"),
     );
   });
 
@@ -484,7 +530,11 @@ describe("S-4 Duress", () => {
           : e,
       ),
     });
-    expect((await run(deps)).result).toBe(failed("Duress leak: withdrawal_requested.data.duress"));
+    expect((await run(deps)).result).toBe(
+      failed(
+        "Duress leak: withdrawal_requested[2].data.duress, withdrawal_requested[1].data.duress",
+      ),
+    );
   });
 
   it("fails on a duress field in get_op", async () => {
@@ -494,7 +544,9 @@ describe("S-4 Duress", () => {
           getOp: async (opId: string) => ({ ...(await client.getOp(opId)), is_duress: true }),
         }),
     });
-    expect((await run(deps)).result).toBe(failed("Duress leak: get_op.is_duress"));
+    expect((await run(deps)).result).toBe(
+      failed("Duress leak: get_op[2].is_duress, get_op[1].is_duress"),
+    );
   });
 
   it("fails when the request does not end voided", async () => {
@@ -515,7 +567,146 @@ describe("S-4 Duress", () => {
           },
         }),
     });
-    expect((await run(deps)).result).toBe(failed("Withdrawal 1 is cancelled, expected voided"));
+    expect((await run(deps)).result).toBe(failed("Withdrawal 2 is cancelled, expected voided"));
+  });
+
+  it("fails when the coerced get_op differs in shape from the control one", async () => {
+    const { deps } = await fixture({
+      reader: (client) =>
+        override(client, {
+          getOp: async (opId: string) => {
+            const op = await client.getOp(opId);
+            return opId === "2" ? { ...op, note: "x" } : op;
+          },
+        }),
+    });
+    expect((await run(deps)).result).toBe(
+      failed(
+        "Duress leak: the coerced get_op differs in shape from the control one (only in the coerced one: .note; only in the control one: nothing)",
+      ),
+    );
+  });
+
+  it("fails when the Clawback began only once a withdrawal could execute", async () => {
+    const { deps } = await fixture({
+      reader: (client) =>
+        override(client, {
+          getOp: async (opId: string) => {
+            const op = await client.getOp(opId);
+            return op.kind === "clawback"
+              ? { ...op, created_at: (BigInt(op.created_at) + 10n * MINUTE_NS).toString() }
+              : op;
+          },
+        }),
+    });
+    expect((await run(deps)).result).toMatch(
+      /^S-4 Duress FAIL: Clawback op 3 began at (\S+), not before a withdrawal could execute at \1$/,
+    );
+  });
+
+  it("fails when a done job's confirmed sweeps leave out a Vault coin", async () => {
+    class PartialJobs extends InMemoryJobStore {
+      override async job(jobId: string) {
+        const job = await super.job(jobId);
+        if (job?.status !== "done") return job;
+        const sweeps = (job.sweeps ?? []).map((s) => ({
+          ...s,
+          utxos: s.utxos.filter((u) => u.txid !== CONTROL_TXID),
+        }));
+        return { ...job, sweeps };
+      }
+    }
+    const { deps } = await fixture({ jobs: new PartialJobs() });
+    expect((await run(deps)).result).toBe(
+      failed(`The duress Clawback did not sweep the Vault coin ${CONTROL_TXID}:0`),
+    );
+  });
+
+  it("fails on a confirmed sweep without an op_id", async () => {
+    class NoOpJobs extends InMemoryJobStore {
+      override async job(jobId: string) {
+        const job = await super.job(jobId);
+        if (job?.status !== "done") return job;
+        return { ...job, sweeps: (job.sweeps ?? []).map((s) => ({ ...s, op_id: null })) };
+      }
+    }
+    const { deps } = await fixture({ jobs: new NoOpJobs() });
+    expect((await run(deps)).result).toBe(
+      failed(`Confirmed Clawback ${CLAWBACK_TXID} has no op_id`),
+    );
+  });
+
+  /** Options whose reader changes what it shows once the coerced Execute was tried. */
+  function afterExecute(
+    reader: (client: ContractClient) => Partial<ContractClient>,
+  ): FixtureOptions {
+    let tried = false;
+    return {
+      owner: (client) =>
+        override(client, {
+          beginExecute: async (opId: string, envelope: string) => {
+            tried = true;
+            return client.beginExecute(opId, envelope);
+          },
+        }),
+      reader: (client) => {
+        const changed = reader(client);
+        return new Proxy(client, {
+          get: (target, prop, receiver) =>
+            tried && Object.hasOwn(changed, prop)
+              ? changed[prop as keyof ContractClient]
+              : (Reflect.get(target, prop, receiver) as unknown),
+        });
+      },
+    };
+  }
+
+  it("fails when a duress-mode client would not show the request as Pending", async () => {
+    const { deps } = await fixture(
+      afterExecute((client) => ({
+        getOp: async (opId: string) => {
+          const op = await client.getOp(opId);
+          return opId === "2" ? { ...op, state: "signed" } : op;
+        },
+      })),
+    );
+    expect((await run(deps)).result).toBe(
+      failed(
+        'A duress-mode client shows the request as Signed, the Vault as Active and Execute as "Network busy, try again later."',
+      ),
+    );
+  });
+
+  it("fails when the Vault does not end clawed back", async () => {
+    const { deps } = await fixture(
+      afterExecute((client) => ({
+        getVault: async (vaultId: string) => ({
+          ...(await client.getVault(vaultId)),
+          state: "active",
+        }),
+      })),
+    );
+    expect((await run(deps)).result).toBe(failed("Vault 1 is active, expected clawed_back"));
+  });
+
+  it("broadcasts nothing after S-4 returns from a timed-out runner pass", async () => {
+    const { mock, deps, bitcoin } = await fixture({
+      guardian: (client) =>
+        override(client, {
+          // The last input's signature arrives after the pass has timed out.
+          signInput: async (opId: string, index: number) => {
+            if (index === 1) await new Promise((resolve) => setTimeout(resolve, 300));
+            return client.signInput(opId, index);
+          },
+        }),
+    });
+    expect((await run({ ...deps, rpcTimeoutMs: 50 })).result).toBe(
+      failed("the Clawback runner timed out after 150 ms"),
+    );
+    await new Promise((resolve) => setTimeout(resolve, 500));
+    // The pass did go on to sign everything, but its broadcast was refused.
+    expect((await mock.getOp("3")).state).toBe("signed");
+    expect(bitcoin.broadcasts).toEqual([]);
   });
 
   it("puts a time limit on each RPC call", async () => {
