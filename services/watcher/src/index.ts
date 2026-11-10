@@ -29,3 +29,10 @@ export {
   type ClawbackTrigger,
   type JobStore,
 } from "./clawback/jobs.js";
+// Auto-Clawback, for running the duress job in-process (Judge Mode S-4).
+export {
+  ClawbackRunner,
+  guardianBroadcaster,
+  type BroadcastSigned,
+  type ClawbackRunnerOptions,
+} from "./clawback/runner.js";
