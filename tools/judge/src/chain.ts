@@ -117,7 +117,30 @@ export async function refused(
 export const transient = (error: unknown) =>
   !(error instanceof MorrowContractError) ||
   error.code === "ERR_CHANGE_NOT_FOUND" ||
-  error.code === "ERR_OP_NOT_FOUND";
+  error.code === "ERR_OP_NOT_FOUND" ||
+  error.code === "ERR_VAULT_NOT_FOUND";
+
+/**
+ * A read right after this run's own transaction. The public RPC is load-balanced, so the node
+ * that answers may not have that transaction yet; retried as `readAfter` does.
+ */
+export function afterWrite<T>(
+  what: string,
+  read: () => Promise<T>,
+  settled: (value: T) => boolean = () => true,
+): Promise<T> {
+  return readAfter(
+    (ms) => new Promise((resolve) => setTimeout(resolve, ms)),
+    direct,
+    what,
+    read,
+    settled,
+  );
+}
+
+/** A signed op as the node shows it once every `sign_input` has landed. */
+export const allSigned = (op: { signatures: (string | null)[] }) =>
+  op.signatures.every((s) => s !== null);
 
 /**
  * A read that follows a transaction, tried up to `READ_ATTEMPTS` times while it fails

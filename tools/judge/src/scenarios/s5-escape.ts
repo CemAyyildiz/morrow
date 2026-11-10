@@ -3,6 +3,7 @@ import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { NearContractClient, bytesToHex } from "@morrow/core-ts";
+import { afterWrite } from "../chain.js";
 import type { ScenarioContext } from "../scenarios.js";
 import { createJudgeVault, judgeSession } from "../session.js";
 
@@ -30,7 +31,7 @@ export async function runEscapeScenario(ctx: ScenarioContext): Promise<void> {
   const session = await judgeSession();
   const { client, config, regtest, rpc } = session;
   const { vaultId } = await createJudgeVault(session);
-  const kit = await client.getVaultKit(vaultId);
+  const kit = await afterWrite("get_vault_kit", () => client.getVaultKit(vaultId));
   await regtest.fund(kit.addresses.vault, 1_000_000n);
   await regtest.mine(1);
   const [coin] = await rpc.getUtxos(kit.addresses.vault);

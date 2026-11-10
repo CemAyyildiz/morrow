@@ -1,5 +1,6 @@
 import { recomputeAddress } from "@morrow/core-ts";
 import { JsonRpcProvider } from "near-api-js";
+import { afterWrite } from "../chain.js";
 import type { ScenarioContext } from "../scenarios.js";
 import { createJudgeVault, judgeSession } from "../session.js";
 
@@ -23,7 +24,7 @@ export async function runCreate(ctx: ScenarioContext): Promise<void> {
   const { vaultId, tx } = await createJudgeVault(session);
   ctx.log(`Vault ${vaultId} created on ${config.vaultContract}: ${config.explorerTxUrl(tx)}`);
 
-  const vault = await client.getVault(vaultId);
+  const vault = await afterWrite("get_vault", () => client.getVault(vaultId));
   if (vault.state !== "active")
     throw new Error(`Vault ${vaultId} is ${vault.state}, expected active`);
   const signer = signerAccountOf(
@@ -35,7 +36,7 @@ export async function runCreate(ctx: ScenarioContext): Promise<void> {
   );
   ctx.log(`Co-signer keys derived by the NEAR MPC network (${signer})`);
 
-  const kit = await client.getVaultKit(vaultId);
+  const kit = await afterWrite("get_vault_kit", () => client.getVaultKit(vaultId));
   for (const role of ["vault", "allowance"] as const) {
     const script = role === "vault" ? kit.vault_script_hex : kit.allowance_script_hex;
     const recomputed = recomputeAddress(script, kit.btc_network);

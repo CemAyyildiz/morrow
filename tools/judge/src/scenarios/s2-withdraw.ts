@@ -1,4 +1,5 @@
 import { MorrowContractError, completeAndBroadcast, sealEnvelope } from "@morrow/core-ts";
+import { afterWrite, allSigned } from "../chain.js";
 import type { ScenarioContext } from "../scenarios.js";
 import { createJudgeVault, judgeSession } from "../session.js";
 
@@ -9,7 +10,7 @@ export async function runWithdraw(ctx: ScenarioContext): Promise<void> {
   const session = await judgeSession();
   const { client, config, regtest, rpc } = session;
   const { vaultId } = await createJudgeVault(session);
-  const kit = await client.getVaultKit(vaultId);
+  const kit = await afterWrite("get_vault_kit", () => client.getVaultKit(vaultId));
 
   await regtest.fund(kit.addresses.vault, 1_000_000n);
   await regtest.fund(kit.addresses.vault, 1_000_000n);
@@ -31,7 +32,7 @@ export async function runWithdraw(ctx: ScenarioContext): Promise<void> {
     utxos,
     envelope,
   });
-  const op = await client.getOp(opId);
+  const op = await afterWrite("get_op", () => client.getOp(opId));
   ctx.log(
     `Withdrawal ${opId} requested: ${config.explorerTxUrl(client.lastTransactionHash ?? "")}`,
   );
@@ -67,7 +68,7 @@ export async function runWithdraw(ctx: ScenarioContext): Promise<void> {
       `Input ${i} co-signed by the NEAR MPC network in ${((Date.now() - started) / 1000).toFixed(1)} s`,
     );
   }
-  const signed = await client.getOp(opId);
+  const signed = await afterWrite("get_op", () => client.getOp(opId), allSigned);
   if (signed.state !== "signed") throw new Error(`Op ${opId} is ${signed.state}, expected signed`);
 
   const txid = await completeAndBroadcast(signed, kit.vault_script_hex, session.ownerSecret, rpc);

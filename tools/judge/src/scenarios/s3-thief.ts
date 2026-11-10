@@ -1,4 +1,5 @@
 import { MorrowContractError, completeAndBroadcast, sealEnvelope } from "@morrow/core-ts";
+import { afterWrite, allSigned } from "../chain.js";
 import type { ScenarioContext } from "../scenarios.js";
 import { createJudgeVault, judgeSession } from "../session.js";
 
@@ -10,8 +11,8 @@ export async function runThief(ctx: ScenarioContext): Promise<void> {
   const session = await judgeSession();
   const { client, guardianClient, config, regtest, rpc } = session;
   const { vaultId } = await createJudgeVault(session);
-  const kit = await client.getVaultKit(vaultId);
-  const vault = await client.getVault(vaultId);
+  const kit = await afterWrite("get_vault_kit", () => client.getVaultKit(vaultId));
+  const vault = await afterWrite("get_vault", () => client.getVault(vaultId));
   await regtest.fund(kit.addresses.vault, 1_000_000n);
   await regtest.mine(1);
   const utxos = (await rpc.getUtxos(kit.addresses.vault)).map(({ txid, vout, value_sats }) => ({
@@ -44,7 +45,7 @@ export async function runThief(ctx: ScenarioContext): Promise<void> {
   ctx.log(
     `Guardian ${session.guardianAccountId} claws back: ${config.explorerTxUrl(guardianClient.lastTransactionHash ?? "")}`,
   );
-  const frozen = await guardianClient.getOp(clawbackId);
+  const frozen = await afterWrite("get_op", () => guardianClient.getOp(clawbackId));
   for (let i = 0; i < frozen.sighashes.length; i++) {
     const started = Date.now();
     await guardianClient.signInput(clawbackId, i);
@@ -52,7 +53,7 @@ export async function runThief(ctx: ScenarioContext): Promise<void> {
       `Clawback input ${i} co-signed by the NEAR MPC network in ${((Date.now() - started) / 1000).toFixed(1)} s`,
     );
   }
-  const signed = await guardianClient.getOp(clawbackId);
+  const signed = await afterWrite("get_op", () => guardianClient.getOp(clawbackId), allSigned);
   const txid = await completeAndBroadcast(
     signed,
     kit.vault_script_hex,
