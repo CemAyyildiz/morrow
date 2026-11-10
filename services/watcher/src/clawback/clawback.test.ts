@@ -565,6 +565,47 @@ describe("ClawbackRunner", () => {
   });
 });
 
+describe("JobStore.advance", () => {
+  it("only moves a queued job's due_at earlier, never later", async () => {
+    const jobs = new InMemoryJobStore();
+    expect(await jobs.advance("1", "50")).toBeNull();
+    const job = await jobs.enqueue("1", "duress", "100");
+    expect(job.trigger).toBe("duress");
+    expect((await jobs.advance("1", "150"))?.due_at).toBe("100");
+    expect((await jobs.advance("1", "100"))?.due_at).toBe("100");
+    expect((await jobs.advance("1", "40"))?.due_at).toBe("40");
+    expect((await jobs.job(job.job_id))?.due_at).toBe("40");
+    // Another Vault's job is never touched.
+    await jobs.enqueue("2", "manual", "100");
+    await jobs.advance("1", "10");
+    expect((await jobs.jobs()).map((j) => j.due_at)).toEqual(["10", "100"]);
+  });
+
+  it("leaves a job that is no longer queued as it is, and ignores finished jobs", async () => {
+    const jobs = new InMemoryJobStore();
+    const job = await jobs.enqueue("1", "duress", "100");
+    await jobs.update({ ...job, status: "running" });
+    expect(await jobs.advance("1", "10")).toMatchObject({ status: "running", due_at: "100" });
+    await jobs.update({ ...job, status: "done" });
+    expect(await jobs.advance("1", "10")).toBeNull();
+    expect((await jobs.job(job.job_id))?.due_at).toBe("100");
+  });
+
+  it("persists the earlier due_at in the jobs file", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "morrow-jobs-"));
+    try {
+      const path = join(dir, "clawbacks.json");
+      await new FileJobStore(path).enqueue("1", "duress", "100");
+      await new FileJobStore(path).advance("1", "60");
+      expect(await new FileJobStore(path).jobs()).toMatchObject([
+        { vault_id: "1", trigger: "duress", status: "queued", due_at: "60" },
+      ]);
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+});
+
 describe("ClawbackRunner edge cases", () => {
   it("sweeps a raced coin that the backend's UTXO list omits (spent in the mempool)", async () => {
     const t = await setup();

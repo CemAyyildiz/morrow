@@ -2,8 +2,8 @@ import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import { dirname } from "node:path";
 import type { Hex, Outpoint, SpendOpKind, SpendSource, U64 } from "@morrow/core-ts";
 
-/** What queued the job: the admin API, or challenge mode (7.1). Duress (8.2) adds its trigger later. */
-export type ClawbackTrigger = "manual" | "challenge";
+/** What queued the job: the admin API, challenge mode (7.1) or a duress signal (8.2). */
+export type ClawbackTrigger = "manual" | "challenge" | "duress";
 
 /**
  * queued → running (planning, begin, signing) → broadcast | pinned → done | lost.
@@ -108,6 +108,26 @@ export abstract class JobStore {
       state.jobs.push(job);
       await this.save(state);
       return job;
+    });
+  }
+
+  /**
+   * Moves the Vault's open job earlier, never later: `due_at` becomes `dueAt` only while the job is
+   * still `queued` and `dueAt` is earlier than its `due_at`. Returns the open job as stored
+   * afterwards, or null when the Vault has none.
+   */
+  advance(vaultId: U64, dueAt: U64): Promise<ClawbackJob | null> {
+    return this.exclusive(async () => {
+      const state = await this.load();
+      const open = state.jobs.find(
+        (j) => j.vault_id === vaultId && !TERMINAL_JOB_STATUSES.includes(j.status),
+      );
+      if (!open) return null;
+      if (open.status !== "queued" || BigInt(dueAt) >= BigInt(open.due_at)) return open;
+      open.due_at = dueAt;
+      open.updated_at = new Date().toISOString();
+      await this.save(state);
+      return open;
     });
   }
 

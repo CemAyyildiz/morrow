@@ -25,20 +25,32 @@ export interface GuardHealth {
   last_error: { at: string; error: string } | null;
 }
 
+/**
+ * Duress handler health: its loop's progress only. No Vault ids, flags or job counts, so the
+ * heartbeat never tells that a Vault is in duress.
+ */
+export type DuressHealth = Omit<GuardHealth, "scheduled">;
+
 export interface Heartbeat {
   last_seq: string;
   last_block_timestamp: string | null;
   updated_at: string | null;
   /** Present when the loosening guard runs. */
   guard?: GuardHealth;
+  /** Present when the duress handler runs. */
+  duress?: DuressHealth;
 }
 
 /** Reads the guard's health given the main loop's cursor. */
 export type GuardHealthSource = (mainCursor: string) => Promise<GuardHealth>;
 
+/** Reads the duress handler's health given the main loop's cursor. */
+export type DuressHealthSource = (mainCursor: string) => Promise<DuressHealth>;
+
 export async function readHeartbeat(
   store: WatcherStore,
   guard?: GuardHealthSource,
+  duress?: DuressHealthSource,
 ): Promise<Heartbeat> {
   const progress = await store.progress();
   return {
@@ -46,6 +58,7 @@ export async function readHeartbeat(
     last_block_timestamp: progress.last_block_timestamp,
     updated_at: progress.updated_at,
     ...(guard ? { guard: await guard(progress.cursor) } : {}),
+    ...(duress ? { duress: await duress(progress.cursor) } : {}),
   };
 }
 
@@ -248,6 +261,7 @@ export function createApiServer(
   linking?: LinkingOptions,
   clawbacks?: ClawbackApiOptions,
   guard?: GuardHealthSource,
+  duress?: DuressHealthSource,
 ): Server {
   const linkingWithLimit = linking && { limiter: new RateLimiter(), ...linking };
   return createServer((request, response) => {
@@ -264,7 +278,7 @@ export function createApiServer(
 
     if (request.method === "OPTIONS") return json(204, null);
     if (request.method === "GET" && path === "/heartbeat") {
-      readHeartbeat(store, guard).then(
+      readHeartbeat(store, guard, duress).then(
         (heartbeat) => json(200, heartbeat),
         () => json(503, { error: "unavailable" }),
       );

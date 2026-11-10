@@ -14,11 +14,14 @@ import { FileJobStore } from "./clawback/jobs.js";
 import { ClawbackRunner, guardianBroadcaster } from "./clawback/runner.js";
 import { NearFinalBlockClock, type ChainClock } from "./clock.js";
 import { loadConfig } from "./config.js";
+import { DuressHandler } from "./duress/handler.js";
+import { duressHealth } from "./duress/health.js";
+import { FileDuressStore } from "./duress/store.js";
 import { LooseningGuard, envelopeKeypair } from "./guard/handler.js";
 import { guardHealth } from "./guard/health.js";
 import { FileGuardStore } from "./guard/store.js";
 import { GuardTicker } from "./guard/ticker.js";
-import { createApiServer, type GuardHealthSource } from "./heartbeat.js";
+import { createApiServer, type DuressHealthSource, type GuardHealthSource } from "./heartbeat.js";
 import { createLogger } from "./log.js";
 import { EventLoop, type EventHandler } from "./loop.js";
 import { FileStore } from "./store.js";
@@ -92,6 +95,8 @@ let challengeLoop: EventLoop | null = null;
 let guardLoop: EventLoop | null = null;
 let guardTicker: GuardTicker | null = null;
 let guardHealthSource: GuardHealthSource | undefined;
+let duressLoop: EventLoop | null = null;
+let duressHealthSource: DuressHealthSource | undefined;
 /** Owner Confirmation (5.3b); set once the bot and, when configured, the guard exist. */
 let confirmation: OwnerConfirmation | null = null;
 let linkTimer: ReturnType<typeof setInterval> | null = null;
@@ -147,7 +152,10 @@ if (config.guardian) {
   // Read once before the loops start, so a corrupt file is recovered before any event is handled.
   await guardStore.entries().catch(() => undefined);
   if (!config.watcherEnvelopeSecretKey) {
-    log("warn", "MORROW_WATCHER_X25519_SK not set: the loosening guard reads duress as unknown");
+    log(
+      "warn",
+      "MORROW_WATCHER_X25519_SK not set: the loosening guard reads duress as unknown, and duress scheduling is off",
+    );
   }
   guardLoop = new EventLoop({
     client,
@@ -196,6 +204,36 @@ if (config.guardian) {
     loop: guardLoop,
     ticker: guardTicker,
   });
+
+  // Duress scheduling (8.2): needs the envelope key to read the flag, so it runs only with it (the
+  // warning above covers its absence). Own loop and cursor; it queues `duress` jobs for the runner.
+  if (config.watcherEnvelopeSecretKey) {
+    const duressCursor = new FileStore(besideJobs("duress-cursor"));
+    // A corrupt state file is moved aside and rebuilt from event 0, like the guard's.
+    const duressStore = new FileDuressStore(besideJobs("duress"), {
+      log,
+      onCorrupt: () => duressCursor.reset(),
+    });
+    await duressStore.vaults().catch(() => undefined);
+    duressLoop = new EventLoop({
+      client,
+      store: duressCursor,
+      handlers: [
+        new DuressHandler({
+          reader: client,
+          guardianAccount: config.guardian.accountId,
+          store: duressStore,
+          jobs,
+          envelopeKeypair: envelopeKeypair(config.watcherEnvelopeSecretKey),
+          challengeOwnerParent: config.challengeOwnerParent,
+        }),
+      ],
+      clock,
+      log,
+      intervalMs: config.pollIntervalMs,
+    });
+    duressHealthSource = duressHealth({ cursor: duressCursor, loop: duressLoop });
+  }
 } else {
   log(
     "warn",
@@ -242,6 +280,7 @@ createApiServer(
   bot ? { links, botUsername, reader: client, clock } : undefined,
   clawbackApi,
   guardHealthSource,
+  duressHealthSource,
 ).listen(config.port, () => {
   log("info", "watcher listening", {
     port: config.port,
@@ -253,6 +292,7 @@ loop.start();
 challengeLoop?.start();
 guardLoop?.start();
 guardTicker?.start();
+duressLoop?.start();
 // The runner plans only once the index has caught up, or it could miss reserved or racing coins.
 void (async () => {
   for (;;) {
@@ -277,6 +317,7 @@ for (const signal of ["SIGINT", "SIGTERM"] as const) {
     challengeLoop?.stop();
     guardLoop?.stop();
     guardTicker?.stop();
+    duressLoop?.stop();
     if (linkTimer) clearInterval(linkTimer);
     runner?.stop();
     void bot?.stop();

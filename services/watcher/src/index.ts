@@ -14,3 +14,18 @@ export {
   type GuardStore,
 } from "./guard/store.js";
 export { GuardTicker, type GuardTickerOptions } from "./guard/ticker.js";
+
+// Duress scheduling, for running in another process (Judge Mode S-4).
+export {
+  DuressHandler,
+  duressDueAt,
+  ownerEnvelope,
+  type DuressHandlerOptions,
+} from "./duress/handler.js";
+export { InMemoryDuressStore, type DuressStore, type DuressVault } from "./duress/store.js";
+export {
+  InMemoryJobStore,
+  type ClawbackJob,
+  type ClawbackTrigger,
+  type JobStore,
+} from "./clawback/jobs.js";
