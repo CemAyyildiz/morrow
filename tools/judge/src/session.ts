@@ -40,6 +40,22 @@ export function judgeAccountId(now = Date.now(), random = Math.random()): string
   return `morrow-judge-${now.toString(36)}-${random.toString(36).slice(2, 8)}.testnet`;
 }
 
+/**
+ * The first transaction of an account created a moment ago. The public RPC is load-balanced, so
+ * the node that answers may not have the new account or its key yet: retried for up to 20 s.
+ */
+export async function withNewAccount<T>(work: () => Promise<T>, tries = 20): Promise<T> {
+  for (let attempt = 1; ; attempt++) {
+    try {
+      return await work();
+    } catch (error) {
+      const text = error instanceof Error ? error.message : String(error);
+      if (attempt >= tries || !/does not exist/i.test(text)) throw error;
+      await new Promise((resolve) => setTimeout(resolve, 1_000));
+    }
+  }
+}
+
 const publicKeyHex = (secret: Uint8Array) => bytesToHex(secp256k1.getPublicKey(secret, true));
 
 let current: Promise<JudgeSession> | null = null;
@@ -69,11 +85,13 @@ export function judgeSession(config: JudgeConfig = loadJudgeConfig()): Promise<J
     }
     const guardianKey = KeyPair.fromRandom("ed25519");
     const guardianId = `guardian.${ownerId}`;
-    await new Account(ownerId, provider, new KeyPairSigner(ownerKey)).createSubAccount({
-      accountOrPrefix: guardianId,
-      publicKey: guardianKey.getPublicKey(),
-      nearToTransfer: 500_000_000_000_000_000_000_000n,
-    });
+    await withNewAccount(() =>
+      new Account(ownerId, provider, new KeyPairSigner(ownerKey)).createSubAccount({
+        accountOrPrefix: guardianId,
+        publicKey: guardianKey.getPublicKey(),
+        nearToTransfer: 500_000_000_000_000_000_000_000n,
+      }),
+    );
     const client = (accountId: string, key: KeyPair) =>
       new NearContractClient({
         contractId: config.vaultContract,
@@ -114,11 +132,17 @@ export async function createJudgeSubAccount(
   const key = KeyPair.fromRandom("ed25519");
   const accountId = `${prefix}.${session.accountId}`;
   const provider = new JsonRpcProvider({ url: config.nearRpcUrl });
-  await new Account(
-    session.accountId,
-    provider,
-    new KeyPairSigner(session.ownerNearKey),
-  ).createSubAccount({ accountOrPrefix: accountId, publicKey: key.getPublicKey(), nearToTransfer });
+  await withNewAccount(() =>
+    new Account(
+      session.accountId,
+      provider,
+      new KeyPairSigner(session.ownerNearKey),
+    ).createSubAccount({
+      accountOrPrefix: accountId,
+      publicKey: key.getPublicKey(),
+      nearToTransfer,
+    }),
+  );
   const client = new NearContractClient({
     contractId: config.vaultContract,
     rpcUrl: config.nearRpcUrl,
@@ -174,10 +198,12 @@ export async function createJudgeVault(
   { guardians, overrides }: { guardians?: Guardian[]; overrides?: Partial<Policy> } = {},
 ): Promise<{ vaultId: string; tx: string }> {
   const recovery = await session.regtest.newAddress();
-  const vaultId = await session.client.createVault({
-    owner_key: session.ownerKey,
-    policy: judgePolicy(session, recovery, guardians, overrides),
-    deposit_yocto: MIN_VAULT_STORAGE_YOCTO.toString(),
-  });
+  const vaultId = await withNewAccount(() =>
+    session.client.createVault({
+      owner_key: session.ownerKey,
+      policy: judgePolicy(session, recovery, guardians, overrides),
+      deposit_yocto: MIN_VAULT_STORAGE_YOCTO.toString(),
+    }),
+  );
   return { vaultId, tx: session.client.lastTransactionHash ?? "" };
 }

@@ -24,7 +24,11 @@ export async function runCreate(ctx: ScenarioContext): Promise<void> {
   const { vaultId, tx } = await createJudgeVault(session);
   ctx.log(`Vault ${vaultId} created on ${config.vaultContract}: ${config.explorerTxUrl(tx)}`);
 
-  const vault = await afterWrite("get_vault", () => client.getVault(vaultId));
+  const vault = await afterWrite(
+    "get_vault",
+    () => client.getVault(vaultId),
+    (v) => v.state === "active",
+  );
   if (vault.state !== "active")
     throw new Error(`Vault ${vaultId} is ${vault.state}, expected active`);
   const signer = signerAccountOf(
