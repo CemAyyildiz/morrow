@@ -13,8 +13,8 @@ export const MPC_SIGNERS: Record<NearNetwork, string> = {
 };
 
 export const RPC_URLS: Record<NearNetwork, string> = {
-  testnet: "https://rpc.testnet.near.org",
-  mainnet: "https://rpc.mainnet.near.org",
+  testnet: "https://rpc.testnet.fastnear.com",
+  mainnet: "https://rpc.mainnet.fastnear.com",
 };
 
 /** Public RPC hosts whose network is known without asking them. */

@@ -56,8 +56,8 @@ function loadGuardian(env: NodeJS.ProcessEnv): GuardianConfig | null {
 }
 
 const NEAR_RPC: Record<"testnet" | "mainnet", string> = {
-  testnet: "https://rpc.testnet.near.org",
-  mainnet: "https://rpc.mainnet.near.org",
+  testnet: "https://rpc.testnet.fastnear.com",
+  mainnet: "https://rpc.mainnet.fastnear.com",
 };
 
 function required(env: NodeJS.ProcessEnv, name: string): string {

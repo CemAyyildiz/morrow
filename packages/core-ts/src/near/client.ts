@@ -17,9 +17,10 @@ import type {
   VaultKit,
 } from "../contract/types.js";
 
+/** FastNEAR: the deprecated rpc.*.near.org endpoints rate-limit with 429. */
 export const NEAR_RPC_URLS = {
-  testnet: "https://rpc.testnet.near.org",
-  mainnet: "https://rpc.mainnet.near.org",
+  testnet: "https://rpc.testnet.fastnear.com",
+  mainnet: "https://rpc.mainnet.fastnear.com",
 } as const;
 
 /** create_vault waits for two MPC derivations and a callback. */

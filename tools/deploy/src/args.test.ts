@@ -34,7 +34,7 @@ describe("parseDeploy", () => {
     expect(parseDeploy(deployArgv())).toEqual({
       accountId: "x.testnet",
       network: "testnet",
-      rpcUrl: "https://rpc.testnet.near.org",
+      rpcUrl: "https://rpc.testnet.fastnear.com",
       wasm: undefined,
       send: false,
       init: {
@@ -60,7 +60,7 @@ describe("parseDeploy", () => {
   it("reads the mainnet Bounty arguments", () => {
     expect(parseDeploy(mainnetArgv())).toMatchObject({
       network: "mainnet",
-      rpcUrl: "https://rpc.mainnet.near.org",
+      rpcUrl: "https://rpc.mainnet.fastnear.com",
       init: { signer_account: "v1.signer", allowed_networks: ["bitcoin"] },
     });
   });
@@ -202,13 +202,13 @@ describe("parseVerify", () => {
       {
         accountId: "a.testnet",
         network: "testnet",
-        rpcUrl: "https://rpc.testnet.near.org",
+        rpcUrl: "https://rpc.testnet.fastnear.com",
         expected: undefined,
       },
       {
         accountId: "b.near",
         network: "mainnet",
-        rpcUrl: "https://rpc.mainnet.near.org",
+        rpcUrl: "https://rpc.mainnet.fastnear.com",
         expected: undefined,
       },
     ]);

@@ -77,7 +77,7 @@ describe("deploy", () => {
     expect(chain.sent).toEqual([]);
     const stake = storageStake(182, WASM.code.length, STORAGE_PRICE);
     expect(o.lines).toEqual([
-      `Deploy plan for ${ACCOUNT} (testnet, https://rpc.testnet.near.org)`,
+      `Deploy plan for ${ACCOUNT} (testnet, https://rpc.testnet.fastnear.com)`,
       `  1. DeployContract ${WASM.path} (8 bytes, code_hash ${WASM.hash})`,
       "  2. FunctionCall new (30 Tgas, no deposit)",
       "       signer_account: v1.signer-prod.testnet",
