@@ -140,16 +140,16 @@ On a Vault with an Auto-Clawback Guardian, the Guardian Watcher vetoes every loo
 
 With the watcher key, the Guardian Watcher of an Auto-Clawback Guardian also acts on duress. A Vault is in duress from the first Owner Watcher Envelope that carries the duress flag, whether it came with a withdrawal request, an execution, or a Policy Change proposal or withdrawal, and it stays in duress. The watcher then queues a Clawback for 1 h 5 min before the earlier of two times: the earliest `executable_at` of the Vault's pending withdrawals, and that first signal plus the Delay. If that time has passed, the Clawback runs at once. A later withdrawal, a Fast Approval or a lowered Delay can only bring it forward. A flag the watcher cannot read never starts a Clawback, because a Clawback moves every coin. It logs a duress request exactly like a normal one. The watcher must be live and caught up from 1 h 5 min before that earlier time.
 
-The deployment is not locked yet. Until its account's access keys are deleted (Story 7.5), whoever deployed it can replace the contract code and void every guarantee above. The tooling that locks a deployment, and lets anyone check one, is in `tools/deploy`; see [Verify the deployment](#verify-the-deployment).
+The testnet deployment, `morrow-vault-v1.testnet`, is locked: its account has no access keys, so nobody, the builder included, can replace its code and void the guarantees above. Its `code_hash` is `3JwGeYBT3FQjyNDhcQ86sTjCEcix2KuTJPePzGxRefsZ`, the same as `make wasm` builds from this repository. Anyone can check both; see [Verify the deployment](#verify-the-deployment).
 
 ## Verify the deployment
 
-A locked Vault Contract account has no access keys at all, so nobody, the builder included, can replace its code, delete it, or sign anything as the contract. `tools/deploy verify` checks that from public NEAR data; the verifier needs no keys and no NEAR of their own. The locked testnet and mainnet account names will be filled in here once they are deployed (see What is not done yet).
+A locked Vault Contract account has no access keys at all, so nobody, the builder included, can replace its code, delete it, or sign anything as the contract. `tools/deploy verify` checks that from public NEAR data; the verifier needs no keys and no NEAR of their own. The locked testnet deployment is `morrow-vault-v1.testnet` (lock transaction `26q8SS3xT6NhYPJwcMfJge9NkN3p2k3kqpP9Qy5bQ16g`). A mainnet deployment of the same code is not made yet (see What is not done yet).
 
 ```sh
 pnpm install --frozen-lockfile
 make wasm   # builds the contract wasm in the pinned rust:1.97.1 Docker image, so your code_hash matches the operator's
-pnpm --filter @morrow/deploy start verify --account <testnet-account> --account <mainnet-account>
+pnpm --filter @morrow/deploy start verify --account morrow-vault-v1.testnet --signer v1.signer-prod.testnet --networks regtest,signet
 ```
 
 For each account, `verify` reads everything at one final block and prints:
@@ -201,7 +201,7 @@ BitVault sells spend delays by subscription, which shows people pay for this. Mo
 
 ## What is not done yet
 
-The default deployment, `morrow-vault-v1.testnet`, is not locked yet: until its last access key is deleted (Story 7.5b), whoever holds that key can replace its code. Against the older `morrow-vault-dev3.testnet`, which predates Policy Changes and Fast Approval, S-6 and S-7 end in a SKIP. There is no Duress PIN or Duress Session UI yet (Story 8.1): S-4 checks the duress-mode labels that core-ts gives such a client. The Guardian Watcher's Telegram alerts for Fast Approval ("fast-approved by" a Guardian, and a possible-duress alert to Trusted Contacts only) are not built yet (Story 8.5b). The hosted link to the demo Vault's Proof Page, the hosted live demo, the Rob This Vault recording, the Mainnet Bounty and the locked deployment with its code hash come with their own stories and are not claimed here. Nothing in this repository is deployed on mainnet.
+Against the older `morrow-vault-dev3.testnet`, which predates Policy Changes and Fast Approval, S-6 and S-7 end in a SKIP. There is no Duress PIN or Duress Session UI yet (Story 8.1): S-4 checks the duress-mode labels that core-ts gives such a client. The Guardian Watcher's Telegram alerts for Fast Approval ("fast-approved by" a Guardian, and a possible-duress alert to Trusted Contacts only) are not built yet (Story 8.5b). The hosted link to the demo Vault's Proof Page, the hosted live demo, the Rob This Vault recording, and the Mainnet Bounty come with their own stories and are not claimed here. Nothing in this repository is deployed on mainnet yet: a locked mainnet deployment of the same code is planned.
 
 ## Repository layout
 
