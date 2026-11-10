@@ -26,7 +26,7 @@ describe("displayMode", () => {
   it.each([
     ["pending_keys", "Pending keys", "Pending keys"],
     ["active", "Active", "Active"],
-    ["clawed_back", "Clawed back", "Pending"],
+    ["clawed_back", "Clawed back", "Active"],
   ] as [VaultState, string, string][])("renders a %s Vault", (state, normal, duress) => {
     expect(vaultStateLabel(state, "normal")).toBe(normal);
     expect(vaultStateLabel(state, "duress")).toBe(duress);
@@ -50,6 +50,8 @@ describe("displayMode", () => {
     ["duress", new MorrowContractError("ERR_CLAWED_BACK"), NETWORK_BUSY],
     ["normal", new MorrowContractError("ERR_NOT_EXECUTABLE"), ERROR_CODES.ERR_NOT_EXECUTABLE],
     ["duress", new MorrowContractError("ERR_NOT_EXECUTABLE"), ERROR_CODES.ERR_NOT_EXECUTABLE],
+    ["normal", new MorrowContractError("ERR_BAD_OP_STATE"), ERROR_CODES.ERR_BAD_OP_STATE],
+    ["duress", new MorrowContractError("ERR_BAD_OP_STATE"), NETWORK_BUSY],
     ["duress", new Error("fetch failed"), "fetch failed"],
   ] as [DisplayMode, unknown, string][])(
     "shows a failed Execute in %s mode",
@@ -57,6 +59,16 @@ describe("displayMode", () => {
       expect(executeErrorMessage(error, mode)).toBe(message);
     },
   );
+
+  it("shows an unknown state or code as itself", () => {
+    for (const mode of ["normal", "duress"] as DisplayMode[]) {
+      expect(opStateLabel("parked" as SpendOpState, mode)).toBe("parked");
+      expect(vaultStateLabel("frozen" as VaultState, mode)).toBe("frozen");
+      expect(changeStateLabel("queued" as PolicyChangeState, mode)).toBe("queued");
+      const unknown = new MorrowContractError("ERR_NEW_THING" as never);
+      expect(executeErrorMessage(unknown, mode)).toBe("ERR_NEW_THING");
+    }
+  });
 
   it("never names the Clawback in duress mode", () => {
     expect(NETWORK_BUSY).toBe("Network busy, try again later.");
