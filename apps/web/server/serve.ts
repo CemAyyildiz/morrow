@@ -1,12 +1,15 @@
 // Production server for the built app: `node server/serve.ts` (Node 24 type stripping, no
 // dependencies). Serves `dist/` with the NFR-10 headers on every response, `/config.json` from
 // the whitelisted env vars, and `index.html` for any path without a file extension so deep
-// links such as `/g/<vault_id>` load the app. Refuses to start on a bad config.
+// links such as `/g/<vault_id>` load the app. Text responses go out brotli or gzip encoded
+// when the client accepts it (story 9.5). Refuses to start on a bad config.
 import { createReadStream, readFileSync } from "node:fs";
-import { stat } from "node:fs/promises";
+import { readdir, readFile, stat } from "node:fs/promises";
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
 import { extname, join, resolve, sep } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
+import { promisify } from "node:util";
+import { brotliCompress, constants as zlib, gzip } from "node:zlib";
 import { ConfigError, loadConfig, securityHeaders, type PublicConfig } from "./config.ts";
 
 const HTML = "text/html; charset=utf-8";
@@ -34,6 +37,61 @@ const CONTENT_TYPES: Record<string, string> = {
   ".ttf": "font/ttf",
   ".webmanifest": "application/manifest+json",
 };
+
+/**
+ * Text types worth encoding. Images, fonts and video are compressed formats already, and are
+ * always sent as they are (byte ranges included).
+ */
+const COMPRESSIBLE = new Set([
+  ".html",
+  ".js",
+  ".mjs",
+  ".css",
+  ".json",
+  ".map",
+  ".txt",
+  ".svg",
+  ".webmanifest",
+]);
+
+export type Encoding = "br" | "gzip";
+
+/**
+ * The encoding to send for an `Accept-Encoding` header: brotli or gzip, whichever the client
+ * weights higher (brotli on a tie, `*` standing for any not named), or null for the raw bytes.
+ */
+export function negotiateEncoding(header: string | undefined): Encoding | null {
+  if (header === undefined) return null;
+  const weights = new Map<string, number>();
+  for (const part of header.split(",")) {
+    const [name = "", ...params] = part.split(";").map((piece) => piece.trim().toLowerCase());
+    if (name === "") continue;
+    const q = params.find((param) => /^q\s*=/.test(param));
+    const weight = q === undefined ? 1 : Number(q.slice(q.indexOf("=") + 1).trim());
+    weights.set(name, Number.isFinite(weight) && weight > 0 ? Math.min(weight, 1) : 0);
+  }
+  const weight = (name: Encoding) => weights.get(name) ?? weights.get("*") ?? 0;
+  const br = weight("br");
+  const gz = weight("gzip");
+  if (br === 0 && gz === 0) return null;
+  return br >= gz ? "br" : "gzip";
+}
+
+const brotli = promisify(brotliCompress);
+const gzipAsync = promisify(gzip);
+
+/** Maximum compression: each body is encoded once per process and then served from memory. */
+function encode(body: Buffer, encoding: Encoding): Promise<Buffer> {
+  return encoding === "br"
+    ? brotli(body, {
+        params: {
+          [zlib.BROTLI_PARAM_QUALITY]: zlib.BROTLI_MAX_QUALITY,
+          [zlib.BROTLI_PARAM_MODE]: zlib.BROTLI_MODE_TEXT,
+          [zlib.BROTLI_PARAM_SIZE_HINT]: body.length,
+        },
+      })
+    : gzipAsync(body, { level: zlib.Z_BEST_COMPRESSION });
+}
 
 /** Vite writes content-hashed files under `assets/`; they never change. */
 const IMMUTABLE = "public, max-age=31536000, immutable";
@@ -91,6 +149,21 @@ export function createWebServer({ config, distDir }: WebServerOptions): Server {
   const configBody = Buffer.from(JSON.stringify(config));
   const headers = securityHeaders(config);
 
+  // Encoded bodies, keyed by encoding and source (a dist file path, or a fixed body's name).
+  // dist/ does not change while the server runs: a deploy restarts it.
+  const encoded = new Map<string, Promise<Buffer>>();
+  const encodedBody = (key: string, encoding: Encoding, load: () => Promise<Buffer>) => {
+    const cacheKey = `${encoding}:${key}`;
+    let body = encoded.get(cacheKey);
+    if (body === undefined) {
+      body = load().then((raw) => encode(raw, encoding));
+      // A failure is not cached: the raw bytes go out and the next request tries again.
+      body.catch(() => encoded.delete(cacheKey));
+      encoded.set(cacheKey, body);
+    }
+    return body;
+  };
+
   const send = (
     request: IncomingMessage,
     response: ServerResponse,
@@ -100,6 +173,29 @@ export function createWebServer({ config, distDir }: WebServerOptions): Server {
   ) => {
     response.writeHead(status, { ...headers, "content-length": body.length, ...extra });
     response.end(request.method === "HEAD" ? undefined : body);
+  };
+
+  /** A fixed text body (index.html, /config.json), encoded when the client accepts it. */
+  const sendText = async (
+    request: IncomingMessage,
+    response: ServerResponse,
+    key: string,
+    body: Buffer,
+    extra: Record<string, string>,
+  ) => {
+    const encoding = negotiateEncoding(request.headers["accept-encoding"]);
+    const vary = { vary: "accept-encoding" };
+    if (encoding !== null) {
+      const out = await encodedBody(key, encoding, async () => body).catch(() => null);
+      if (out !== null) {
+        return send(request, response, 200, out, {
+          ...extra,
+          ...vary,
+          "content-encoding": encoding,
+        });
+      }
+    }
+    return send(request, response, 200, body, { ...extra, ...vary });
   };
 
   const notFound = (request: IncomingMessage, response: ServerResponse) =>
@@ -120,7 +216,7 @@ export function createWebServer({ config, distDir }: WebServerOptions): Server {
     if (path === null) return notFound(request, response);
 
     if (path === "/config.json") {
-      return send(request, response, 200, configBody, {
+      return sendText(request, response, "/config.json", configBody, {
         "content-type": JSON_TYPE,
         "cache-control": NO_STORE,
       });
@@ -128,7 +224,7 @@ export function createWebServer({ config, distDir }: WebServerOptions): Server {
 
     const extension = extname(path);
     if (extension === "" || path === "/index.html") {
-      return send(request, response, 200, index, {
+      return sendText(request, response, "/index.html", index, {
         "content-type": HTML,
         "cache-control": NO_STORE,
       });
@@ -140,10 +236,32 @@ export function createWebServer({ config, distDir }: WebServerOptions): Server {
       const info = await stat(file);
       if (!info.isFile()) return notFound(request, response);
       const size = info.size;
-      const fileHeaders = {
-        "content-type": CONTENT_TYPES[extension] ?? "application/octet-stream",
-        "cache-control": path.startsWith("/assets/") ? IMMUTABLE : "no-cache",
+      const contentType = CONTENT_TYPES[extension] ?? "application/octet-stream";
+      const cacheControl = path.startsWith("/assets/") ? IMMUTABLE : "no-cache";
+      // Text is encoded whole when the client accepts it; a byte range always gets raw bytes.
+      if (COMPRESSIBLE.has(extension)) {
+        const encoding =
+          request.headers.range === undefined
+            ? negotiateEncoding(request.headers["accept-encoding"])
+            : null;
+        const out =
+          encoding === null
+            ? null
+            : await encodedBody(file, encoding, () => readFile(file)).catch(() => null);
+        if (encoding !== null && out !== null) {
+          return send(request, response, 200, out, {
+            "content-type": contentType,
+            "cache-control": cacheControl,
+            "content-encoding": encoding,
+            vary: "accept-encoding",
+          });
+        }
+      }
+      const fileHeaders: Record<string, string> = {
+        "content-type": contentType,
+        "cache-control": cacheControl,
         "accept-ranges": "bytes",
+        ...(COMPRESSIBLE.has(extension) ? { vary: "accept-encoding" } : {}),
       };
       // Safari plays <video> only from a server that answers byte-range requests.
       const range = byteRange(request.headers.range, size);
@@ -171,6 +289,19 @@ export function createWebServer({ config, distDir }: WebServerOptions): Server {
       return notFound(request, response);
     }
   };
+
+  // Encode every text file in dist/ in the background now, so the first visitor does not wait
+  // for maximum-quality brotli on the main bundle.
+  void (async () => {
+    const entries = await readdir(root, { recursive: true, withFileTypes: true });
+    for (const entry of entries) {
+      if (!entry.isFile() || !COMPRESSIBLE.has(extname(entry.name))) continue;
+      const file = join(entry.parentPath, entry.name);
+      for (const encoding of ["br", "gzip"] as const) {
+        void encodedBody(file, encoding, () => readFile(file)).catch(() => undefined);
+      }
+    }
+  })().catch(() => undefined);
 
   return createServer((request, response) => {
     handle(request, response).catch(() => {

@@ -5,9 +5,10 @@ import type { AddressInfo } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { brotliDecompressSync, gunzipSync } from "node:zlib";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { contentSecurityPolicy, loadConfig } from "./config.ts";
-import { byteRange, createWebServer, parsePort } from "./serve.ts";
+import { byteRange, createWebServer, negotiateEncoding, parsePort } from "./serve.ts";
 
 const ENV = {
   MORROW_NEAR_NETWORK: "testnet",
@@ -18,6 +19,8 @@ const ENV = {
 };
 const config = loadConfig(ENV);
 const INDEX = '<!doctype html><script type="module" src="/assets/index-abc123.js"></script>';
+/** A bundle big enough that encoding it pays off. */
+const BUNDLE = `${"export const greeting = 'Bitcoin that cannot be rushed';\n".repeat(200)}`;
 
 let dir: string;
 let server: Server;
@@ -31,6 +34,7 @@ beforeAll(async () => {
   mkdirSync(join(dist, "assets"), { recursive: true });
   writeFileSync(join(dist, "index.html"), INDEX);
   writeFileSync(join(dist, "assets", "index-abc123.js"), "console.log(1);");
+  writeFileSync(join(dist, "assets", "bundle-bbb222.js"), BUNDLE);
   writeFileSync(join(dist, "assets", "font-def456.woff2"), "woff2");
   writeFileSync(join(dist, "assets", "hero-aaa111.mp4"), "0123456789");
   writeFileSync(join(dist, ".env"), "SECRET=1");
@@ -58,6 +62,25 @@ function get(path: string, method = "GET", headers: Record<string, string> = {})
       res.setEncoding("utf8");
       res.on("data", (chunk: string) => (body += chunk));
       res.on("end", () => done({ status: res.statusCode ?? 0, headers: res.headers, body }));
+    });
+    req.on("error", fail);
+    req.end();
+  });
+}
+
+/** Like `get`, keeping the body as bytes (an encoded body is not UTF-8). */
+function getRaw(
+  path: string,
+  headers: Record<string, string>,
+  method = "GET",
+): Promise<{ status: number; headers: IncomingHttpHeaders; body: Buffer }> {
+  return new Promise((done, fail) => {
+    const req = request({ host: "127.0.0.1", port, path, method, headers }, (res) => {
+      const chunks: Buffer[] = [];
+      res.on("data", (chunk: Buffer) => chunks.push(chunk));
+      res.on("end", () =>
+        done({ status: res.statusCode ?? 0, headers: res.headers, body: Buffer.concat(chunks) }),
+      );
     });
     req.on("error", fail);
     req.end();
@@ -236,5 +259,87 @@ describe("media", () => {
     expect(byteRange("bytes=-5", 0)).toBe("unsatisfiable");
     expect(byteRange("bytes=-0", 10)).toBe("unsatisfiable");
     expect(byteRange("bytes=5-2", 10)).toBeNull();
+  });
+});
+
+describe("compression", () => {
+  it("sends text brotli encoded to a client that accepts it", async () => {
+    const reply = await getRaw("/assets/bundle-bbb222.js", {
+      "accept-encoding": "gzip, deflate, br",
+    });
+    expect(reply.status).toBe(200);
+    expect(reply.headers["content-encoding"]).toBe("br");
+    expect(reply.headers.vary).toBe("accept-encoding");
+    expect(reply.headers["content-type"]).toBe("text/javascript; charset=utf-8");
+    expect(reply.headers["cache-control"]).toBe("public, max-age=31536000, immutable");
+    expect(Number(reply.headers["content-length"])).toBe(reply.body.length);
+    expect(reply.body.length).toBeLessThan(BUNDLE.length / 10);
+    expect(brotliDecompressSync(reply.body).toString()).toBe(BUNDLE);
+    expectSecurityHeaders(reply.headers);
+  });
+
+  it("falls back to gzip, and to the raw bytes without an accepted encoding", async () => {
+    const gz = await getRaw("/assets/bundle-bbb222.js", { "accept-encoding": "gzip" });
+    expect(gz.headers["content-encoding"]).toBe("gzip");
+    expect(gunzipSync(gz.body).toString()).toBe(BUNDLE);
+
+    for (const accept of [undefined, "identity", "br;q=0, gzip;q=0"]) {
+      const raw = await getRaw(
+        "/assets/bundle-bbb222.js",
+        accept ? { "accept-encoding": accept } : {},
+      );
+      expect(raw.headers["content-encoding"]).toBeUndefined();
+      expect(raw.headers.vary).toBe("accept-encoding");
+      expect(raw.body.toString()).toBe(BUNDLE);
+    }
+  });
+
+  it("encodes index.html and /config.json, and answers HEAD without a body", async () => {
+    const page = await getRaw("/challenge", { "accept-encoding": "br" });
+    expect(page.headers["content-encoding"]).toBe("br");
+    expect(page.headers["cache-control"]).toBe("no-store");
+    expect(brotliDecompressSync(page.body).toString()).toBe(INDEX);
+    expectSecurityHeaders(page.headers);
+
+    const cfg = await getRaw("/config.json", { "accept-encoding": "gzip" });
+    expect(cfg.headers["content-encoding"]).toBe("gzip");
+    expect(JSON.parse(gunzipSync(cfg.body).toString())).toEqual(config);
+
+    const head = await getRaw("/assets/bundle-bbb222.js", { "accept-encoding": "br" }, "HEAD");
+    expect(head.headers["content-encoding"]).toBe("br");
+    expect(Number(head.headers["content-length"])).toBeGreaterThan(0);
+    expect(head.body.length).toBe(0);
+  });
+
+  it("never encodes media, fonts or a byte range", async () => {
+    const video = await getRaw("/assets/hero-aaa111.mp4", { "accept-encoding": "br" });
+    expect(video.headers["content-encoding"]).toBeUndefined();
+    expect(video.headers.vary).toBeUndefined();
+    expect(video.body.toString()).toBe("0123456789");
+    const font = await getRaw("/assets/font-def456.woff2", { "accept-encoding": "br" });
+    expect(font.headers["content-encoding"]).toBeUndefined();
+
+    const part = await getRaw("/assets/bundle-bbb222.js", {
+      "accept-encoding": "br",
+      range: "bytes=0-5",
+    });
+    expect(part.status).toBe(206);
+    expect(part.headers["content-encoding"]).toBeUndefined();
+    expect(part.body.toString()).toBe(BUNDLE.slice(0, 6));
+  });
+
+  it("negotiates by weight, brotli on a tie", () => {
+    expect(negotiateEncoding(undefined)).toBeNull();
+    expect(negotiateEncoding("")).toBeNull();
+    expect(negotiateEncoding("identity")).toBeNull();
+    expect(negotiateEncoding("gzip, deflate, br, zstd")).toBe("br");
+    expect(negotiateEncoding("gzip")).toBe("gzip");
+    expect(negotiateEncoding("GZIP;Q=0.5")).toBe("gzip");
+    expect(negotiateEncoding("br;q=0.4, gzip;q=0.8")).toBe("gzip");
+    expect(negotiateEncoding("br;q=0, gzip")).toBe("gzip");
+    expect(negotiateEncoding("br;q=0, gzip;q=0")).toBeNull();
+    expect(negotiateEncoding("*")).toBe("br");
+    expect(negotiateEncoding("*;q=0.5, br;q=0")).toBe("gzip");
+    expect(negotiateEncoding("br;q=nonsense, gzip")).toBe("gzip");
   });
 });

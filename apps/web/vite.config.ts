@@ -72,8 +72,28 @@ function noNodePackagesInBuild(): Plugin {
   };
 }
 
+/**
+ * Asks for `/config.json` from the HTML, so it downloads beside the bundle instead of after
+ * it: the app renders nothing until the config arrives, and on a slow connection that second
+ * round trip was most of a second of LCP (story 9.5). Build only: the dev server shows sample
+ * data and never fetches it. `crossorigin` matches the app's same-origin `fetch`.
+ */
+function preloadConfig(): Plugin {
+  return {
+    name: "morrow:preload-config",
+    apply: "build",
+    transformIndexHtml: () => [
+      {
+        tag: "link",
+        attrs: { rel: "preload", href: "/config.json", as: "fetch", crossorigin: "anonymous" },
+        injectTo: "head",
+      },
+    ],
+  };
+}
+
 export default defineConfig({
-  plugins: [react(), tailwindcss(), noFixturesInBuild(), noNodePackagesInBuild()],
+  plugins: [react(), tailwindcss(), noFixturesInBuild(), noNodePackagesInBuild(), preloadConfig()],
   resolve: {
     alias: { "@": fileURLToPath(new URL("./src", import.meta.url)) },
   },

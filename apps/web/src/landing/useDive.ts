@@ -2,7 +2,7 @@
 // `layout()` fits the scene to the viewport, `update()` turns scroll progress into the
 // camera, the crossfades and the crisp product copy. Both are pure so they can be tested at
 // fixed viewports; `useDive` writes their output through refs and the CSSOM.
-import { useEffect, type RefObject } from "react";
+import { useEffect, useLayoutEffect, type RefObject } from "react";
 import { clamp, ease, lerp, trackProgress } from "./motion";
 
 /** The still, in its own pixels. */
@@ -246,10 +246,12 @@ function sunUp(video: HTMLVideoElement | null): boolean {
 
 /**
  * Runs the dive: lays the scene out on mount, on resize and when the still loads, and
- * re-renders the frame on every scroll and on the video's sunrise.
+ * re-renders the frame on every scroll and on the video's sunrise. The first layout is a
+ * layout effect, so the first paint already has the scene placed: an effect would paint the
+ * video at its 300 × 150 default and the still at its natural size first (a layout shift).
  */
 export function useDive(refs: DiveRefs, reduced: boolean) {
-  useEffect(() => {
+  useLayoutEffect(() => {
     let g = layout(window.innerWidth, window.innerHeight);
 
     const frame = () => {
@@ -291,13 +293,16 @@ export function useDive(refs: DiveRefs, reduced: boolean) {
 
 /**
  * Plays the hero video once (dawn to sunrise), unless motion is reduced: then it is never
- * requested. A missing video is silent; the still carries the scene.
+ * requested. It waits for the scene still (`sceneReady`), so on a slow connection the 7 MB
+ * video never competes with the first paint. A missing video is silent; the still carries the
+ * scene.
  */
 export function useHeroVideo(
   video: RefObject<HTMLVideoElement | null>,
   src: string,
   poster: string,
   reduced: boolean,
+  sceneReady: boolean,
 ) {
   useEffect(() => {
     const el = video.current;
@@ -310,6 +315,7 @@ export function useHeroVideo(
       // Already loaded (a reduced-motion toggle back off): keep the frame it reached.
       return;
     }
+    if (!sceneReady) return;
     const abort = new AbortController();
     fetch(src, { method: "HEAD", signal: abort.signal })
       .then((response) => {
@@ -320,5 +326,5 @@ export function useHeroVideo(
       })
       .catch(() => undefined);
     return () => abort.abort();
-  }, [video, src, poster, reduced]);
+  }, [video, src, poster, reduced, sceneReady]);
 }

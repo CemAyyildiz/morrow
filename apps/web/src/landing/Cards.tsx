@@ -4,7 +4,9 @@ import { landingCopy } from "./copy";
 const t = landingCopy.cards;
 
 // "Built for the worst night": four cream cards, each a small composition of floating product
-// fragments (decorative) over a title and a line of copy. One column on phones.
+// fragments (decorative) over a title and a line of copy. One column on phones. The blurred
+// "ghost" fragments hold text-free lines (`l-gl`) instead of text: under the blur they look
+// the same, and no deliberately unreadable text is left on the page (story 9.5).
 export function Cards() {
   return (
     <section className="l-cards" aria-labelledby="l-cards-title">
@@ -19,8 +21,12 @@ export function Cards() {
           <div className="l-strong">{t.alerts.title}</div>
         </div>
         <div className="l-frag l-ghost l-f-alert-ghost">
-          <div className="l-mono l-mono-mu">{t.alerts.ghostSource}</div>
-          <div className="l-strong">{t.alerts.ghostTitle}</div>
+          <div className="l-mono l-mono-mu">
+            <span className="l-gl l-gl-src" />
+          </div>
+          <div className="l-strong">
+            <span className="l-gl l-gl-title" />
+          </div>
         </div>
         <div className="l-frag l-f-send">{t.alerts.action}</div>
       </Card>
@@ -31,7 +37,9 @@ export function Cards() {
           {t.proof.address}
         </div>
         <div className="l-frag l-f-match">{t.proof.match}</div>
-        <div className="l-frag l-ghost l-mono l-f-code">{t.proof.ghost}</div>
+        <div className="l-frag l-ghost l-mono l-f-code">
+          <span className="l-gl l-gl-code" />
+        </div>
       </Card>
       <Card heading={t.kit.heading} body={t.kit.body}>
         <div className="l-frag l-f-kit">
@@ -45,7 +53,9 @@ export function Cards() {
           </div>
         </div>
         <div className="l-frag l-mono l-f-escape">{t.kit.escape}</div>
-        <div className="l-frag l-ghost l-mono l-f-nonear">{t.kit.ghost}</div>
+        <div className="l-frag l-ghost l-mono l-f-nonear">
+          <span className="l-gl l-gl-nonear" />
+        </div>
       </Card>
       <Card heading={t.pin.heading} body={t.pin.body}>
         <div className="l-frag l-frag-dark l-f-pin">
@@ -58,7 +68,9 @@ export function Cards() {
           </div>
         </div>
         <div className="l-frag l-frag-dark l-ghost l-f-pin-ghost">
-          <div className="l-mono l-mono-mu">{t.pin.label}</div>
+          <div className="l-mono l-mono-mu">
+            <span className="l-gl l-gl-pin" />
+          </div>
         </div>
       </Card>
     </section>

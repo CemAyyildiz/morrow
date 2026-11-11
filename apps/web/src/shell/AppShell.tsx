@@ -77,8 +77,12 @@ export function AppShell({
           >
             {copy.skipToContent}
           </a>
-          <TestnetBanner network={config.network} />
-          <PhoneBar open={menuOpen} onOpen={openMenu} buttonRef={menuButton} />
+          {/* The banner landmark: the network strip and the phone bar sit in it, so no content
+              is outside a landmark (story 9.5). */}
+          <header>
+            <TestnetBanner network={config.network} />
+            <PhoneBar open={menuOpen} onOpen={openMenu} buttonRef={menuButton} />
+          </header>
           <div className="flex flex-1 flex-col desktop:grid desktop:grid-cols-[232px_minmax(0,1fr)]">
             <Sidebar activeId={activeId} config={config} />
             <main

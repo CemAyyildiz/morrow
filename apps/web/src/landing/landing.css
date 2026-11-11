@@ -21,6 +21,8 @@
   --cream2: #e2ded5;
   --ink2: #16151a;
   --mu2: #6b6760;
+  /* Orange for text on cream: --or is 2.2:1 there, this is 3.7:1 (large text needs 3:1). */
+  --or-on-cream: #c2560a;
   background: var(--page);
   color: var(--ink);
   font-family: "Funnel Sans", sans-serif;
@@ -29,7 +31,9 @@
   line-height: normal;
 }
 
-.landing a {
+/* `:where` keeps this reset at element specificity, as in the mockup, so a link's own class
+   colour (an orange pill or door's dark text) wins over the inherited one (story 9.5). */
+:where(.landing) a {
   color: inherit;
   text-decoration: none;
 }
@@ -971,7 +975,7 @@
 }
 .l-record em {
   font-style: normal;
-  color: var(--or);
+  color: var(--or-on-cream);
 }
 .l-by {
   margin-top: 28px;
@@ -1022,6 +1026,31 @@
 .l-ghost {
   filter: blur(3px);
   opacity: 0.55;
+}
+/* A ghost fragment's line of "text": its shape, the width of the words it stands for, with no
+   glyphs. Inline-block, so the line keeps the font's line height. */
+.l-gl {
+  display: inline-block;
+  vertical-align: middle;
+  height: 0.6em;
+  border-radius: 0.3em;
+  background: currentColor;
+  opacity: 0.45;
+}
+.l-gl-src {
+  width: 14ch;
+}
+.l-gl-title {
+  width: 10.8em;
+}
+.l-gl-code {
+  width: 26ch;
+}
+.l-gl-nonear {
+  width: 18ch;
+}
+.l-gl-pin {
+  width: 3ch;
 }
 .l-mono {
   font: 13px "Geist Mono";

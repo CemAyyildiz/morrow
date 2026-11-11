@@ -70,4 +70,20 @@ describe("story contrast", () => {
     const border = resolve(/border:\s*1px solid ([^;]+);/.exec(ruleBody(".l-door"))![1]!);
     expect(ratio(border, page)).toBeGreaterThanOrEqual(3);
   });
+
+  it("draws the record line's orange words at least 3:1 on cream (large text)", () => {
+    const cream = declared(".l-record", "background");
+    expect(cream).toBe("#ece9e2");
+    expect(ratio(declared(".l-record em", "color"), cream)).toBeGreaterThanOrEqual(3);
+  });
+
+  // Story 9.5: `.landing a { color: inherit }` outranked `.l-door-or` and `.l-pill-or`, so an
+  // orange door or the nav pill on the solid nav drew light text on orange (2.3:1).
+  it("keeps the link colour reset at element specificity, so class colours win", () => {
+    expect(css).toMatch(/:where\(\.landing\) a \{\s*color: inherit;/);
+    expect(css).not.toMatch(/(^|\})\s*\.landing a\s*\{/m);
+    expect(
+      ratio(declared(".l-pill-or", "color"), declared(".l-pill-or", "background")),
+    ).toBeGreaterThanOrEqual(4.5);
+  });
 });

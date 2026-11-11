@@ -7,6 +7,53 @@ export const clamp = (v: number, a = 0, b = 1) => Math.min(b, Math.max(a, v));
 export const ease = (t: number) => (t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2);
 export const lerp = (a: number, b: number, t: number) => a + (b - a) * t;
 
+/**
+ * Runs `run` once the browser has painted the current frame: a task queued from an animation
+ * frame callback runs after that frame's paint. Returns a function that cancels it.
+ */
+export function afterNextPaint(run: () => void): () => void {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const frame = requestAnimationFrame(() => {
+    timer = setTimeout(run, 0);
+  });
+  return () => {
+    cancelAnimationFrame(frame);
+    if (timer !== undefined) clearTimeout(timer);
+  };
+}
+
+/** How long `afterFirstContentfulPaint` waits for the entry before running anyway. */
+export const FCP_WAIT_MS = 3000;
+
+/**
+ * Runs `run` once the page's first contentful paint has been presented (its `paint` entry),
+ * so a request started here never overlaps that paint. Falls back to the next painted frame
+ * where paint timing is not supported, and runs after `FCP_WAIT_MS` at the latest (a tab
+ * opened in the background paints nothing until shown). Returns a function that cancels it.
+ */
+export function afterFirstContentfulPaint(run: () => void): () => void {
+  if (
+    typeof PerformanceObserver === "undefined" ||
+    !PerformanceObserver.supportedEntryTypes?.includes("paint")
+  ) {
+    return afterNextPaint(run);
+  }
+  let done = false;
+  const observer = new PerformanceObserver((list) => {
+    if (list.getEntriesByName("first-contentful-paint").length > 0) finish(true);
+  });
+  const timer = setTimeout(() => finish(true), FCP_WAIT_MS);
+  function finish(go: boolean) {
+    if (done) return;
+    done = true;
+    observer.disconnect();
+    clearTimeout(timer);
+    if (go) run();
+  }
+  observer.observe({ type: "paint", buffered: true });
+  return () => finish(false);
+}
+
 /** Scroll progress through a sticky track: 0 when its top meets the viewport top, 1 at its end. */
 export function trackProgress(top: number, height: number, viewport: number): number {
   const total = height - viewport;

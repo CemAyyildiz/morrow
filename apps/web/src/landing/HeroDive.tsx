@@ -1,11 +1,11 @@
-import { useMemo, useRef, type MouseEvent, type RefObject } from "react";
-import { preload } from "react-dom";
+import { useEffect, useMemo, useRef, useState, type MouseEvent, type RefObject } from "react";
 import { useAppData } from "@/app/data";
 import { Link } from "@/app/router";
 import { PROOF_PATH } from "@/app/routes";
 import { HERO, HERO_GOLD, HERO_POSTER, HERO_VIDEO } from "./assets";
 import { landingCopy } from "./copy";
 import type { DemoView } from "./demo";
+import { afterFirstContentfulPaint } from "./motion";
 import { Picture } from "./Picture";
 import { DesktopProduct, PhoneProduct } from "./ProductScreen";
 import { useDive, useHeroVideo, type DiveRefs } from "./useDive";
@@ -75,14 +75,19 @@ export function HeroDive({
     [scrollRef, navRef],
   );
 
-  // The mockup preloads both stills: the gold one replaces the scene while zooming. Typed as
-  // AVIF so browsers without it skip the hint instead of fetching twice. Under reduced motion
-  // there is no video, so the gold still never shows and is not preloaded.
-  preload(HERO.avif, { as: "image", type: "image/avif", fetchPriority: "high" });
-  if (!reduced) preload(HERO_GOLD.avif, { as: "image", type: "image/avif" });
+  // The headline paints first, over the stage's sunrise-toned background; the scene still
+  // (high priority) is asked for once that first contentful paint is on screen. The gold still (it replaces the
+  // scene while zooming) and the dawn video wait until the scene has loaded. So on a slow
+  // connection none of the 0.5 to 7 MB of media competes with the headline, the page's LCP
+  // (story 9.5). Under reduced motion there is no video, so the gold still never shows and is
+  // never requested.
+  const [painted, setPainted] = useState(false);
+  useEffect(() => afterFirstContentfulPaint(() => setPainted(true)), []);
+  const [sceneReady, setSceneReady] = useState(false);
+  const onScene = () => setSceneReady(true);
 
   useDive(refs, reduced);
-  useHeroVideo(video, HERO_VIDEO, HERO_POSTER, reduced);
+  useHeroVideo(video, HERO_VIDEO, HERO_POSTER, reduced, sceneReady);
 
   // On phones the X-Ray sits below the fold of the re-flowed product: bring it into view so
   // the attempt can be watched.
@@ -105,8 +110,26 @@ export function HeroDive({
     <div className="l-scroll" ref={scrollRef} data-testid="landing-stage">
       <div className="l-stage">
         <div className="l-world" ref={world}>
-          <Picture image={HERO} alt={t.sceneAlt} ref={scene} fetchPriority="high" />
-          <Picture image={HERO_GOLD} alt="" aria-hidden="true" ref={gold} className="l-gold" />
+          <Picture
+            image={painted ? HERO : null}
+            alt={t.sceneAlt}
+            ref={scene}
+            width={HERO.width}
+            height={HERO.height}
+            fetchPriority="high"
+            decoding="async"
+            onLoad={onScene}
+            onError={onScene}
+          />
+          <Picture
+            image={sceneReady && !reduced ? HERO_GOLD : null}
+            alt=""
+            aria-hidden="true"
+            ref={gold}
+            className="l-gold"
+            width={HERO_GOLD.width}
+            height={HERO_GOLD.height}
+          />
           <video
             ref={video}
             muted
