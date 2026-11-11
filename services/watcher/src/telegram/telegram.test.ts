@@ -19,7 +19,14 @@ import {
 } from "../heartbeat.js";
 import { InMemoryStore } from "../store.js";
 import { TelegramBot } from "./bot.js";
-import { formatAlert, formatBtc, formatTime, SAFETY_FOOTER, type Alert } from "./alerts.js";
+import {
+  alertButtons,
+  formatAlert,
+  formatBtc,
+  formatTime,
+  SAFETY_FOOTER,
+  type Alert,
+} from "./alerts.js";
 import { AlertsHandler, type Sender } from "./handler.js";
 import { CODE_TTL_NS, FileLinkStore, InMemoryLinkStore, type Redeemed } from "./links.js";
 import {
@@ -64,13 +71,61 @@ describe("formatAlert", () => {
     expect(html).toContain("2026-11-03 08:42 UTC");
     expect(html).toContain(SAFETY_FOOTER);
     expect(alert?.buttons).toEqual([
-      { text: "Clawback", url: "https://app.morrow.test/g/7/clawback" },
-      { text: "It was the Owner", url: "https://app.morrow.test/g/7" },
+      { text: "Proof Page", url: "https://app.morrow.test/proof/7" },
+      { text: "How to claw back", url: "https://app.morrow.test/lost" },
     ]);
   });
 
   it("carries no links without a configured app domain", async () => {
     expect((await formatAlert(withdrawal, { appUrl: null }))?.buttons).toEqual([]);
+    expect(alertButtons("", "7", true)).toEqual([]);
+  });
+
+  // The web app has /proof/<vault_id> and /lost; the Guardian screens (/g/...) are not built.
+  it("links only to pages the web app has", async () => {
+    const getOp = async () => ({ amount_sats: "20000", destination: DEST }) as SpendOp;
+    const ctx = { appUrl: "https://app.morrow.test//", getOp };
+    const actionable = [
+      withdrawal,
+      { ...withdrawal, kind: "op_frozen", data: { op_id: "6", kind: "allowance", envelope: null } },
+      {
+        ...withdrawal,
+        kind: "fast_approved",
+        data: { op_id: "4", by: "emma.testnet", executable_at: T },
+      },
+      {
+        ...withdrawal,
+        kind: "policy_change_proposed",
+        data: { change_id: "1", changes: { delay_secs: 60 }, effective_at: T, envelope: "" },
+      },
+    ] as MorrowEvent[];
+    const informational = [
+      { ...withdrawal, kind: "withdrawal_cancelled", data: { op_id: "4", by: "owner.testnet" } },
+      { ...withdrawal, kind: "policy_change_vetoed", data: { change_id: "1", by: "emma.testnet" } },
+      { ...withdrawal, kind: "policy_change_withdrawn", data: { change_id: "1" } },
+      { ...withdrawal, kind: "policy_change_applied", data: { change_id: "1" } },
+      {
+        ...withdrawal,
+        kind: "vault_clawed_back",
+        data: { op_id: "5", by: "emma.testnet", recovery_address: DEST },
+      },
+    ] as MorrowEvent[];
+    for (const event of actionable) {
+      expect((await formatAlert(event, ctx))?.buttons, event.kind).toEqual([
+        { text: "Proof Page", url: "https://app.morrow.test/proof/7" },
+        { text: "How to claw back", url: "https://app.morrow.test/lost" },
+      ]);
+    }
+    for (const event of informational) {
+      expect((await formatAlert(event, ctx))?.buttons, event.kind).toEqual([
+        { text: "Proof Page", url: "https://app.morrow.test/proof/7" },
+      ]);
+    }
+    for (const event of [...actionable, ...informational]) {
+      for (const button of (await formatAlert(event, ctx))?.buttons ?? []) {
+        if ("url" in button) expect(new URL(button.url).pathname).toMatch(/^\/(proof\/\d+|lost)$/);
+      }
+    }
   });
 
   it("alerts on clawbacks and allowance spends but not on signatures", async () => {

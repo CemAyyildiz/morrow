@@ -38,12 +38,32 @@ export function formatBtc(sats: string): string {
   return `${value / 100_000_000n}.${(value % 100_000_000n).toString().padStart(8, "0")} BTC`;
 }
 
+/**
+ * The alert's link buttons, all to pages the web app has: the Vault's Proof Page (its state,
+ * read live from the chain) and, when a Guardian may need to act, the Lost a device page,
+ * which says how a Guardian claws back in this build (`begin_clawback`). There is no one-tap
+ * Guardian screen yet, so no button claims one.
+ */
+export function alertButtons(
+  appUrl: string | null,
+  vaultId: string,
+  actionable: boolean,
+): AlertButton[] {
+  const base = appUrl?.replace(/\/+$/, "");
+  if (!base) return [];
+  const proof: AlertButton = {
+    text: "Proof Page",
+    url: `${base}/proof/${encodeURIComponent(vaultId)}`,
+  };
+  return actionable ? [proof, { text: "How to claw back", url: `${base}/lost` }] : [proof];
+}
+
 function render(
   event: MorrowEvent,
   title: string,
   rows: [string, string][],
   appUrl: string | null,
-  clawback: boolean,
+  actionable: boolean,
 ): Alert {
   const lines = [
     `<i>Morrow · Vault ${escape(event.vault_id)} · ${formatTime(event.block_timestamp)}</i>`,
@@ -53,16 +73,7 @@ function render(
     "",
     escape(SAFETY_FOOTER),
   ];
-  const base = appUrl?.replace(/\/+$/, "");
-  const buttons: AlertButton[] = base
-    ? clawback
-      ? [
-          { text: "Clawback", url: `${base}/g/${event.vault_id}/clawback` },
-          { text: "It was the Owner", url: `${base}/g/${event.vault_id}` },
-        ]
-      : [{ text: "Open vault", url: `${base}/g/${event.vault_id}` }]
-    : [];
-  return { html: lines.join("\n"), buttons };
+  return { html: lines.join("\n"), buttons: alertButtons(appUrl, event.vault_id, actionable) };
 }
 
 /** The Guardian Alert for an event, or null when the event needs no alert. */
