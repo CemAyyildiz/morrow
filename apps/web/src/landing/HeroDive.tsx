@@ -76,11 +76,11 @@ export function HeroDive({
   );
 
   // The headline paints first, over the stage's sunrise-toned background; the scene still
-  // (high priority) is asked for once that first contentful paint is on screen. The gold still (it replaces the
-  // scene while zooming) and the dawn video wait until the scene has loaded. So on a slow
-  // connection none of the 0.5 to 7 MB of media competes with the headline, the page's LCP
-  // (story 9.5). Under reduced motion there is no video, so the gold still never shows and is
-  // never requested.
+  // (high priority) is asked for once that first contentful paint is on screen. The gold
+  // still (it replaces the scene while zooming) and the dawn video wait until the scene has
+  // loaded. So on a slow connection none of the 0.5 to 7 MB of media competes with the
+  // headline, the page's LCP (story 9.5). Under reduced motion there is no video, so the gold
+  // still never shows and is never requested.
   const [painted, setPainted] = useState(false);
   useEffect(() => afterFirstContentfulPaint(() => setPainted(true)), []);
   const [sceneReady, setSceneReady] = useState(false);

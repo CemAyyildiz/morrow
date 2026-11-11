@@ -48,6 +48,7 @@ export function alertButtons(
   appUrl: string | null,
   vaultId: string,
   actionable: boolean,
+  guideLabel = "How to claw back",
 ): AlertButton[] {
   const base = appUrl?.replace(/\/+$/, "");
   if (!base) return [];
@@ -55,7 +56,7 @@ export function alertButtons(
     text: "Proof Page",
     url: `${base}/proof/${encodeURIComponent(vaultId)}`,
   };
-  return actionable ? [proof, { text: "How to claw back", url: `${base}/lost` }] : [proof];
+  return actionable ? [proof, { text: guideLabel, url: `${base}/lost` }] : [proof];
 }
 
 function render(
@@ -73,7 +74,13 @@ function render(
     "",
     escape(SAFETY_FOOTER),
   ];
-  return { html: lines.join("\n"), buttons: alertButtons(appUrl, event.vault_id, actionable) };
+  // A proposed Policy Change is answered with a veto, not a Clawback: a neutral label.
+  const guide =
+    event.kind === "policy_change_proposed" ? "What a Guardian can do" : "How to claw back";
+  return {
+    html: lines.join("\n"),
+    buttons: alertButtons(appUrl, event.vault_id, actionable, guide),
+  };
 }
 
 /** The Guardian Alert for an event, or null when the event needs no alert. */

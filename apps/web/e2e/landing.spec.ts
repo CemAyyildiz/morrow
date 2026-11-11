@@ -277,6 +277,38 @@ test("every request is same-origin and the video is at most 8,000,000 bytes", as
   expect(await scene.evaluate((img: HTMLImageElement) => img.naturalWidth)).toBe(5504);
 });
 
+// Story 9.5: on a slow connection none of the hero's media may compete with the headline.
+test("the hero media waits: the scene after first paint, the gold still and video after the scene", async ({
+  page,
+}) => {
+  await open(page);
+  await expect(page.locator(".l-world video")).toHaveJSProperty("readyState", 4, {
+    timeout: 15_000,
+  });
+  const timing = await page.evaluate(() => {
+    const resources = performance.getEntriesByType("resource") as PerformanceResourceTiming[];
+    const pick = (pattern: RegExp) =>
+      resources
+        .filter((entry) => pattern.test(new URL(entry.name).pathname))
+        .map((entry) => ({ start: entry.startTime, end: entry.responseEnd }));
+    return {
+      fcp: performance.getEntriesByName("first-contentful-paint")[0]?.startTime ?? null,
+      scene: pick(/\/assets\/hero-(?!gold-|poster-)[\w-]+\.avif$/),
+      gold: pick(/\/assets\/hero-gold-[\w-]+\.avif$/),
+      video: pick(/\/assets\/hero-[\w-]+\.mp4$|\/assets\/hero-poster-/),
+    };
+  });
+  expect(timing.scene).toHaveLength(1);
+  const scene = timing.scene[0];
+  if (!scene || timing.fcp === null) throw new Error("no scene request or no FCP entry");
+  expect(scene.start).toBeGreaterThanOrEqual(timing.fcp);
+  expect(timing.gold.length).toBeGreaterThan(0);
+  expect(timing.video.length).toBeGreaterThan(0);
+  for (const later of [...timing.gold, ...timing.video]) {
+    expect(later.start).toBeGreaterThanOrEqual(scene.end);
+  }
+});
+
 test("a missing video is silent: the still carries the scene", async ({ page }) => {
   const errors: string[] = [];
   page.on("pageerror", (error) => errors.push(error.message));
@@ -364,7 +396,8 @@ test.describe("reduced motion", () => {
   test("no video request, a direct cut, a still collage and accordion", async ({ page }, info) => {
     await page.clock.install();
     const requests = await open(page);
-    expect(requests.filter((r) => /\.mp4$|hero-poster/.test(r.url()))).toEqual([]);
+    // No video, and no gold still: it only ever shows while the video plays (story 9.5).
+    expect(requests.filter((r) => /\.mp4$|hero-poster|hero-gold/.test(r.url()))).toEqual([]);
     expect(
       await page.locator(".l-world video").evaluate((v: HTMLVideoElement) => v.currentSrc),
     ).toBe("");

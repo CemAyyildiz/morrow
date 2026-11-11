@@ -67,19 +67,19 @@ export function AppShell({
     <AnnounceContext.Provider value={announce}>
       <div className="flex min-h-dvh flex-col">
         <div inert={menuOpen} className="contents">
-          <a
-            href="#main"
-            onClick={(event) => {
-              event.preventDefault();
-              main.current?.focus();
-            }}
-            className="sr-only focus:not-sr-only focus:fixed focus:top-2 focus:left-2 focus:z-50 focus:inline-flex focus:min-h-11 focus:items-center focus:rounded-full focus:border focus:border-line focus:bg-card-raised focus:px-[18px] focus:text-[14px] focus:font-semibold focus:text-ink"
-          >
-            {copy.skipToContent}
-          </a>
-          {/* The banner landmark: the network strip and the phone bar sit in it, so no content
-              is outside a landmark (story 9.5). */}
+          {/* The banner landmark: the skip link, the network strip and the phone bar sit in it,
+              so no content is outside a landmark and it is never empty (story 9.5). */}
           <header>
+            <a
+              href="#main"
+              onClick={(event) => {
+                event.preventDefault();
+                main.current?.focus();
+              }}
+              className="sr-only focus:not-sr-only focus:fixed focus:top-2 focus:left-2 focus:z-50 focus:inline-flex focus:min-h-11 focus:items-center focus:rounded-full focus:border focus:border-line focus:bg-card-raised focus:px-[18px] focus:text-[14px] focus:font-semibold focus:text-ink"
+            >
+              {copy.skipToContent}
+            </a>
             <TestnetBanner network={config.network} />
             <PhoneBar open={menuOpen} onOpen={openMenu} buttonRef={menuButton} />
           </header>

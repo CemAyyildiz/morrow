@@ -311,6 +311,13 @@ describe("compression", () => {
     expect(head.body.length).toBe(0);
   });
 
+  it("sends a body too small to gain from encoding as it is", async () => {
+    const tiny = await getRaw("/assets/index-abc123.js", { "accept-encoding": "br, gzip" });
+    expect(tiny.headers["content-encoding"]).toBeUndefined();
+    expect(tiny.headers.vary).toBe("accept-encoding");
+    expect(tiny.body.toString()).toBe("console.log(1);");
+  });
+
   it("never encodes media, fonts or a byte range", async () => {
     const video = await getRaw("/assets/hero-aaa111.mp4", { "accept-encoding": "br" });
     expect(video.headers["content-encoding"]).toBeUndefined();

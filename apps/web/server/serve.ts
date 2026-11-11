@@ -187,7 +187,8 @@ export function createWebServer({ config, distDir }: WebServerOptions): Server {
     const vary = { vary: "accept-encoding" };
     if (encoding !== null) {
       const out = await encodedBody(key, encoding, async () => body).catch(() => null);
-      if (out !== null) {
+      // A body too small to gain from encoding goes out as it is.
+      if (out !== null && out.length < body.length) {
         return send(request, response, 200, out, {
           ...extra,
           ...vary,
@@ -248,7 +249,7 @@ export function createWebServer({ config, distDir }: WebServerOptions): Server {
           encoding === null
             ? null
             : await encodedBody(file, encoding, () => readFile(file)).catch(() => null);
-        if (encoding !== null && out !== null) {
+        if (encoding !== null && out !== null && out.length < size) {
           return send(request, response, 200, out, {
             "content-type": contentType,
             "cache-control": cacheControl,
@@ -290,15 +291,26 @@ export function createWebServer({ config, distDir }: WebServerOptions): Server {
     }
   };
 
-  // Encode every text file in dist/ in the background now, so the first visitor does not wait
-  // for maximum-quality brotli on the main bundle.
+  // Encode index.html, /config.json and every text file in dist/ in the background now, one at
+  // a time so requests never queue behind a pile of encodes, and the main bundle is usually
+  // ready before the first visitor asks for it. index.html is served from memory under its
+  // own key, so its file in dist/ is skipped.
   void (async () => {
+    const jobs: [string, () => Promise<Buffer>][] = [
+      ["/index.html", async () => index],
+      ["/config.json", async () => configBody],
+    ];
     const entries = await readdir(root, { recursive: true, withFileTypes: true });
     for (const entry of entries) {
-      if (!entry.isFile() || !COMPRESSIBLE.has(extname(entry.name))) continue;
       const file = join(entry.parentPath, entry.name);
+      const ext = extname(entry.name);
+      if (!entry.isFile() || !COMPRESSIBLE.has(ext) || ext === ".map") continue;
+      if (file === join(root, "index.html")) continue;
+      jobs.push([file, () => readFile(file)]);
+    }
+    for (const [key, load] of jobs) {
       for (const encoding of ["br", "gzip"] as const) {
-        void encodedBody(file, encoding, () => readFile(file)).catch(() => undefined);
+        await encodedBody(key, encoding, load).catch(() => undefined);
       }
     }
   })().catch(() => undefined);

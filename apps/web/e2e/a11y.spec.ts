@@ -43,6 +43,10 @@ for (const path of PUBLIC_PAGES) {
 
   test(`${path}: every image has alt text`, async ({ page }) => {
     await open(page, path);
+    // The hero scene gets its sources (and its alt) after the first paint: check it loaded.
+    if (path === "/") {
+      await expect(page.locator(".l-world img").first()).toHaveAttribute("src", /\/assets\//);
+    }
     const images = await page.locator("img").evaluateAll((all) =>
       all.map((img) => ({
         alt: img.getAttribute("alt"),

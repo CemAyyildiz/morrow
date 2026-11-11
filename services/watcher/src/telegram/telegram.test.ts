@@ -111,9 +111,11 @@ describe("formatAlert", () => {
       },
     ] as MorrowEvent[];
     for (const event of actionable) {
+      const guide =
+        event.kind === "policy_change_proposed" ? "What a Guardian can do" : "How to claw back";
       expect((await formatAlert(event, ctx))?.buttons, event.kind).toEqual([
         { text: "Proof Page", url: "https://app.morrow.test/proof/7" },
-        { text: "How to claw back", url: "https://app.morrow.test/lost" },
+        { text: guide, url: "https://app.morrow.test/lost" },
       ]);
     }
     for (const event of informational) {
