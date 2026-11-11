@@ -80,7 +80,9 @@ export function HeroDive({
   // still (it replaces the scene while zooming) and the dawn video wait until the scene has
   // loaded. So on a slow connection none of the 0.5 to 7 MB of media competes with the
   // headline, the page's LCP (story 9.5). Under reduced motion there is no video, so the gold
-  // still never shows and is never requested.
+  // still never shows and is never requested. The three product layers (all transparent and
+  // absolutely placed until the dive shows one) also wait for that paint, so the first render
+  // on a slow CPU is the headline alone.
   const [painted, setPainted] = useState(false);
   useEffect(() => afterFirstContentfulPaint(() => setPainted(true)), []);
   const [sceneReady, setSceneReady] = useState(false);
@@ -142,7 +144,7 @@ export function HeroDive({
           <div className="l-dim" ref={dim} />
           <div className="l-screen" ref={screen} aria-hidden="true" inert>
             <div className="l-app" ref={screenApp}>
-              <DesktopProduct demo={demo} />
+              {painted && <DesktopProduct demo={demo} />}
             </div>
           </div>
         </div>
@@ -156,7 +158,9 @@ export function HeroDive({
           data-testid="landing-crisp"
         >
           <div className="l-app" ref={crispApp}>
-            <DesktopProduct demo={demo} onTry={onTry} onDownload={onDownload} tryRef={crispTry} />
+            {painted && (
+              <DesktopProduct demo={demo} onTry={onTry} onDownload={onDownload} tryRef={crispTry} />
+            )}
           </div>
         </div>
         <div
@@ -166,7 +170,9 @@ export function HeroDive({
           aria-label={productLabel}
           data-testid="landing-mobview"
         >
-          <PhoneProduct demo={demo} onTry={tryOnPhone} onDownload={onDownload} tryRef={mobTry} />
+          {painted && (
+            <PhoneProduct demo={demo} onTry={tryOnPhone} onDownload={onDownload} tryRef={mobTry} />
+          )}
         </div>
         <div className="l-headline" ref={headline}>
           <h1>{t.title}</h1>
