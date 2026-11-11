@@ -6,7 +6,7 @@ Morrow is a time-lock vault for Bitcoin that works today, with no soft fork, no 
 
 ## Verify it in five minutes
 
-Each check reads public data or runs this repository. The lock check and the CI log take a minute each; `make demo` takes about 15.
+Each check reads public data or runs this repository. The `curl` lock checks and the CI log fit in five minutes; `make wasm` and `make demo` (about 15 minutes) take longer.
 
 **1. The Vault Contract is locked.** The testnet deployment `morrow-vault-v1.testnet` and the mainnet deployment `morrow-vault.near` have no access keys, so nobody, the builder included, can replace their code. Check it with nothing installed:
 
@@ -15,7 +15,14 @@ curl -s https://rpc.testnet.fastnear.com -H 'content-type: application/json' -d 
 curl -s https://rpc.mainnet.fastnear.com -H 'content-type: application/json' -d '{"jsonrpc":"2.0","id":1,"method":"query","params":{"request_type":"view_access_key_list","finality":"final","account_id":"morrow-vault.near"}}'
 ```
 
-Each returns `"keys":[]`. With `"request_type":"view_account"`, both return `"code_hash":"3JwGeYBT3FQjyNDhcQ86sTjCEcix2KuTJPePzGxRefsZ"`. To check that this hash is the code in this repository, build it in the pinned Docker image and compare (after `pnpm install --frozen-lockfile`):
+Each returns `"keys":[]`. The Vault Contract has no method that deploys code, deletes its account or adds an access key (there is no `deploy_contract`, `delete_account`, `add_*_key` or `delete_key` call in `contracts/vault/src`), so with no keys its code and config are fixed. The same call with `"request_type":"view_account"` reads the deployed code:
+
+```sh
+curl -s https://rpc.testnet.fastnear.com -H 'content-type: application/json' -d '{"jsonrpc":"2.0","id":1,"method":"query","params":{"request_type":"view_account","finality":"final","account_id":"morrow-vault-v1.testnet"}}'
+curl -s https://rpc.mainnet.fastnear.com -H 'content-type: application/json' -d '{"jsonrpc":"2.0","id":1,"method":"query","params":{"request_type":"view_account","finality":"final","account_id":"morrow-vault.near"}}'
+```
+
+Both return `"code_hash":"3JwGeYBT3FQjyNDhcQ86sTjCEcix2KuTJPePzGxRefsZ"`. To check that this hash is the code in this repository, build it in the pinned Docker image and compare (after `pnpm install --frozen-lockfile`):
 
 ```sh
 make wasm
@@ -25,21 +32,11 @@ pnpm --filter @morrow/deploy start verify --account morrow-vault.near --network 
 
 Each ends `Deployment verified: 1 account(s), code_hash 3JwGeYBT3FQjyNDhcQ86sTjCEcix2KuTJPePzGxRefsZ, locked`. More in [Verify the deployment](#verify-the-deployment).
 
-**2. Every Scenario passes.** [`make demo`](#run-the-demo) (about 15 minutes, no funds or keys) runs Scenarios S-1 to S-7 against `morrow-vault-v1.testnet` and the live testnet MPC signer. Each ends with one line, and all seven pass:
+**2. Every Scenario passes.** [`make demo`](#run-the-demo) (about 15 minutes, no funds or keys) runs Scenarios S-1 to S-7 against `morrow-vault-v1.testnet` and the live testnet MPC signer, and all seven end in PASS. The exact expected lines are in the [Scenarios](#scenarios) table, which CI checks against the `make demo` log.
 
-```text
-S-1 Create PASS
-S-2 Withdraw after Delay PASS
-S-3 Thief and Clawback PASS
-S-4 Duress PASS
-S-5 Escape PASS
-S-6 Policy Change PASS
-S-7 Fast Approval PASS
-```
+**3. CI ran it too.** In [CI run 42989446444](https://github.com/CemAyyildiz/morrow/actions/runs/42989446444) (2026-11-11, commit `547931f`), the "Regtest integration and Judge Mode" job ran `make demo` against `morrow-vault-v1.testnet`, printed S-1 to S-7 PASS between 08:45 and 08:51 UTC, and then `Judge Mode log has all 16 README lines: OK`. Those 16 lines are every Judge Mode log line this README quotes (the Scenarios table's expected and progress lines and the S-3 excerpt), checked by `.github/scripts/check-readme.mjs`.
 
-**3. CI ran it too.** In [CI run 42989446444](https://github.com/CemAyyildiz/morrow/actions/runs/42989446444) (2026-11-11, commit `547931f`), the "Regtest integration and Judge Mode" job ran `make demo` against `morrow-vault-v1.testnet`, printed those seven lines between 08:45 and 08:51 UTC, and then `Judge Mode log has all 16 README lines: OK`.
-
-**4. Read it in the browser.** The web app reads the same contract live. X-Ray at `/xray/30` shows that CI run's Withdrawal 30, with its signature stage reading "Signed by the NEAR MPC network (11 of 16)". The Proof Page at `/proof/33` shows that run's Vault 33 with the contract's `code_hash` and "Locked: no full-access keys". `/lost` says what to do after losing a device. There is no hosted link yet; [Read it in the browser](#read-it-in-the-browser) runs it locally with two commands.
+**4. Read it in the browser.** The web app reads the same contract live. X-Ray at `/xray/30` shows that CI run's Withdrawal 30, with its signature stage reading "Signed by the NEAR MPC network (11 of 16)". Its fourth stage, the Bitcoin transaction, is expected to read "The Bitcoin transaction could not be read", because the transaction confirmed on CI's own regtest node (details in [Read it in the browser](#read-it-in-the-browser)). The Proof Page at `/proof/33` shows that run's Vault 33 with the contract's `code_hash` and "Locked: no full-access keys". `/lost` says what to do after losing a device. There is no hosted link yet; [Read it in the browser](#read-it-in-the-browser) runs it locally with two commands.
 
 ## Run the demo
 
@@ -182,7 +179,7 @@ What Morrow guarantees:
 
 What you trust:
 
-1. **T-1** NEAR's MPC network (16 participants, threshold 11, as read from `v1.signer-prod.testnet`'s `state` view on 2026-11-04) signs only what the Vault Contract requests and stays live. If it stops, G-3 still holds.
+1. **T-1** NEAR's MPC network (16 participants, threshold 11, as read from `v1.signer-prod.testnet`'s `state` view on 2026-11-04; the mainnet signer `v1.signer` has the same 16 participants and threshold 11, as read from its `state` view on 2026-11-11) signs only what the Vault Contract requests and stays live. If it stops, G-3 still holds.
 2. **T-2** The Vault Contract code is correct. It is open source here, unit-tested and run end to end on regtest. The web app's Proof Page (`/proof/<id>`) reads the deployed code hash and the lock from NEAR; it has no hosted link yet, so [run it locally](#read-it-in-the-browser).
 3. **T-3** A Guardian and the MPC network do not collude. This is the one theft path: together they could sign a Clawback Path spend to any address.
 4. **T-4** The Owner keeps the Recovery Address key offline.
@@ -196,7 +193,7 @@ The testnet deployment, `morrow-vault-v1.testnet`, and the mainnet deployment, `
 
 ## Verify the deployment
 
-A locked Vault Contract account has no access keys at all, so nobody, the builder included, can replace its code, delete it, or sign anything as the contract. `tools/deploy verify` checks that from public NEAR data; the verifier needs no keys and no NEAR of their own. The locked testnet deployment is `morrow-vault-v1.testnet` (lock transaction `26q8SS3xT6NhYPJwcMfJge9NkN3p2k3kqpP9Qy5bQ16g`). The locked mainnet deployment is `morrow-vault.near` (deploy transaction `3T7WshZqKbjaKE7h27zoJyPG3CmLoJcZfSXZn83rAbj8`, lock transaction `y6DYezBSgEBqfT1F3evJgk3NjqU3sqwm8DBWmmVoqnY`): the MPC signer `v1.signer`, `bitcoin` only, and a creator allowlist of one account, `00785c6304a08920dff8174f8fb72bfbe28c39357d6715f53f20c6a1d6e52737`, so only that account can create a mainnet Vault.
+A locked Vault Contract account has no access keys at all, so nobody, the builder included, can replace its code, delete it, or sign anything as the contract. `tools/deploy verify` checks that from public NEAR data; the verifier needs no keys and no NEAR of their own. The locked testnet deployment is `morrow-vault-v1.testnet` (lock transaction `26q8SS3xT6NhYPJwcMfJge9NkN3p2k3kqpP9Qy5bQ16g`). The locked mainnet deployment is `morrow-vault.near` (deploy transaction `3T7WshZqKbjaKE7h27zoJyPG3CmLoJcZfSXZn83rAbj8`, lock transaction `y6DYezBSgEBqfT1F3evJgk3NjqU3sqwm8DBWmmVoqnY`): the MPC signer `v1.signer`, `bitcoin` only, and a creator allowlist of one account, `00785c6304a08920dff8174f8fb72bfbe28c39357d6715f53f20c6a1d6e52737`, the builder's NEAR implicit account. `tools/deploy` requires a creator allowlist on mainnet, so only that account can create a mainnet Vault.
 
 ```sh
 pnpm install --frozen-lockfile
@@ -254,7 +251,14 @@ BitVault sells spend delays by subscription, which shows people pay for this. Mo
 
 ## What is not done yet
 
-Against the older `morrow-vault-dev3.testnet`, which predates Policy Changes and Fast Approval, S-6 and S-7 end in a SKIP. There is no Duress PIN or Duress Session UI yet (Story 8.1): S-4 checks the duress-mode labels that core-ts gives such a client. The Guardian Watcher's Telegram alerts for Fast Approval ("fast-approved by" a Guardian, and a possible-duress alert to Trusted Contacts only) are not built yet (Story 8.5b). The hosted link to the demo Vault's Proof Page, the hosted live demo, the Rob This Vault recording, the demo video and the Mainnet Bounty come with their own stories and are not claimed here. No live Rob This Vault round has run on signet yet. `make demo` has no fallback to a mock signer: it always uses the live testnet MPC signer, and a Scenario that needs a signature cannot pass while that signer is down. X-Ray cannot read a regtest Bitcoin transaction, because there is no public regtest Bitcoin backend. The locked mainnet Vault Contract, `morrow-vault.near`, is deployed, but no mainnet Vault holding real bitcoin is claimed here, and the contract has had no independent security audit.
+- Against the older `morrow-vault-dev3.testnet`, which predates Policy Changes and Fast Approval, S-6 and S-7 end in a SKIP.
+- There is no Duress PIN or Duress Session UI yet (Story 8.1): S-4 checks the duress-mode labels that core-ts gives such a client.
+- The Guardian Watcher's Telegram alerts for Fast Approval ("fast-approved by" a Guardian, and a possible-duress alert to Trusted Contacts only) are not built yet (Story 8.5b).
+- The hosted link to the demo Vault's Proof Page, the hosted live demo, the Rob This Vault recording, the demo video and the Mainnet Bounty come with their own stories and are not claimed here.
+- No live Rob This Vault round has run on signet yet.
+- Against the default `morrow-vault-v1.testnet`, `make demo` uses the live testnet MPC signer, with no fallback to a mock signer: a Scenario that needs a signature cannot pass while that signer is down.
+- X-Ray cannot read a regtest Bitcoin transaction, because there is no public regtest Bitcoin backend.
+- The locked mainnet Vault Contract, `morrow-vault.near`, is deployed, but no mainnet Vault holding real bitcoin is claimed here, and the contract has had no independent security audit.
 
 ## Repository layout
 
@@ -269,7 +273,7 @@ Against the older `morrow-vault-dev3.testnet`, which predates Policy Changes and
 | `tools/judge`           | Judge Mode Scenario runner (`make demo`)                                                              |
 | `tools/challenge`       | Rob This Vault and Mainnet Bounty operator tooling                                                    |
 | `tools/deploy`          | Vault Contract build, deploy, lock and verify tooling                                                 |
-| `infra/`                | Docker Compose (regtest) and Google Cloud deployment                                                  |
+| `infra/`                | Docker Compose for the local Bitcoin regtest node                                                     |
 | `evidence/`             | Reserved for machine-readable run evidence; empty so far                                              |
 
 ## Development
