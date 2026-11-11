@@ -50,21 +50,27 @@ export function parseConfig(body: unknown): BaseConfig | null {
   if (!isRecord(body)) return null;
   const { near_network, vault_contract, near_rpc_url, btc_network, btc_backend_url, watcher_url } =
     body;
-  // Older servers did not write the challenge feed or the bounty link: missing reads as unset.
+  // Older servers did not write the challenge feed, the bounty link or X-Ray's archival RPC and
+  // tx indexer: missing reads as unset.
   const challenge_url = body.challenge_url ?? null;
   const bounty_url = body.bounty_url ?? null;
+  const near_archival_rpc_url = body.near_archival_rpc_url ?? null;
+  const near_tx_indexer_url = body.near_tx_indexer_url ?? null;
   if (!NEAR_NETWORKS.includes(near_network as NearNetwork)) return null;
   if (!BTC_NETWORKS.includes(btc_network as BtcNetwork)) return null;
   if (typeof vault_contract !== "string" || vault_contract === "") return null;
   if (!isUrl(btc_backend_url)) return null;
   if (!isUrlOrNull(near_rpc_url) || !isUrlOrNull(watcher_url)) return null;
   if (!isUrlOrNull(challenge_url)) return null;
+  if (!isUrlOrNull(near_archival_rpc_url) || !isUrlOrNull(near_tx_indexer_url)) return null;
   if (bounty_url !== null && !isWebUrl(bounty_url)) return null;
   const near = near_network as NearNetwork;
   return {
     network: { btc: btc_network as BtcNetwork, near },
     contractId: vault_contract,
     nearRpcUrl: near_rpc_url,
+    nearArchivalRpcUrl: near_archival_rpc_url,
+    nearTxIndexerUrl: near_tx_indexer_url,
     btcBackendUrl: btc_backend_url,
     watcherUrl: watcher_url,
     challengeUrl: challenge_url,

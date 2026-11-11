@@ -49,6 +49,8 @@ test.describe("security headers", () => {
       near_network: "testnet",
       vault_contract: "vault.morrow.testnet",
       near_rpc_url: RPC_URL,
+      near_archival_rpc_url: RPC_URL,
+      near_tx_indexer_url: `${RPC_URL}/fastnear`,
       btc_network: "signet",
       btc_backend_url: BACKEND_URL,
       watcher_url: WATCHER_URL,
@@ -68,7 +70,17 @@ test.describe("security headers", () => {
 });
 
 test.describe("no CSP violation on load", () => {
-  for (const path of ["/", "/challenge", "/vault", "/proof", "/proof/7", "/g/1", "/nope"]) {
+  for (const path of [
+    "/",
+    "/challenge",
+    "/vault",
+    "/proof",
+    "/proof/7",
+    "/xray",
+    "/xray/7",
+    "/g/1",
+    "/nope",
+  ]) {
     test(path, async ({ page }) => {
       const violations: string[] = [];
       page.on("console", (message) => {

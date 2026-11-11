@@ -54,9 +54,12 @@ describe("@morrow/core-ts/browser", () => {
     ]);
     for (const specifier of bare) expect(packageOf(specifier)).toMatch(ALLOWED_PACKAGES);
     expect(modules.sort()).toEqual([
+      "bitcoin/backend.ts",
       "bitcoin/browser-address.ts",
       "bitcoin/browser-script.ts",
+      "bitcoin/browser-txid.ts",
       "browser.ts",
+      "contract/client.ts",
       "contract/errors.ts",
       "contract/events.ts",
       "contract/policy.ts",
@@ -66,6 +69,7 @@ describe("@morrow/core-ts/browser", () => {
       "crypto/hex.ts",
       "crypto/link-request.ts",
       "near/browser-tx.ts",
+      "xray/build.ts",
       "xray/failure.ts",
       "xray/links.ts",
       "xray/ports.ts",
@@ -198,5 +202,17 @@ describe("@morrow/core-ts/browser", () => {
       "OP_IF",
       "OP_ENDIF",
     ]);
+  });
+
+  it("exports X-Ray's assembly for the X-Ray page", () => {
+    expect(typeof browser.buildXRay).toBe("function");
+    expect(new browser.FetchNearRpc("https://archival.example", fetch)).toBeInstanceOf(
+      browser.FetchNearRpc,
+    );
+    expect(new browser.FastNearLocator({ network: "testnet" })).toBeInstanceOf(
+      browser.FastNearLocator,
+    );
+    expect(new browser.XRayInputError("x")).toBeInstanceOf(Error);
+    expect(browser.RECEIPTS_UNAVAILABLE).toBe("receipts unavailable");
   });
 });

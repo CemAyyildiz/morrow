@@ -30,6 +30,7 @@ import { copy } from "@/copy";
 import { absoluteTime, nsToMs, type FeedEntry, type WithdrawalEntry } from "./challenge";
 import type { ChallengeKeys, NearNetwork, RowLink } from "./data";
 import { REQUEST_TIMEOUT_MS, withTimeout } from "./live";
+import { xrayOpPath, xrayTxPath } from "./xray-paths";
 
 /** Gas of both calls: the contract client's default for these methods. */
 export const TRY_GAS = 30_000_000_000_000n;
@@ -428,6 +429,8 @@ export function tryReducer(state: TryState, event: TryEvent): TryState {
 /** Everything the session needs from the deployment and the feed. */
 export interface TryInputs {
   keys: ChallengeKeys;
+  /** The deployment's Vault Contract: the X-Ray page reads only it. */
+  contractId: string;
   /** The parsed published key; null when it cannot be read. */
   key: NearKey | null;
   btc: CoreBtcNetwork;
@@ -464,7 +467,8 @@ export interface TryView {
   /** The latest attempt's id: a new attempt is announced even with the same words. */
   attemptId: number | null;
   steps: readonly XRayStep[];
-  links: { near: RowLink | null; bitcoin: RowLink | null };
+  /** `xray`: the attempt's full X-Ray page (a new tab), once there is something to show. */
+  links: { near: RowLink | null; bitcoin: RowLink | null; xray: RowLink | null };
   /** The latest step that lit (or the notice), for the polite live region. */
   announcement: string;
   /** Step 4 is counting seconds: the page ticks its clock every second. */
@@ -737,6 +741,22 @@ export function tryView(state: TryState, inputs: TryInputs, now: number): TryVie
       ? { href: nearTxUrl(inputs.near, attempt.hash), text: t.links.near, label: t.links.nearLabel }
       : null;
 
+  // The full X-Ray: the accepted request's op, or the refused call, on this deployment's contract.
+  let xrayHref: string | null = null;
+  if (
+    attempt !== null &&
+    inputs.near !== "mock" &&
+    inputs.keys.vault_contract === inputs.contractId
+  ) {
+    if (outcome?.kind === "accepted" && attempt.action === "request" && outcome.opId !== null) {
+      xrayHref = xrayOpPath(outcome.opId);
+    } else if (outcome?.kind === "refused" && outcome.onChain && attempt.hash !== null) {
+      xrayHref = xrayTxPath(attempt.hash, inputs.keys.owner_account);
+    }
+  }
+  const xrayLink: RowLink | null =
+    xrayHref === null ? null : { href: xrayHref, text: t.links.xray, label: t.links.xrayLabel };
+
   const lit = steps.filter(
     (step) => step.state === "done" || step.state === "refused" || step.state === "ok",
   );
@@ -760,7 +780,7 @@ export function tryView(state: TryState, inputs: TryInputs, now: number): TryVie
     started: attempt !== null,
     attemptId: attempt?.id ?? null,
     steps,
-    links: { near: nearLink, bitcoin: bitcoinLink },
+    links: { near: nearLink, bitcoin: bitcoinLink, xray: xrayLink },
     announcement,
     waiting,
   };

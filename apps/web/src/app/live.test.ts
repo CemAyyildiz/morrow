@@ -5,6 +5,8 @@ const CONFIG = {
   near_network: "testnet",
   vault_contract: "vault.morrow.testnet",
   near_rpc_url: "https://rpc.testnet.near.org",
+  near_archival_rpc_url: "https://archival-rpc.testnet.fastnear.com",
+  near_tx_indexer_url: "https://tx.test.fastnear.com",
   btc_network: "signet",
   btc_backend_url: "https://mempool.space/signet/api",
   watcher_url: "https://watcher.example.org",
@@ -30,6 +32,8 @@ describe("parseConfig", () => {
       network: { btc: "signet", near: "testnet" },
       contractId: "vault.morrow.testnet",
       nearRpcUrl: "https://rpc.testnet.near.org",
+      nearArchivalRpcUrl: "https://archival-rpc.testnet.fastnear.com",
+      nearTxIndexerUrl: "https://tx.test.fastnear.com",
       btcBackendUrl: "https://mempool.space/signet/api",
       watcherUrl: "https://watcher.example.org",
       challengeUrl: "https://challenge.example.org",
@@ -44,11 +48,18 @@ describe("parseConfig", () => {
     expect(parseConfig({ ...CONFIG, bounty_url: "https://bounty.example.org" })?.bountyUrl).toBe(
       "https://bounty.example.org",
     );
-    // A server from before the challenge feed: both read as unset.
+    // A server from before the challenge feed and X-Ray: all read as unset.
     const older: Record<string, unknown> = { ...CONFIG };
     delete older.challenge_url;
     delete older.bounty_url;
-    expect(parseConfig(older)).toMatchObject({ challengeUrl: null, bountyUrl: null });
+    delete older.near_archival_rpc_url;
+    delete older.near_tx_indexer_url;
+    expect(parseConfig(older)).toMatchObject({
+      challengeUrl: null,
+      bountyUrl: null,
+      nearArchivalRpcUrl: null,
+      nearTxIndexerUrl: null,
+    });
   });
 
   it.each([
@@ -62,6 +73,8 @@ describe("parseConfig", () => {
     { ...CONFIG, near_rpc_url: "not a url" },
     { ...CONFIG, watcher_url: 7 },
     { ...CONFIG, challenge_url: "not a url" },
+    { ...CONFIG, near_archival_rpc_url: "not a url" },
+    { ...CONFIG, near_tx_indexer_url: 7 },
     { ...CONFIG, bounty_url: "javascript:alert(1)" },
   ])("rejects %j", (body) => {
     expect(parseConfig(body)).toBeNull();

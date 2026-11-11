@@ -174,6 +174,10 @@ async function expectVaultSeven(page: Page) {
   await expect(pending.getByTestId("proof-withdrawal")).toContainText(
     "Withdrawal #3 · 0.0006 sBTC · executable 13 Nov 08:02",
   );
+  await expect(pending.getByRole("link", { name: "X-Ray of op 3" })).toHaveAttribute(
+    "href",
+    "/xray/3",
+  );
   await expect(pending.getByTestId("proof-change")).toHaveText(
     `Policy Change #${CHANGE.change_id} · Recovery Address → ${PROOF_NEW_RECOVERY} · effective 19 Nov 08:00`,
   );

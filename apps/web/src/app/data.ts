@@ -35,6 +35,10 @@ export interface AppConfig {
   contractId: string;
   /** NEAR JSON-RPC endpoint; null for the mock contract without one. */
   nearRpcUrl: string | null;
+  /** X-Ray's archival NEAR RPC (old transactions, views, blocks); null on the mock contract. */
+  nearArchivalRpcUrl: string | null;
+  /** X-Ray's NEAR transaction indexer (FastNEAR tx API); null on the mock contract. */
+  nearTxIndexerUrl: string | null;
   btcBackendUrl: string;
   /** Watcher base URL; its heartbeat is `<watcherUrl>/heartbeat`. */
   watcherUrl: string | null;

@@ -1,5 +1,5 @@
-import { Transaction } from "bitcoinjs-lib";
 import type { BitcoinBackend } from "../bitcoin/backend.js";
+import { txidOf } from "../bitcoin/browser-txid.js";
 import type { ContractClient } from "../contract/client.js";
 import { EVENTS_SINCE_MAX_LIMIT } from "../contract/client.js";
 import { ERROR_CODES, MorrowContractError, parseContractError } from "../contract/errors.js";
@@ -571,7 +571,7 @@ class Context {
     if (op.unsigned_tx_hex === null) return notReached.bitcoin();
     let txid: Hex;
     try {
-      txid = Transaction.fromHex(op.unsigned_tx_hex).getId();
+      txid = txidOf(op.unsigned_tx_hex);
     } catch (error) {
       this.log(`X-Ray: unsigned_tx_hex of op ${op.op_id} does not parse`, error);
       return { ...notReached.bitcoin(), status: "failed" };
@@ -581,7 +581,10 @@ class Context {
       status: "pending",
       txid: sourced(
         txid,
-        at(this.opRef(op.op_id), "unsigned_tx_hex (txid = Transaction.fromHex(hex).getId())"),
+        at(
+          this.opRef(op.op_id),
+          "unsigned_tx_hex (txid = double SHA-256 of the tx without witnesses, reversed)",
+        ),
         url,
       ),
       confirmations: null,

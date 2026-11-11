@@ -19,9 +19,10 @@ import {
   type ProofFacts,
   type Statement,
 } from "@/app/proof";
-import { useRouter } from "@/app/router";
+import { Link, useRouter } from "@/app/router";
 import { proofPath } from "@/app/routes";
 import { useProof } from "@/app/useProof";
+import { xrayOpPath } from "@/app/xray-paths";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardDescription, CardTitle } from "@/components/ui/card";
@@ -245,6 +246,16 @@ function ProofBody({ facts, now, config }: { facts: ProofFacts; now: number; con
                         <Badge variant="alarm" data-testid="proof-due">
                           {p.due}
                         </Badge>
+                      )}
+                      {near !== "mock" && (
+                        <Link
+                          to={xrayOpPath(op.opId)}
+                          aria-label={p.xrayLabel(op.opId)}
+                          data-testid="proof-xray"
+                          className="inline-flex min-h-11 items-center text-[13px] text-muted underline decoration-line underline-offset-4 hover:text-ink"
+                        >
+                          {p.xray}
+                        </Link>
                       )}
                     </div>
                     {op.destination !== "" && (

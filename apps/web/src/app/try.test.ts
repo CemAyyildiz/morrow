@@ -53,6 +53,7 @@ const OUTPOINTS = [{ txid: "aa".repeat(32), vout: 0, value_sats: "1000000" }];
 function inputs(over: Partial<TryInputs> = {}): TryInputs {
   return {
     keys: KEYS,
+    contractId: KEYS.vault_contract,
     key: KEY,
     btc: "signet",
     near: "testnet",
@@ -299,6 +300,15 @@ describe("Try with these keys: full balance", () => {
     expect(view.waiting).toBe(true);
     expect(view.links.near?.href).toBe(`https://testnet.nearblocks.io/txns/${hashes[0]}`);
     expect(view.links.bitcoin).toBeNull();
+    // The full X-Ray of the accepted request's op.
+    expect(view.links.xray).toEqual({
+      href: "/xray/501",
+      text: "Full X-Ray",
+      label: "Full X-Ray of this attempt, in a new tab",
+    });
+    // Not for a round on another contract than the deployment's, nor on the mock contract.
+    expect(tryView(state, inputs({ contractId: "other.testnet" }), NOW).links.xray).toBeNull();
+    expect(tryView(state, inputs({ near: "mock" }), NOW).links.xray).toBeNull();
     expect(view.announcement).toBe("Contract rule: Accepted · executable at 4 Nov 09:30");
     // The own request holds the coins: another one would only meet ERR_OUTPOINT_RESERVED.
     expect(view.request).toEqual({
@@ -355,6 +365,7 @@ describe("Try with these keys: full balance", () => {
     expect(view.request.enabled).toBe(true);
     expect(view.steps.map((s) => s.state)).toEqual(["pending", "pending", "pending", "pending"]);
     expect(view.links.near).toBeNull();
+    expect(view.links.xray).toBeNull();
   });
 
   it("a result that cannot be read leaves the steps pending and says so", async () => {
@@ -662,6 +673,10 @@ describe("Try with these keys: Early Execute", () => {
       /^Refused · ERR_NOT_EXECUTABLE · The Delay has not passed/,
     );
     expect(view.announcement).toMatch(/^Contract rule: Refused · ERR_NOT_EXECUTABLE/);
+    // The full X-Ray of the refused call, naming its signer so the page need not wait for the indexer.
+    const hash = state.attempt?.hash ?? "";
+    expect(hash).not.toBe("");
+    expect(view.links.xray?.href).toBe(`/xray/tx/${hash}?sender=r7.challenge.testnet`);
   });
 
   it("an accepted Execute says so and waits on the MPC step, with no endless counter", async () => {

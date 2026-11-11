@@ -5,10 +5,11 @@ import { normalizePath } from "./router";
 import { NAV_ROUTES, REDIRECTS, resolveRoute } from "./routes";
 
 describe("route resolution", () => {
-  it("resolves / to the landing; the only redirect is /rob to /challenge", () => {
+  it("resolves / to the landing; the redirects are /rob to /challenge and /x-ray to /xray", () => {
     expect(resolveRoute("/")).toEqual({ kind: "landing" });
     expect(resolveRoute("")).toEqual({ kind: "landing" });
-    expect(REDIRECTS).toEqual({ "/rob": "/challenge" });
+    expect(REDIRECTS).toEqual({ "/rob": "/challenge", "/x-ray": "/xray" });
+    expect(resolveRoute("/x-ray")).toEqual({ kind: "redirect", to: "/xray" });
     expect(resolveRoute("/rob")).toEqual({ kind: "redirect", to: "/challenge" });
     expect(resolveRoute("/rob/")).toEqual({ kind: "redirect", to: "/challenge" });
   });
@@ -20,7 +21,7 @@ describe("route resolution", () => {
       "/guardians",
       "/policy",
       "/proof",
-      "/x-ray",
+      "/xray",
     ]);
   });
 
@@ -30,7 +31,7 @@ describe("route resolution", () => {
     ["/guardians", "guardians", "Guardians"],
     ["/policy", "policy", "Policy"],
     ["/proof", "proof", "Proof"],
-    ["/x-ray", "xray", "X-Ray"],
+    ["/xray", "xray", "X-Ray"],
     ["/challenge/", "challenge", "Challenge vault"],
   ])("resolves %s to the %s item", (path, id, title) => {
     const resolved = resolveRoute(path);
@@ -39,6 +40,32 @@ describe("route resolution", () => {
       expect(resolved.route.id).toBe(id);
       expect(resolved.route.title).toBe(title);
     }
+  });
+
+  it("resolves /xray/<op_id> and /xray/tx/<hash> to the X-Ray item, shareable", () => {
+    const hash = "2FWpHLw9foW3pLviW8qocbit61ygroWotrPx8kuEv5qD";
+    const op = resolveRoute("/xray/25");
+    expect(op).toMatchObject({ kind: "nav", xray: { kind: "op", opId: "25" } });
+    if (op.kind === "nav") expect(op.route.id).toBe("xray");
+    expect(resolveRoute(`/xray/tx/${hash}`)).toMatchObject({
+      kind: "nav",
+      xray: { kind: "tx", hash },
+    });
+    expect(resolveRoute("/xray")).toMatchObject({ kind: "nav" });
+    expect(resolveRoute("/xray").kind === "nav" && "xray" in resolveRoute("/xray")).toBe(false);
+    // `/xray/007` is op 7: the address bar is rewritten to `/xray/7`.
+    expect(resolveRoute("/xray/007")).toEqual({ kind: "redirect", to: "/xray/7" });
+    expect(resolveRoute("/xray/0")).toMatchObject({ kind: "nav", xray: { opId: "0" } });
+  });
+
+  it.each([
+    "/xray/abc",
+    "/xray/tx/not-a-hash",
+    "/xray/tx/0OIl0OIl0OIl0OIl0OIl0OIl0OIl0OIl0OIl0OIl0OI",
+    "/xray/99999999999999999999",
+    "/xray/7/extra",
+  ])("resolves %s to not found", (path) => {
+    expect(resolveRoute(path)).toEqual({ kind: "not-found", path });
   });
 
   it.each(["/g/7/clawback", "/nope", "/Challenge", "/challenge/extra"])(

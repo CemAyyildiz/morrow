@@ -8,6 +8,8 @@ export const sampleConfig: AppConfig = {
   network: { btc: "signet", near: "testnet" },
   contractId: "challenge.morrow.testnet",
   nearRpcUrl: null,
+  nearArchivalRpcUrl: null,
+  nearTxIndexerUrl: null,
   btcBackendUrl: "http://localhost:3002",
   watcherUrl: null,
   challengeUrl: null,

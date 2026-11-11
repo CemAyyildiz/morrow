@@ -1,8 +1,8 @@
 import { expect, test, type Locator, type Page, type Request } from "@playwright/test";
 import { BACKEND_URL, RPC_URL, WATCHER_URL } from "./services.ts";
 
-const NAV_ROUTES = ["/vault", "/challenge", "/guardians", "/policy", "/proof", "/x-ray"];
-const ROUTES = [...NAV_ROUTES, "/proof/7", "/g/7/clawback", "/nope"];
+const NAV_ROUTES = ["/vault", "/challenge", "/guardians", "/policy", "/proof", "/xray"];
+const ROUTES = [...NAV_ROUTES, "/proof/7", "/xray/7", "/g/7/clawback", "/nope"];
 const NAV_LABELS = ["Vault", "Challenge", "Guardians", "Policy", "Proof", "X-Ray"];
 
 const INK = "rgb(243, 241, 236)";
@@ -222,7 +222,6 @@ test("other nav routes show the shell, a title and skeletons, without a primary 
     ["/vault", "Vault"],
     ["/guardians", "Guardians"],
     ["/policy", "Policy"],
-    ["/x-ray", "X-Ray"],
   ];
   for (const [path, title] of pages) {
     await open(page, path);
@@ -233,6 +232,37 @@ test("other nav routes show the shell, a title and skeletons, without a primary 
       await expect(page.getByTestId("sidebar").locator("[aria-current=page]")).toHaveText(title);
     }
   }
+});
+
+test("X-Ray: /x-ray leads to the form, an op id opens /xray/<id>, canonical", async ({
+  page,
+}, info) => {
+  await open(page, "/x-ray");
+  await expect(page).toHaveURL(/\/xray$/);
+  await expect(page.getByRole("heading", { level: 1 })).toHaveText("X-Ray");
+  if (!isPhone(info.project.name)) {
+    await expect(page.getByTestId("sidebar").locator("[aria-current=page]")).toHaveText("X-Ray");
+  }
+  const form = page.getByTestId("xray-open");
+  await form.getByRole("button", { name: "Open" }).click();
+  await expect(page.getByTestId("xray-open-error")).toBeVisible();
+  await page.getByTestId("xray-open-input").fill("0025");
+  await form.getByRole("button", { name: "Open" }).click();
+  await expect(page).toHaveURL(/\/xray\/25$/);
+  await expect(page.locator("main header [data-slot=badge]")).toHaveText("op #25");
+
+  // `/xray/007` is op 7: the address bar becomes `/xray/7`.
+  await open(page, "/xray/007");
+  await expect(page).toHaveURL(/\/xray\/7$/);
+  await expect(page.getByRole("heading", { level: 1 })).toHaveText("X-Ray");
+  // The stub RPC has no get_op: the read fails and says so, with Retry.
+  await expect(page.getByTestId("xray-unreachable")).toBeVisible({ timeout: 20_000 });
+
+  const hash = "2FWpHLw9foW3pLviW8qocbit61ygroWotrPx8kuEv5qD";
+  await open(page, `/xray/tx/${hash}`);
+  await expect(page).toHaveURL(new RegExp(`/xray/tx/${hash}$`));
+  await expect(page.getByRole("heading", { level: 1 })).toHaveText("X-Ray");
+  await expect(page.locator("main header [data-slot=badge]")).toHaveText("refused call");
 });
 
 test("unknown routes show a Not found card linking to /challenge", async ({ page }) => {

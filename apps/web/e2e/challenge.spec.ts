@@ -521,6 +521,9 @@ test.describe("Try with these keys", () => {
     await expect(
       panel.getByRole("link", { name: "NEAR transaction of this attempt" }),
     ).toHaveAttribute("href", `https://testnet.nearblocks.io/txns/${tx.hash}`);
+    const fullXray = panel.getByRole("link", { name: "Full X-Ray of this attempt, in a new tab" });
+    await expect(fullXray).toHaveAttribute("href", `/xray/${tx.op_id}`);
+    await expect(fullXray).toHaveAttribute("target", "_blank");
 
     // The watcher's Clawback reaches the feed: step 4 turns to it, with its Bitcoin link.
     const txid = "d2".repeat(32);
@@ -563,6 +566,10 @@ test.describe("Try with these keys", () => {
     const sent = await sentWith(request, keys.get());
     expect(sent).toHaveLength(1);
     expect(sent[0]).toMatchObject({ valid: true, method: "begin_execute", args: { op_id: "12" } });
+    // The refused call's full X-Ray names its signer, so the page need not wait for the indexer.
+    await expect(
+      panel.getByRole("link", { name: "Full X-Ray of this attempt, in a new tab" }),
+    ).toHaveAttribute("href", `/xray/tx/${sent[0]?.hash}?sender=${OWNER_ACCOUNT}`);
     expect(await fired()).toEqual([]);
   });
 

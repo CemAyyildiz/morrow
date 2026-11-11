@@ -1,4 +1,4 @@
-import { useEffect } from "react";
+import { Suspense, lazy, useEffect } from "react";
 import { copy } from "@/copy";
 import { Landing } from "@/landing/Landing";
 import { landingCopy } from "@/landing/copy";
@@ -9,6 +9,9 @@ import { PlaceholderView } from "@/views/PlaceholderView";
 import { ProofView } from "@/views/ProofView";
 import { useRouter } from "./router";
 import { resolveRoute } from "./routes";
+
+// The X-Ray page carries core-ts `buildXRay`: its own chunk, loaded when an X-Ray route opens.
+const XRayView = lazy(() => import("@/views/XRayView").then((m) => ({ default: m.XRayView })));
 
 export function App() {
   const { path, navigate } = useRouter();
@@ -43,6 +46,10 @@ export function App() {
         <ChallengeView />
       ) : resolved.route.id === "proof" ? (
         <ProofView vaultId={resolved.vaultId ?? null} />
+      ) : resolved.route.id === "xray" ? (
+        <Suspense fallback={null}>
+          <XRayView target={resolved.xray ?? null} />
+        </Suspense>
       ) : (
         <PlaceholderView title={resolved.route.title} />
       )}

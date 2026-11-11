@@ -13,6 +13,10 @@ export interface PublicConfig {
   near_network: NearNetwork;
   vault_contract: string;
   near_rpc_url: string | null;
+  /** X-Ray: archival NEAR RPC for old transactions, views and blocks. In `connect-src`. */
+  near_archival_rpc_url: string | null;
+  /** X-Ray: NEAR transaction indexer (FastNEAR tx API) to find hashes. In `connect-src`. */
+  near_tx_indexer_url: string | null;
   btc_network: BtcNetwork;
   btc_backend_url: string;
   watcher_url: string | null;
@@ -26,6 +30,20 @@ export interface PublicConfig {
 export const DEFAULT_NEAR_RPC: Record<NearNetwork, string | null> = {
   testnet: "https://rpc.testnet.fastnear.com",
   mainnet: "https://rpc.mainnet.fastnear.com",
+  mock: null,
+};
+
+/** Archival NEAR RPC used when `MORROW_NEAR_ARCHIVAL_RPC_URL` is unset; X-Ray reads old state. */
+export const DEFAULT_NEAR_ARCHIVAL_RPC: Record<NearNetwork, string | null> = {
+  testnet: "https://archival-rpc.testnet.fastnear.com",
+  mainnet: "https://archival-rpc.mainnet.fastnear.com",
+  mock: null,
+};
+
+/** NEAR transaction indexer used when `MORROW_NEAR_TX_INDEXER_URL` is unset (FastNEAR tx API). */
+export const DEFAULT_NEAR_TX_INDEXER: Record<NearNetwork, string | null> = {
+  testnet: "https://tx.test.fastnear.com",
+  mainnet: "https://tx.main.fastnear.com",
   mock: null,
 };
 
@@ -110,6 +128,12 @@ export function loadConfig(env: Env): PublicConfig {
     required(env, "MORROW_BTC_BACKEND_URL"),
   );
   const near_rpc_url = optionalUrl(env, "MORROW_NEAR_RPC_URL") ?? DEFAULT_NEAR_RPC[near_network];
+  // The mock contract has no chain to X-Ray: both stay null whatever is set.
+  const archival = optionalUrl(env, "MORROW_NEAR_ARCHIVAL_RPC_URL");
+  const indexer = optionalUrl(env, "MORROW_NEAR_TX_INDEXER_URL");
+  const mock = near_network === "mock";
+  const near_archival_rpc_url = mock ? null : (archival ?? DEFAULT_NEAR_ARCHIVAL_RPC[near_network]);
+  const near_tx_indexer_url = mock ? null : (indexer ?? DEFAULT_NEAR_TX_INDEXER[near_network]);
   const watcher_url = optionalUrl(env, "MORROW_WATCHER_URL");
   const challenge_url = optionalUrl(env, "MORROW_CHALLENGE_URL");
   const bounty_url = optionalUrl(env, "MORROW_BOUNTY_URL");
@@ -117,6 +141,8 @@ export function loadConfig(env: Env): PublicConfig {
     near_network,
     vault_contract,
     near_rpc_url,
+    near_archival_rpc_url,
+    near_tx_indexer_url,
     btc_network,
     btc_backend_url,
     watcher_url,
@@ -126,12 +152,15 @@ export function loadConfig(env: Env): PublicConfig {
 }
 
 /**
- * `'self'` plus the origins of the NEAR RPC, the Bitcoin backend, the watcher and the challenge
- * feed. The bounty URL is only linked to, so it is not here.
+ * `'self'` plus the origins of the NEAR RPC, the Bitcoin backend, the watcher, the challenge
+ * feed and X-Ray's archival RPC and transaction indexer. The bounty URL is only linked to, so it
+ * is not here.
  */
 export function connectSources(config: PublicConfig): string[] {
   const origins = [
     config.near_rpc_url,
+    config.near_archival_rpc_url,
+    config.near_tx_indexer_url,
     config.btc_backend_url,
     config.watcher_url,
     config.challenge_url,

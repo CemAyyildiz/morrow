@@ -295,6 +295,7 @@ export function useTrySession(config: BaseConfig | null, feed: TryFeed | null): 
     if (feed === null || config === null || btc === null) return null;
     return {
       keys: feed.round,
+      contractId: config.contractId,
       key,
       btc,
       near: config.network.near,

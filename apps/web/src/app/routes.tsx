@@ -11,6 +11,7 @@ import {
 } from "@/shell/icons";
 import { canonicalVaultId } from "./proof";
 import { normalizePath } from "./router";
+import { XRAY_PATH, parseXRayPath } from "./xray-paths";
 
 export type NavId = "vault" | "challenge" | "guardians" | "policy" | "proof" | "xray";
 
@@ -51,7 +52,7 @@ export const NAV_ROUTES: readonly NavRoute[] = [
     Icon: PolicyIcon,
   },
   { id: "proof", path: "/proof", label: copy.nav.proof, title: copy.titles.proof, Icon: ProofIcon },
-  { id: "xray", path: "/x-ray", label: copy.nav.xray, title: copy.titles.xray, Icon: XRayIcon },
+  { id: "xray", path: XRAY_PATH, label: copy.nav.xray, title: copy.titles.xray, Icon: XRayIcon },
 ];
 
 export const HOME_PATH = "/challenge";
@@ -64,18 +65,27 @@ export const LANDING_PATH = "/";
 
 /**
  * Paths the router rewrites before rendering. `/rob` (the epic's name for the Challenge page)
- * leads to the canonical `/challenge`.
+ * leads to the canonical `/challenge`; `/x-ray` (the X-Ray item's first path) to `/xray`.
  */
-export const REDIRECTS: Readonly<Record<string, string>> = { "/rob": HOME_PATH };
+export const REDIRECTS: Readonly<Record<string, string>> = {
+  "/rob": HOME_PATH,
+  "/x-ray": XRAY_PATH,
+};
 
 export type ResolvedRoute =
   | { kind: "redirect"; to: string }
   | { kind: "landing" }
-  /** `vaultId` is set on `/proof/<digits>`: the Proof Page of that Vault. */
-  | { kind: "nav"; route: NavRoute; vaultId?: string }
+  /**
+   * `vaultId` is set on `/proof/<digits>`: the Proof Page of that Vault. `xray` on
+   * `/xray/<op_id>` and `/xray/tx/<hash>`: what the X-Ray shows.
+   */
+  | { kind: "nav"; route: NavRoute; vaultId?: string; xray?: XRayRouteTarget }
   | { kind: "not-found"; path: string };
 
 const PROOF_PARAM = /^\/proof\/(\d+)$/;
+
+/** An op, or a refused call (its signer is not in the path). */
+export type XRayRouteTarget = { kind: "op"; opId: string } | { kind: "tx"; hash: string };
 
 export function resolveRoute(pathname: string): ResolvedRoute {
   const path = normalizePath(pathname);
@@ -84,6 +94,11 @@ export function resolveRoute(pathname: string): ResolvedRoute {
   if (path === LANDING_PATH) return { kind: "landing" };
   const route = NAV_ROUTES.find((candidate) => candidate.path === path);
   if (route) return { kind: "nav", route };
+  // `/xray/<op_id>` and `/xray/tx/<hash>`, shareable: the X-Ray nav item stays current.
+  const xray = parseXRayPath(path);
+  const xrayRoute = NAV_ROUTES.find((candidate) => candidate.id === "xray");
+  if (xray?.kind === "redirect") return { kind: "redirect", to: xray.to };
+  if (xray && xray.kind !== "form" && xrayRoute) return { kind: "nav", route: xrayRoute, xray };
   // `/proof/<vault_id>`, shareable: the Proof nav item stays the current page.
   const proof = PROOF_PARAM.exec(path);
   const vaultId = proof?.[1] === undefined ? null : canonicalVaultId(proof[1]);

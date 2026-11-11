@@ -155,6 +155,133 @@ export const copy = {
     notReached: "not reached",
   },
 
+  /**
+   * The X-Ray page (story 6.4): one op, or one refused call, through its four stages. Every
+   * value is read from the chain in this browser and names the call it came from.
+   */
+  xrayPage: {
+    loading: "Reading the operation from NEAR",
+    opChip: (id: string) => `op #${id}`,
+    vaultChip: (id: string) => `vault #${id}`,
+    refusedChip: "refused call",
+    open: {
+      title: "Open an X-Ray",
+      body: (contractId: string) =>
+        `Follow one operation of ${contractId} through its four stages: Bitcoin script path, Vault Contract rule, NEAR MPC signature, Bitcoin transaction. Everything is read from the chain in this browser.`,
+      label: "Op id or refused NEAR transaction hash",
+      submit: "Open",
+      invalid: "Enter an op id (digits) or a NEAR transaction hash.",
+    },
+    noNetwork: "X-Ray needs a NEAR network",
+    noNetworkBody:
+      "This deployment runs the mock contract. X-Ray reads transactions, receipts and the MPC signer from NEAR testnet or mainnet.",
+    input: "Nothing to X-Ray here",
+    unreachable: "The chain could not be read",
+    unreachableBody:
+      "The NEAR RPC, the transaction indexer or the Bitcoin backend did not answer. Nothing is cached, so nothing is shown.",
+    stale: (at: string) => `The last read failed. Showing the read from ${at}.`,
+    retry: "Retry",
+    reading: "Reading the chain again every 10 s while a stage is waiting.",
+    stages: {
+      script: "Bitcoin script path",
+      rule: "Vault Contract rule",
+      mpc: "NEAR MPC signature",
+      bitcoin: "Bitcoin transaction",
+    },
+    status: {
+      done: "done",
+      ok: "confirmed",
+      pending: "waiting",
+      refused: "refused",
+      failed: "failed",
+      not_reached: "not reached",
+    },
+    sources: (count: number) => `Sources · ${count}`,
+    paths: { withdrawal: "Withdrawal", clawback: "Clawback", escape: "Escape" },
+    coinSources: { vault: "Vault Script", allowance: "Allowance Script" },
+    script: {
+      headline: (path: string, script: string) => `${path} path of the ${script}`,
+      failed: "The Vault Kit could not be read",
+      decoded: (bytes: number) => `Decoded script · ${bytes} bytes · the op's path highlighted`,
+      onPath: "on this path",
+      match: "the address recomputed in this browser matches the kit's",
+      noMatch: "the address recomputed in this browser does not match the kit's",
+      rows: {
+        path: "Path",
+        coins: "Coins from",
+        network: "Bitcoin network",
+        address: "Address (get_vault_kit)",
+        recomputed: "Address recomputed in this browser",
+        scriptHex: "Script",
+        template: "Witness template",
+      },
+      recomputedRef: (scriptRef: string) => `p2wshAddress(${scriptRef}) in this browser`,
+      decodedRef: (scriptRef: string) => `decodeScript(${scriptRef}) in this browser`,
+    },
+    rule: {
+      accepted: (state: string) => `Accepted · op ${state}`,
+      acceptedAt: (state: string, at: string) => `Accepted · op ${state} · executable_at ${at}`,
+      voided: (by: string) => `Voided by Clawback op ${by}`,
+      refused: (code: string, gloss: string) => `${code} · ${gloss}`,
+      judged: (facts: string, code: string) => `${facts} → ${code}`,
+      events: "Events (events_since)",
+      event: (kind: string, seq: string) => `${kind} · seq ${seq}`,
+      rows: {
+        state: "Op state (get_op)",
+        executableAt: "executable_at",
+        fee: "Fee (op_frozen)",
+        voidedBy: "Voided by",
+        code: "Error code",
+        gloss: "Meaning",
+        method: "Method",
+        args: "Arguments",
+        tx: "NEAR transaction",
+        receipt: "Failing receipt",
+        blockTime: "Block time",
+        stateAtBlock: "Op state when judged",
+        executableAtBlock: "executable_at when judged",
+      },
+    },
+    mpc: {
+      signed: "Signed by the NEAR MPC network",
+      signedBy: (threshold: number, participants: number) =>
+        `Signed by the NEAR MPC network (${threshold} of ${participants})`,
+      waiting: "Waiting for the NEAR MPC network",
+      failed: "The signature does not match what the contract stored",
+      input: (index: number) => `Input ${index}`,
+      rows: {
+        sighash: "Sighash (get_op)",
+        payload: "Payload sent to the signer",
+        domain: "Domain id",
+        path: "Derivation path",
+        signer: "Signer account",
+        tx: "sign_input transaction",
+        signReceipt: "sign receipt",
+        responseReceipt: "Signer response receipt",
+        callbackReceipt: "on_signed receipt",
+        response: "Signer response",
+        callbackValue: "on_signed returned",
+        signature: "Signature (get_op)",
+        participants: "Participants",
+        threshold: "Threshold",
+        protocol: "Protocol",
+      },
+    },
+    bitcoin: {
+      confirmed: (confirmations: number) =>
+        `Confirmed · ${confirmations} confirmation${confirmations === 1 ? "" : "s"}`,
+      mempool: "In the mempool · 0 confirmations",
+      unseen: "Signed, not seen by the Bitcoin backend yet",
+      built: "Built by the contract, waiting for its signatures",
+      unreadable: "The Bitcoin transaction could not be read",
+      rows: {
+        txid: "txid",
+        confirmations: "Confirmations",
+        height: "Block height",
+      },
+    },
+  },
+
   tryKeys: {
     title: "Try with these keys",
     intro:
@@ -225,6 +352,8 @@ export const copy = {
       nearLabel: "NEAR transaction of this attempt",
       bitcoin: "Bitcoin",
       bitcoinLabel: "Bitcoin Clawback transaction of this attempt",
+      xray: "Full X-Ray",
+      xrayLabel: "Full X-Ray of this attempt, in a new tab",
     },
     announce: (title: string, detail: string) => `${title}: ${detail}`,
   },
@@ -236,6 +365,8 @@ export const copy = {
   proof: {
     vaultChip: (id: string) => `vault #${id}`,
     liveRound: (round: number) => `challenge round ${round}`,
+    xray: "X-Ray",
+    xrayLabel: (opId: string) => `X-Ray of op ${opId}`,
     loading: "Reading the Vault from NEAR",
     states: { pending_keys: "pending keys", active: "active", clawed_back: "clawed back" },
     guardianKinds: {

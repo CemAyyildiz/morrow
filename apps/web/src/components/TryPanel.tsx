@@ -166,9 +166,11 @@ export function TryPanel({
         {xray && (
           <div className="flex min-w-0 flex-col gap-2">
             <XRaySteps steps={attempt.steps} wrap />
-            {(attempt.links.near !== null || attempt.links.bitcoin !== null) && (
+            {(attempt.links.near !== null ||
+              attempt.links.bitcoin !== null ||
+              attempt.links.xray !== null) && (
               <div className="flex flex-wrap gap-2" data-testid="try-links">
-                {[attempt.links.near, attempt.links.bitcoin].map(
+                {[attempt.links.near, attempt.links.bitcoin, attempt.links.xray].map(
                   (l) =>
                     l !== null && (
                       <a

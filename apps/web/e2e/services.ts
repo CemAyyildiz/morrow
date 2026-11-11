@@ -41,6 +41,9 @@ export const WEB_ENV = {
   MORROW_BTC_NETWORK: "signet",
   MORROW_BTC_BACKEND_URL: BACKEND_URL,
   MORROW_NEAR_RPC_URL: RPC_URL,
+  // X-Ray's archival RPC and tx indexer: the RPC stub's origin, so the CSP stays the same.
+  MORROW_NEAR_ARCHIVAL_RPC_URL: RPC_URL,
+  MORROW_NEAR_TX_INDEXER_URL: `${RPC_URL}/fastnear`,
   MORROW_WATCHER_URL: WATCHER_URL,
   HOST: "127.0.0.1",
   PORT: String(WEB_PORT),

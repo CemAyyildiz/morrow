@@ -33,6 +33,8 @@ describe("loadConfig", () => {
       near_network: "testnet",
       vault_contract: "vault.morrow.testnet",
       near_rpc_url: "https://rpc.testnet.fastnear.com",
+      near_archival_rpc_url: "https://archival-rpc.testnet.fastnear.com",
+      near_tx_indexer_url: "https://tx.test.fastnear.com",
       btc_network: "signet",
       btc_backend_url: "https://mempool.space/signet/api",
       watcher_url: "https://watcher.example.org",
@@ -57,6 +59,31 @@ describe("loadConfig", () => {
       "https://rpc.mainnet.fastnear.com",
     );
     expect(loadConfig({ ...VALID, MORROW_NEAR_NETWORK: "mock" }).near_rpc_url).toBeNull();
+  });
+
+  it("defaults X-Ray's archival RPC and tx indexer per network, none for the mock contract", () => {
+    expect(loadConfig({ ...VALID, MORROW_NEAR_NETWORK: "mainnet" })).toMatchObject({
+      near_archival_rpc_url: "https://archival-rpc.mainnet.fastnear.com",
+      near_tx_indexer_url: "https://tx.main.fastnear.com",
+    });
+    const mock = loadConfig({
+      ...VALID,
+      MORROW_NEAR_NETWORK: "mock",
+      MORROW_NEAR_ARCHIVAL_RPC_URL: "https://archival.example.org",
+      MORROW_NEAR_TX_INDEXER_URL: "https://indexer.example.org",
+    });
+    expect(mock.near_archival_rpc_url).toBeNull();
+    expect(mock.near_tx_indexer_url).toBeNull();
+  });
+
+  it("takes MORROW_NEAR_ARCHIVAL_RPC_URL and MORROW_NEAR_TX_INDEXER_URL over the defaults", () => {
+    const config = loadConfig({
+      ...VALID,
+      MORROW_NEAR_ARCHIVAL_RPC_URL: "https://archival.example.org/near/",
+      MORROW_NEAR_TX_INDEXER_URL: "http://127.0.0.1:4191/fastnear",
+    });
+    expect(config.near_archival_rpc_url).toBe("https://archival.example.org/near");
+    expect(config.near_tx_indexer_url).toBe("http://127.0.0.1:4191/fastnear");
   });
 
   it("takes MORROW_NEAR_RPC_URL over the default and leaves the watcher optional", () => {
@@ -102,6 +129,11 @@ describe("loadConfig", () => {
     ["MORROW_BTC_BACKEND_URL", { MORROW_BTC_BACKEND_URL: "ftp://mempool.space/api" }],
     ["MORROW_NEAR_RPC_URL", { MORROW_NEAR_RPC_URL: "http://rpc.testnet.near.org" }],
     ["MORROW_WATCHER_URL", { MORROW_WATCHER_URL: "javascript:alert(1)" }],
+    [
+      "MORROW_NEAR_ARCHIVAL_RPC_URL",
+      { MORROW_NEAR_ARCHIVAL_RPC_URL: "http://archival.example.org" },
+    ],
+    ["MORROW_NEAR_TX_INDEXER_URL", { MORROW_NEAR_TX_INDEXER_URL: "https://tx.example.org/?key=1" }],
     ["MORROW_CHALLENGE_URL", { MORROW_CHALLENGE_URL: "http://challenge.example.org" }],
     ["MORROW_CHALLENGE_URL", { MORROW_CHALLENGE_URL: "https://user:pw@challenge.example.org" }],
     ["MORROW_BOUNTY_URL", { MORROW_BOUNTY_URL: "not a url" }],
@@ -119,22 +151,37 @@ describe("loadConfig", () => {
 });
 
 describe("content security policy", () => {
-  it("allows 'self' plus exactly the three configured origins", () => {
+  it("allows 'self' plus exactly the configured origins", () => {
     const config = loadConfig({
       ...VALID,
       MORROW_NEAR_RPC_URL: "https://rpc.example.org:8443/near",
+      MORROW_NEAR_ARCHIVAL_RPC_URL: "https://archival.example.org",
+      MORROW_NEAR_TX_INDEXER_URL: "https://indexer.example.org/v",
     });
     expect(connectSources(config)).toEqual([
       "'self'",
       "https://rpc.example.org:8443",
+      "https://archival.example.org",
+      "https://indexer.example.org",
       "https://mempool.space",
       "https://watcher.example.org",
     ]);
     expect(contentSecurityPolicy(config)).toBe(
       "default-src 'self'; script-src 'self'; style-src 'self'; font-src 'self'; img-src 'self'; " +
-        "connect-src 'self' https://rpc.example.org:8443 https://mempool.space https://watcher.example.org; " +
+        "connect-src 'self' https://rpc.example.org:8443 https://archival.example.org https://indexer.example.org https://mempool.space https://watcher.example.org; " +
         "frame-ancestors 'none'; base-uri 'none'; form-action 'self'",
     );
+  });
+
+  it("allows X-Ray's default archival RPC and tx indexer", () => {
+    expect(connectSources(loadConfig(VALID))).toEqual([
+      "'self'",
+      "https://rpc.testnet.fastnear.com",
+      "https://archival-rpc.testnet.fastnear.com",
+      "https://tx.test.fastnear.com",
+      "https://mempool.space",
+      "https://watcher.example.org",
+    ]);
   });
 
   it("adds the challenge feed's origin, never the bounty link's", () => {
@@ -146,6 +193,8 @@ describe("content security policy", () => {
     expect(connectSources(config)).toEqual([
       "'self'",
       "https://rpc.testnet.fastnear.com",
+      "https://archival-rpc.testnet.fastnear.com",
+      "https://tx.test.fastnear.com",
       "https://mempool.space",
       "https://watcher.example.org",
       "https://challenge.example.org:8443",

@@ -16,6 +16,8 @@ const CONFIG: AppConfig = {
   network: { btc: "signet", near: "testnet" },
   contractId: "vault.morrow.testnet",
   nearRpcUrl: "https://rpc.example.org",
+  nearArchivalRpcUrl: "https://archival.example.org",
+  nearTxIndexerUrl: "https://indexer.example.org",
   btcBackendUrl: "https://btc.example.org",
   watcherUrl: null,
   challengeUrl: "https://challenge.example.org",

@@ -2,7 +2,8 @@
  * The browser-safe part of core-ts: pure modules only (explorer links, error codes with their
  * meanings, event kinds and types, transaction failure reading) plus what "Try with these keys"
  * needs: NEAR transaction signing, the Watcher Envelope and SegWit address checks, plus the Proof
- * Page's Vault Script decoding and P2WSH address recompute, built on @noble and @scure. Nothing
+ * Page's Vault Script decoding and P2WSH address recompute, and X-Ray's assembly (`buildXRay`
+ * with its fetch-based RPC and FastNEAR locator), built on @noble and @scure. Nothing
  * here may import near-api-js, libsodium or bitcoinjs-lib, directly or through another module:
  * `browser.test.ts` walks the import graph and allows only those small pure packages, and the
  * web build fails if a heavy one reaches its bundle.
@@ -33,20 +34,52 @@ export type {
   PolicyChange,
   PolicyChangeFields,
   ScriptPath,
+  SpendOp,
   SpendOpKind,
+  SpendOpState,
+  SpendSource,
   U64,
   Vault,
   VaultKit,
   VaultState,
+  WitnessTemplate,
 } from "./contract/types.js";
 export { failureKind, txFailure, type TxFailure } from "./xray/failure.js";
-export type {
-  RpcAction,
-  RpcExecutionStatus,
-  RpcOutcome,
-  RpcReceipt,
-  RpcTxStatus,
+export {
+  FastNearLocator,
+  FetchNearRpc,
+  NearRpcError,
+  chainLocators,
+  hintLocator,
+  type FastNearLocatorOptions,
+  type NearRpc,
+  type RpcAction,
+  type RpcExecutionStatus,
+  type RpcOutcome,
+  type RpcReceipt,
+  type RpcTxStatus,
+  type TxHint,
+  type TxLocator,
+  type TxQuery,
 } from "./xray/ports.js";
+export { RECEIPTS_UNAVAILABLE, buildXRay, type XRayDeps } from "./xray/build.js";
+export {
+  XRayInputError,
+  type BitcoinStage,
+  type EventFacts,
+  type MpcInput,
+  type MpcStage,
+  type NearTxRef,
+  type Refusal,
+  type RuleEvent,
+  type RuleStage,
+  type ScriptStage,
+  type Source,
+  type Sourced,
+  type StageStatus,
+  type XRay,
+  type XRayInput,
+} from "./xray/types.js";
 export {
   NearKeyError,
   decodeBlockHash,

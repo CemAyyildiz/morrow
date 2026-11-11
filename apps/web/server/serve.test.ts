@@ -84,8 +84,10 @@ describe("web server", () => {
       "btc_backend_url",
       "btc_network",
       "challenge_url",
+      "near_archival_rpc_url",
       "near_network",
       "near_rpc_url",
+      "near_tx_indexer_url",
       "vault_contract",
       "watcher_url",
     ]);
