@@ -1,0 +1,9 @@
+# Builds infra/web/Dockerfile from the repository root and pushes it (story 10.3):
+#   gcloud builds submit --project morrow-near-1029-565 --region europe-west1 \
+#     --config infra/web/cloudbuild.yaml --substitutions _IMAGE=<artifact registry image> .
+steps:
+  - name: gcr.io/cloud-builders/docker
+    args: ["build", "-f", "infra/web/Dockerfile", "-t", "${_IMAGE}", "."]
+images: ["${_IMAGE}"]
+options:
+  logging: CLOUD_LOGGING_ONLY
