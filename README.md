@@ -4,6 +4,43 @@
 
 Morrow is a time-lock vault for Bitcoin that works today, with no soft fork, no bridge and no wrapped BTC. A public NEAR contract co-signs your Bitcoin through NEAR Chain Signatures, but only after a Delay you chose, and during that Delay any Guardian can send a theft back to your own cold Recovery Address. If NEAR ever disappears, you still leave on your own after a Bitcoin timelock.
 
+## Verify it in five minutes
+
+Each check reads public data or runs this repository. The lock check and the CI log take a minute each; `make demo` takes about 15.
+
+**1. The Vault Contract is locked.** The testnet deployment `morrow-vault-v1.testnet` and the mainnet deployment `morrow-vault.near` have no access keys, so nobody, the builder included, can replace their code. Check it with nothing installed:
+
+```sh
+curl -s https://rpc.testnet.fastnear.com -H 'content-type: application/json' -d '{"jsonrpc":"2.0","id":1,"method":"query","params":{"request_type":"view_access_key_list","finality":"final","account_id":"morrow-vault-v1.testnet"}}'
+curl -s https://rpc.mainnet.fastnear.com -H 'content-type: application/json' -d '{"jsonrpc":"2.0","id":1,"method":"query","params":{"request_type":"view_access_key_list","finality":"final","account_id":"morrow-vault.near"}}'
+```
+
+Each returns `"keys":[]`. With `"request_type":"view_account"`, both return `"code_hash":"3JwGeYBT3FQjyNDhcQ86sTjCEcix2KuTJPePzGxRefsZ"`. To check that this hash is the code in this repository, build it in the pinned Docker image and compare (after `pnpm install --frozen-lockfile`):
+
+```sh
+make wasm
+pnpm --filter @morrow/deploy start verify --account morrow-vault-v1.testnet --signer v1.signer-prod.testnet --networks regtest,signet
+pnpm --filter @morrow/deploy start verify --account morrow-vault.near --network mainnet --signer v1.signer --networks bitcoin --creators 00785c6304a08920dff8174f8fb72bfbe28c39357d6715f53f20c6a1d6e52737
+```
+
+Each ends `Deployment verified: 1 account(s), code_hash 3JwGeYBT3FQjyNDhcQ86sTjCEcix2KuTJPePzGxRefsZ, locked`. More in [Verify the deployment](#verify-the-deployment).
+
+**2. Every Scenario passes.** [`make demo`](#run-the-demo) (about 15 minutes, no funds or keys) runs Scenarios S-1 to S-7 against `morrow-vault-v1.testnet` and the live testnet MPC signer. Each ends with one line, and all seven pass:
+
+```text
+S-1 Create PASS
+S-2 Withdraw after Delay PASS
+S-3 Thief and Clawback PASS
+S-4 Duress PASS
+S-5 Escape PASS
+S-6 Policy Change PASS
+S-7 Fast Approval PASS
+```
+
+**3. CI ran it too.** In [CI run 42989446444](https://github.com/CemAyyildiz/morrow/actions/runs/42989446444) (2026-11-11, commit `547931f`), the "Regtest integration and Judge Mode" job ran `make demo` against `morrow-vault-v1.testnet`, printed those seven lines between 08:45 and 08:51 UTC, and then `Judge Mode log has all 16 README lines: OK`.
+
+**4. Read it in the browser.** The web app reads the same contract live. X-Ray at `/xray/30` shows that CI run's Withdrawal 30, with its signature stage reading "Signed by the NEAR MPC network (11 of 16)". The Proof Page at `/proof/33` shows that run's Vault 33 with the contract's `code_hash` and "Locked: no full-access keys". `/lost` says what to do after losing a device. There is no hosted link yet; [Read it in the browser](#read-it-in-the-browser) runs it locally with two commands.
+
 ## Run the demo
 
 You need a running Docker daemon, `make`, Node 24 and pnpm (`corepack enable`). A run takes about 15 minutes and needs no Bitcoin funds, API keys or accounts: Bitcoin runs on a local regtest node, and the NEAR testnet accounts come from the public faucet.
@@ -23,9 +60,24 @@ Optional environment variables:
 | `MORROW_SCENARIOS`                                       | every Scenario                         | Comma-separated ids to run, such as `S-3` or `S-1,S-5`. An unknown id exits 1.                                                                 |
 | `MORROW_JUDGE_FUNDER_ACCOUNT`, `MORROW_JUDGE_FUNDER_KEY` | unset                                  | A funded testnet account and its secret key (`ed25519:...`). With both set, the run creates its accounts under it instead of using the faucet. |
 | `MORROW_VAULT_CONTRACT`                                  | `morrow-vault-v1.testnet`              | The Vault Contract deployment to test.                                                                                                         |
-| `MORROW_NEAR_RPC_URL`                                    | the public NEAR testnet RPC            | The NEAR RPC endpoint.                                                                                                                         |
+| `MORROW_NEAR_RPC_URL`                                    | `https://rpc.testnet.fastnear.com`     | The NEAR RPC endpoint.                                                                                                                         |
 | `MORROW_REGTEST_RPC`                                     | `http://morrow:morrow@127.0.0.1:18443` | The Bitcoin Core regtest RPC that `make demo` starts.                                                                                          |
 | `MORROW_RELEASE`                                         | unset                                  | `1` reports a mandatory Scenario that is not built as `FAIL` instead of `SKIP (not built)`.                                                    |
+
+## Read it in the browser
+
+The web app (`apps/web`) has no hosted link yet. It runs locally against the locked testnet contract, after `pnpm install --frozen-lockfile`:
+
+```sh
+pnpm --filter @morrow/web build
+MORROW_NEAR_NETWORK=testnet MORROW_VAULT_CONTRACT=morrow-vault-v1.testnet MORROW_BTC_NETWORK=regtest MORROW_BTC_BACKEND_URL=http://127.0.0.1:3002 PORT=8080 pnpm --filter @morrow/web start
+```
+
+Then open `http://localhost:8080`. The page reads NEAR testnet through FastNEAR (`rpc.testnet.fastnear.com`, its archival RPC and its transaction API). `MORROW_BTC_BACKEND_URL` is required, but nothing has to listen there: there is no regtest Bitcoin backend to read.
+
+- `/xray/30`: X-Ray of Withdrawal 30 from the [CI run](https://github.com/CemAyyildiz/morrow/actions/runs/42989446444) above, in four stages: the Bitcoin script path, the Vault Contract rule, the NEAR MPC signature and the Bitcoin transaction. The first three are done, and the signature stage reads "Signed by the NEAR MPC network (11 of 16)". The fourth reads "The Bitcoin transaction could not be read", because that transaction confirmed on CI's own regtest node, which nothing public serves. It shows the txid; compare it with the CI log line `Bitcoin transaction 684e09dcfb2098048fd3ce1f54aa64e35dfb8a827c2cadc2723289cb83ded70f confirmed; destination received 1,500,000 sats`. `/xray` opens any op id, or the hash of a refused NEAR transaction.
+- `/proof/33`: the Proof Page of Vault 33 from the same run: its Policy, Vault Address and Allowance Address read live from the contract, the contract's `code_hash`, and "Locked: no full-access keys".
+- `/lost`: what to do when a device that holds your Owner Key or signs for your Owner Account is lost or stolen.
 
 ## Scenarios
 
@@ -91,9 +143,9 @@ Coins sit in an ordinary Bitcoin P2WSH address with three spending paths. The Wi
 ```mermaid
 flowchart LR
   subgraph device["Owner device"]
-    web["Web app: Owner, Guardian, Proof Page"]
     escape["Escape CLI and Vault Kit"]
   end
+  web["Web app: Proof Page, X-Ray, Lost a device, Rob This Vault"]
   subgraph near["NEAR"]
     vault["Vault Contract: Policy, builds every transaction"]
     mpc["MPC signer: v1.signer-prod.testnet, v1.signer"]
@@ -106,9 +158,9 @@ flowchart LR
   judge["tools/judge: make demo"]
   challenge["tools/challenge: Rob This Vault"]
 
-  web -->|"Withdrawal Request, Clawback"| vault
+  web -->|"reads Vaults, ops, code_hash; Try with these keys"| vault
   vault -->|"sign only what the Policy allows"| mpc
-  web -->|"broadcast co-signed transaction"| btc
+  web -.->|"reads transactions"| btc
   watcher -->|"events_since"| vault
   watcher --> tg
   watcher -->|"Auto-Clawback"| vault
@@ -131,7 +183,7 @@ What Morrow guarantees:
 What you trust:
 
 1. **T-1** NEAR's MPC network (16 participants, threshold 11, as read from `v1.signer-prod.testnet`'s `state` view on 2026-11-04) signs only what the Vault Contract requests and stays live. If it stops, G-3 still holds.
-2. **T-2** The Vault Contract code is correct. It is open source here, unit-tested and run end to end on regtest. The web app's Proof Page (`/proof/<id>`) reads the deployed code hash from NEAR; its hosted link comes later.
+2. **T-2** The Vault Contract code is correct. It is open source here, unit-tested and run end to end on regtest. The web app's Proof Page (`/proof/<id>`) reads the deployed code hash and the lock from NEAR; it has no hosted link yet, so [run it locally](#read-it-in-the-browser).
 3. **T-3** A Guardian and the MPC network do not collude. This is the one theft path: together they could sign a Clawback Path spend to any address.
 4. **T-4** The Owner keeps the Recovery Address key offline.
 5. **T-5** (only with Fast Approval) a Trusted Contact, who can shorten the Delay only to the Fast Approval Floor, does not collude with a thief. **T-6** (only with a Guardian Watcher) the Guardian Watcher stays live and uncompromised.
@@ -187,14 +239,14 @@ On mainnet, add `--network mainnet` and use `--signer v1.signer --networks bitco
 
 ## Prior art
 
-| Approach                                    | What it needs                                                                     | What it can do                                                                                    | What it cannot do                                                                                                              |
-| ------------------------------------------- | --------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------ |
-| OP_VAULT (BIP-345)                          | A Bitcoin soft fork                                                               | Consensus-enforced delay and recovery                                                             | Run today: the soft fork has not happened, and the proposal was [withdrawn in 2025](https://github.com/bitcoin/bips/pull/1848) |
-| CTV vaults (BIP-119)                        | The CTV soft fork                                                                 | Precommitted unvault flows                                                                        | Run today: CTV is not active                                                                                                   |
-| Presigned-transaction vaults (deleted keys) | Nothing new on Bitcoin                                                            | Delay and recovery today                                                                          | Prove the keys were really deleted, or change amounts and fees after signing                                                   |
-| BitVault                                    | The company's co-signing server                                                   | A delay with cancel                                                                               | Prove the delay: it is the company's promise, not a public rule                                                                |
-| Casa / Unchained collaborative multisig     | A multisig with a provider key                                                    | Key recovery and inheritance                                                                      | Delay a spend: a quorum of keys spends at once                                                                                 |
-| Morrow                                      | A public NEAR contract that holds no Bitcoin keys, to be locked before submission | A Delay and safe-direction recovery on Bitcoin today, plus an Escape Path that needs only Bitcoin | Stop a Guardian and the MPC network acting together (T-3)                                                                      |
+| Approach                                    | What it needs                                                                 | What it can do                                                                                    | What it cannot do                                                                                                              |
+| ------------------------------------------- | ----------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------ |
+| OP_VAULT (BIP-345)                          | A Bitcoin soft fork                                                           | Consensus-enforced delay and recovery                                                             | Run today: the soft fork has not happened, and the proposal was [withdrawn in 2025](https://github.com/bitcoin/bips/pull/1848) |
+| CTV vaults (BIP-119)                        | The CTV soft fork                                                             | Precommitted unvault flows                                                                        | Run today: CTV is not active                                                                                                   |
+| Presigned-transaction vaults (deleted keys) | Nothing new on Bitcoin                                                        | Delay and recovery today                                                                          | Prove the keys were really deleted, or change amounts and fees after signing                                                   |
+| BitVault                                    | The company's co-signing server                                               | A delay with cancel                                                                               | Prove the delay: it is the company's promise, not a public rule                                                                |
+| Casa / Unchained collaborative multisig     | A multisig with a provider key                                                | Key recovery and inheritance                                                                      | Delay a spend: a quorum of keys spends at once                                                                                 |
+| Morrow                                      | A public NEAR contract that holds no Bitcoin keys, locked with no access keys | A Delay and safe-direction recovery on Bitcoin today, plus an Escape Path that needs only Bitcoin | Stop a Guardian and the MPC network acting together (T-3)                                                                      |
 
 ## Sustainability
 
@@ -202,7 +254,7 @@ BitVault sells spend delays by subscription, which shows people pay for this. Mo
 
 ## What is not done yet
 
-Against the older `morrow-vault-dev3.testnet`, which predates Policy Changes and Fast Approval, S-6 and S-7 end in a SKIP. There is no Duress PIN or Duress Session UI yet (Story 8.1): S-4 checks the duress-mode labels that core-ts gives such a client. The Guardian Watcher's Telegram alerts for Fast Approval ("fast-approved by" a Guardian, and a possible-duress alert to Trusted Contacts only) are not built yet (Story 8.5b). The hosted link to the demo Vault's Proof Page, the hosted live demo, the Rob This Vault recording, and the Mainnet Bounty come with their own stories and are not claimed here. The locked mainnet Vault Contract, `morrow-vault.near`, is deployed, but no mainnet Vault holding real bitcoin is claimed here, and the contract has had no independent security audit.
+Against the older `morrow-vault-dev3.testnet`, which predates Policy Changes and Fast Approval, S-6 and S-7 end in a SKIP. There is no Duress PIN or Duress Session UI yet (Story 8.1): S-4 checks the duress-mode labels that core-ts gives such a client. The Guardian Watcher's Telegram alerts for Fast Approval ("fast-approved by" a Guardian, and a possible-duress alert to Trusted Contacts only) are not built yet (Story 8.5b). The hosted link to the demo Vault's Proof Page, the hosted live demo, the Rob This Vault recording, the demo video and the Mainnet Bounty come with their own stories and are not claimed here. No live Rob This Vault round has run on signet yet. `make demo` has no fallback to a mock signer: it always uses the live testnet MPC signer, and a Scenario that needs a signature cannot pass while that signer is down. X-Ray cannot read a regtest Bitcoin transaction, because there is no public regtest Bitcoin backend. The locked mainnet Vault Contract, `morrow-vault.near`, is deployed, but no mainnet Vault holding real bitcoin is claimed here, and the contract has had no independent security audit.
 
 ## Repository layout
 
@@ -211,14 +263,14 @@ Against the older `morrow-vault-dev3.testnet`, which predates Policy Changes and
 | `contracts/vault`       | Vault Contract (Rust, near-sdk): the only place that builds Vault Scripts, transactions and sighashes |
 | `contracts/mock-signer` | Sandbox-only stand-in for the NEAR MPC signer                                                         |
 | `packages/core-ts`      | Shared TypeScript: contract client, witness assembly, low-S, envelopes, Bitcoin backends              |
-| `apps/web`              | Owner, Guardian and Proof Page web app, plus the public site                                          |
+| `apps/web`              | Web app: the public site, Proof Page, X-Ray, Lost a device and Rob This Vault pages                   |
 | `services/watcher`      | Guardian Watcher: event loop, Telegram alerts, Auto-Clawback                                          |
 | `tools/escape`          | Standalone offline Escape CLI (no other repo dependencies)                                            |
 | `tools/judge`           | Judge Mode Scenario runner (`make demo`)                                                              |
 | `tools/challenge`       | Rob This Vault and Mainnet Bounty operator tooling                                                    |
 | `tools/deploy`          | Vault Contract build, deploy, lock and verify tooling                                                 |
 | `infra/`                | Docker Compose (regtest) and Google Cloud deployment                                                  |
-| `evidence/`             | Machine-readable run evidence                                                                         |
+| `evidence/`             | Reserved for machine-readable run evidence; empty so far                                              |
 
 ## Development
 
