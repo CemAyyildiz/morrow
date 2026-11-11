@@ -43,7 +43,12 @@ jobs:
       - run: pnpm typecheck
       - run: pnpm test
       - run: pnpm --filter @morrow/web build
-      - run: pnpm --filter @morrow/web exec playwright install --with-deps chromium
+      # The runner image already has Chromium's system libraries. When the Ubuntu apt mirrors
+      # cannot be reached (security.ubuntu.com DNS failures, 2026-11-11), install the browser
+      # alone rather than fail on the optional font packages.
+      - run: |
+          timeout 240 pnpm --filter @morrow/web exec playwright install --with-deps chromium ||
+            pnpm --filter @morrow/web exec playwright install chromium
       - run: pnpm --filter @morrow/web e2e
 
   wasm:
