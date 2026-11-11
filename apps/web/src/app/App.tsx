@@ -1,4 +1,4 @@
-import { Suspense, lazy, useEffect } from "react";
+import { Suspense, lazy, useEffect, type ReactElement } from "react";
 import { Button } from "@/components/ui/button";
 import { Card, CardDescription, CardTitle } from "@/components/ui/card";
 import { copy } from "@/copy";
@@ -6,11 +6,11 @@ import { Landing } from "@/landing/Landing";
 import { landingCopy } from "@/landing/copy";
 import { AppShell } from "@/shell/AppShell";
 import { ChallengeView } from "@/views/ChallengeView";
+import { LostView } from "@/views/LostView";
 import { NotFoundView } from "@/views/NotFoundView";
-import { PlaceholderView } from "@/views/PlaceholderView";
 import { ProofView } from "@/views/ProofView";
 import { useRouter } from "./router";
-import { resolveRoute } from "./routes";
+import { resolveRoute, type ResolvedRoute } from "./routes";
 
 // The X-Ray page carries core-ts `buildXRay`: its own chunk, loaded when an X-Ray route opens.
 // A chunk that fails to load (a redeploy changed the asset hashes) shows a notice, not a blank app.
@@ -65,17 +65,27 @@ export function App() {
     <AppShell activeId={resolved.kind === "nav" ? resolved.route.id : null} title={title}>
       {resolved.kind === "not-found" ? (
         <NotFoundView path={resolved.path} />
-      ) : resolved.route.id === "challenge" ? (
-        <ChallengeView />
-      ) : resolved.route.id === "proof" ? (
-        <ProofView vaultId={resolved.vaultId ?? null} />
-      ) : resolved.route.id === "xray" ? (
-        <Suspense fallback={null}>
-          <XRayView target={resolved.xray ?? null} />
-        </Suspense>
       ) : (
-        <PlaceholderView title={resolved.route.title} />
+        <Screen {...resolved} />
       )}
     </AppShell>
   );
+}
+
+/** One screen per nav item; the switch is exhaustive, so a nav item without a screen fails to compile. */
+function Screen({ route, vaultId, xray }: Extract<ResolvedRoute, { kind: "nav" }>): ReactElement {
+  switch (route.id) {
+    case "challenge":
+      return <ChallengeView />;
+    case "proof":
+      return <ProofView vaultId={vaultId ?? null} />;
+    case "xray":
+      return (
+        <Suspense fallback={null}>
+          <XRayView target={xray ?? null} />
+        </Suspense>
+      );
+    case "lost":
+      return <LostView />;
+  }
 }

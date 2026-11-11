@@ -1172,7 +1172,16 @@
   font: 12px "Geist Mono";
   color: var(--mu);
   flex-wrap: wrap;
+  align-items: center;
   gap: 10px;
+}
+.l-footer a {
+  display: inline-flex;
+  align-items: center;
+  min-height: 44px;
+  color: var(--ink);
+  text-decoration: underline;
+  text-underline-offset: 4px;
 }
 
 /* ---------- phones (EXPERIENCE.md breakpoint: 900 px) ---------- */

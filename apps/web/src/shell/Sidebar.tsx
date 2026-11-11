@@ -4,7 +4,7 @@ import { copy } from "@/copy";
 import { NavItems } from "./NavItems";
 import { SystemCard } from "./SystemCard";
 
-// Desktop sidebar (900 px and wider): wordmark, the six nav items, the system card.
+// Desktop sidebar (900 px and wider): wordmark, the nav items, the system card.
 // `decorative` is the picture of the sidebar on the landing: no nav landmark, no links, no
 // current page, hidden from assistive tech and out of reach.
 export function Sidebar({

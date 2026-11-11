@@ -65,18 +65,3 @@ export function DotGrid({ on, total }: { on: number; total: number }) {
     </div>
   );
 }
-
-/** Four stat skeletons in the same grid as the real row. */
-export function StatSkeletonRow() {
-  return (
-    <div
-      data-testid="stats"
-      className="grid grid-cols-[repeat(2,minmax(0,1fr))] gap-2 desktop:grid-cols-[repeat(4,minmax(0,1fr))] desktop:gap-stack"
-    >
-      <StatCard />
-      <StatCard />
-      <StatCard />
-      <StatCard />
-    </div>
-  );
-}

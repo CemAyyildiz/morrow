@@ -73,7 +73,7 @@ test.describe("no CSP violation on load", () => {
   for (const path of [
     "/",
     "/challenge",
-    "/vault",
+    "/lost",
     "/proof",
     "/proof/7",
     "/xray",

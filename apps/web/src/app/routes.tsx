@@ -1,19 +1,15 @@
 import type { ComponentType } from "react";
 import { copy } from "@/copy";
-import {
-  ChallengeIcon,
-  GuardiansIcon,
-  PolicyIcon,
-  ProofIcon,
-  VaultIcon,
-  XRayIcon,
-  type IconProps,
-} from "@/shell/icons";
+import { ChallengeIcon, LostIcon, ProofIcon, XRayIcon, type IconProps } from "@/shell/icons";
 import { canonicalVaultId } from "./proof";
 import { normalizePath } from "./router";
 import { XRAY_PATH, parseXRayPath } from "./xray-paths";
 
-export type NavId = "vault" | "challenge" | "guardians" | "policy" | "proof" | "xray";
+/**
+ * Only screens that are built have a nav item and a route. Vault, Guardians and Policy come
+ * back with their screens (stories 1.11, 3.7, 5.5); until then their paths are Not found.
+ */
+export type NavId = "challenge" | "proof" | "xray" | "lost";
 
 export interface NavRoute {
   id: NavId;
@@ -26,9 +22,11 @@ export interface NavRoute {
   badge?: string;
 }
 
+/** The Lost a device page (story 3.8): public, static, linked from every screen. */
+export const LOST_PATH = "/lost";
+
 /** Sidebar and phone menu order. */
 export const NAV_ROUTES: readonly NavRoute[] = [
-  { id: "vault", path: "/vault", label: copy.nav.vault, title: copy.titles.vault, Icon: VaultIcon },
   {
     id: "challenge",
     path: "/challenge",
@@ -37,22 +35,9 @@ export const NAV_ROUTES: readonly NavRoute[] = [
     Icon: ChallengeIcon,
     badge: copy.nav.live,
   },
-  {
-    id: "guardians",
-    path: "/guardians",
-    label: copy.nav.guardians,
-    title: copy.titles.guardians,
-    Icon: GuardiansIcon,
-  },
-  {
-    id: "policy",
-    path: "/policy",
-    label: copy.nav.policy,
-    title: copy.titles.policy,
-    Icon: PolicyIcon,
-  },
   { id: "proof", path: "/proof", label: copy.nav.proof, title: copy.titles.proof, Icon: ProofIcon },
   { id: "xray", path: XRAY_PATH, label: copy.nav.xray, title: copy.titles.xray, Icon: XRayIcon },
+  { id: "lost", path: LOST_PATH, label: copy.nav.lost, title: copy.titles.lost, Icon: LostIcon },
 ];
 
 export const HOME_PATH = "/challenge";
@@ -114,8 +99,7 @@ export function resolveRoute(pathname: string): ResolvedRoute {
 export const proofPath = (vaultId: string) => `${PROOF_PATH}/${vaultId}`;
 
 /**
- * Product paths whose screen is real, not a placeholder. The landing's doors (Story 9.2) link
- * only to these, so a judge never lands on a stub: a story that ships its screen adds its path
- * here (1.11 `/vault`, 6.1 `/proof`) and its door appears.
+ * The product paths a landing door (Story 9.2) may link to. A story that ships its screen adds
+ * its path here (1.11 `/vault`, 6.1 `/proof`) and its door appears.
  */
 export const LIVE_PATHS: ReadonlySet<string> = new Set(["/challenge", "/proof"]);

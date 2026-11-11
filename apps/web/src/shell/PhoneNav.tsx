@@ -51,7 +51,7 @@ export function PhoneBar({
   );
 }
 
-// The six nav items as a full-height panel. No dialog library: focus moves into the panel
+// The nav items as a full-height panel. No dialog library: focus moves into the panel
 // and is kept there, Esc / close / choosing an item closes it, page scroll is locked with a
 // class on <html>, and the shell marks everything else `inert` while it is open. The shell
 // owns `open` and restores focus after it closes.

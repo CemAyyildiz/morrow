@@ -1,9 +1,13 @@
 import { expect, test, type Locator, type Page, type Request } from "@playwright/test";
-import { BACKEND_URL, RPC_URL, WATCHER_URL } from "./services.ts";
+import { BACKEND_URL, CHALLENGE_URL, LIVE_WEB_URL, RPC_URL, WATCHER_URL } from "./services.ts";
 
-const NAV_ROUTES = ["/vault", "/challenge", "/guardians", "/policy", "/proof", "/xray"];
-const ROUTES = [...NAV_ROUTES, "/proof/7", "/xray/7", "/g/7/clawback", "/nope"];
-const NAV_LABELS = ["Vault", "Challenge", "Guardians", "Policy", "Proof", "X-Ray"];
+// Only built screens are in the nav (story 3.8); Vault, Guardians and Policy are Not found.
+const NAV_ROUTES = ["/challenge", "/proof", "/xray", "/lost"];
+const UNBUILT = ["/vault", "/guardians", "/policy"];
+const ROUTES = [...NAV_ROUTES, "/proof/7", "/xray/7", "/g/7/clawback", "/nope", ...UNBUILT];
+const NAV_LABELS = ["Challenge", "Proof", "X-Ray", "Lost a device?"];
+/** Labels as exact-start patterns (the Challenge item ends with its `live` badge). */
+const NAV_PATTERNS = NAV_LABELS.map((l) => new RegExp(`^${l.replace(/[?]/g, "\\$&")}`));
 
 const INK = "rgb(243, 241, 236)";
 const ORANGE = "rgb(255, 122, 26)";
@@ -119,7 +123,7 @@ test("the desktop shell matches the mockup", async ({ page }, info) => {
   const sidebar = page.getByTestId("sidebar");
   await expect(sidebar).toBeVisible();
   expect((await box(sidebar)).width).toBe(232);
-  await expect(sidebar.getByRole("link")).toHaveText(NAV_LABELS.map((l) => new RegExp(`^${l}`)));
+  await expect(sidebar.getByRole("link")).toHaveText(NAV_PATTERNS);
   await expect(sidebar.getByRole("link", { name: /Challenge/ })).toHaveAttribute(
     "aria-current",
     "page",
@@ -145,7 +149,8 @@ test("the desktop shell matches the mockup", async ({ page }, info) => {
   expect(fonts.system).toMatch(/^"Geist Mono"/);
   expect(fonts.loaded).toEqual([true, true, true, true]);
 
-  await open(page, "/vault");
+  // The hero and the stat row need round data: the server with the challenge feed has it.
+  await open(page, `${LIVE_WEB_URL}/challenge`);
   const hero = page.getByTestId("hero");
   const heroColumns = await hero.evaluate((el) => getComputedStyle(el).gridTemplateColumns);
   expect(heroColumns.split(" ")).toHaveLength(2);
@@ -191,7 +196,8 @@ test("/challenge shows the honest empty state in production", async ({ page }) =
 
 test("the shell re-flows on a phone", async ({ page }, info) => {
   test.skip(!isPhone(info.project.name), "phone layout");
-  await open(page, "/vault");
+  // The hero and the stat row need round data: the server with the challenge feed has it.
+  await open(page, `${LIVE_WEB_URL}/challenge`);
 
   await expect(page.getByTestId("sidebar")).toBeHidden();
   await expect(page.getByTestId("phone-bar")).toBeVisible();
@@ -215,23 +221,62 @@ test("the shell re-flows on a phone", async ({ page }, info) => {
   expect(Math.round(empty.width)).toBe(Math.round(header.width));
 });
 
-test("other nav routes show the shell, a title and skeletons, without a primary action", async ({
+test("/lost: the steps, the current nav item and links only to what exists", async ({
   page,
 }, info) => {
-  const pages: [string, string][] = [
-    ["/vault", "Vault"],
-    ["/guardians", "Guardians"],
-    ["/policy", "Policy"],
-  ];
-  for (const [path, title] of pages) {
-    await open(page, path);
-    await expect(page.getByRole("heading", { level: 1 })).toHaveText(title);
-    expect(await page.locator("[data-slot=skeleton]").count()).toBeGreaterThan(4);
-    expect(await orangeElements(page)).toBe(0);
-    if (!isPhone(info.project.name)) {
-      await expect(page.getByTestId("sidebar").locator("[aria-current=page]")).toHaveText(title);
-    }
+  await open(page, "/lost/");
+  await expect(page).toHaveTitle("Lost a device? · morrow");
+  await expect(page.getByRole("heading", { level: 1 })).toHaveText("Lost a device?");
+  await expect(page.getByTestId("lost-step")).toHaveCount(3);
+  await expect(page.getByTestId("lost-step").locator("h3")).toHaveText([
+    "Ask any Guardian to Clawback",
+    "Claw back from your own Backup Device",
+    "Create a new Vault",
+  ]);
+  for (const id of ["guardian", "thief", "escape", "links"]) {
+    await expect(page.getByTestId(`lost-${id}`)).toBeVisible();
   }
+  // The page itself reads no chain data and has no sign-in and no primary action.
+  await expect(page.getByTestId("header-actions")).toHaveCount(0);
+  expect(await orangeElements(page)).toBe(0);
+  const hrefs = await page
+    .locator("main a")
+    .evaluateAll((els) => els.map((el) => el.getAttribute("href") ?? ""));
+  expect(hrefs.length).toBeGreaterThan(0);
+  for (const href of hrefs) expect(href).toMatch(/^(\/proof$|https:\/\/github\.com\/)/);
+
+  if (isPhone(info.project.name)) {
+    await page.getByRole("button", { name: "Open menu" }).click();
+    const dialog = page.getByRole("dialog", { name: "Menu" });
+    await expect(dialog.locator("[aria-current=page]")).toHaveText("Lost a device?");
+    await page.keyboard.press("Escape");
+  } else {
+    await expect(page.getByTestId("sidebar").locator("[aria-current=page]")).toHaveText(
+      "Lost a device?",
+    );
+  }
+
+  // The Proof Page link navigates in place.
+  await page
+    .getByTestId("lost-guardian")
+    .getByRole("link", { name: "Open the Proof Page" })
+    .click();
+  await expect(page).toHaveURL(/\/proof$/);
+  await expect(page.getByRole("heading", { level: 1 })).toHaveText("Proof");
+});
+
+test("the landing footer links to /lost, in place, 44 px tall", async ({ page }) => {
+  await open(page, "/");
+  const before = await page.evaluate(() => history.length);
+  const link = page.locator(".l-footer").getByRole("link", { name: "Lost a device?" });
+  await expect(link).toHaveAttribute("href", "/lost");
+  await link.scrollIntoViewIfNeeded();
+  expect((await box(link)).height).toBeGreaterThanOrEqual(44);
+  await link.click();
+  await expect(page).toHaveURL(/\/lost$/);
+  await expect(page.getByRole("heading", { level: 1 })).toHaveText("Lost a device?");
+  // In place: one history entry, no reload.
+  expect(await page.evaluate(() => history.length)).toBe(before + 1);
 });
 
 test("X-Ray: /x-ray leads to the form, an op id opens /xray/<id>, canonical", async ({
@@ -265,8 +310,8 @@ test("X-Ray: /x-ray leads to the form, an op id opens /xray/<id>, canonical", as
   await expect(page.locator("main header [data-slot=badge]")).toHaveText("refused call");
 });
 
-test("unknown routes show a Not found card linking to /challenge", async ({ page }) => {
-  for (const path of ["/g/7/clawback", "/nope"]) {
+test("unknown and unbuilt routes show a Not found card linking to /challenge", async ({ page }) => {
+  for (const path of ["/g/7/clawback", "/nope", ...UNBUILT]) {
     await open(page, path);
     const card = page.getByTestId("not-found");
     await expect(card).toBeVisible();
@@ -339,7 +384,7 @@ test("the phone menu opens, traps focus, locks scroll and closes", async ({ page
   await menuButton.click();
   await expect(dialog).toBeVisible();
   expect((await box(dialog)).height).toBe(844);
-  await expect(dialog.getByRole("link")).toHaveText(NAV_LABELS.map((l) => new RegExp(`^${l}`)));
+  await expect(dialog.getByRole("link")).toHaveText(NAV_PATTERNS);
   for (const link of await dialog.getByRole("link").all()) {
     expect((await box(link)).height).toBeGreaterThanOrEqual(44);
   }
@@ -354,7 +399,7 @@ test("the phone menu opens, traps focus, locks scroll and closes", async ({ page
   expect(await dialog.evaluate((el) => el.contains(document.activeElement))).toBe(true);
   await page.getByRole("button", { name: "Close menu" }).focus();
   await page.keyboard.press("Shift+Tab");
-  await expect(dialog.getByRole("link", { name: "X-Ray" })).toBeFocused();
+  await expect(dialog.getByRole("link", { name: "Lost a device?" })).toBeFocused();
   await page.mouse.click(195, 700);
   await page.keyboard.press("Tab");
   expect(await dialog.evaluate((el) => el.contains(document.activeElement))).toBe(true);
@@ -378,10 +423,10 @@ test("the phone menu opens, traps focus, locks scroll and closes", async ({ page
 
   // Choosing an item navigates and closes.
   await menuButton.click();
-  await dialog.getByRole("link", { name: "Guardians" }).click();
+  await dialog.getByRole("link", { name: "Lost a device?" }).click();
   await expect(dialog).toBeHidden();
-  await expect(page).toHaveURL(/\/guardians$/);
-  await expect(page.getByRole("heading", { level: 1 })).toHaveText("Guardians");
+  await expect(page).toHaveURL(/\/lost$/);
+  await expect(page.getByRole("heading", { level: 1 })).toHaveText("Lost a device?");
   await expect(menuButton).toBeFocused();
   expect(await page.locator("main").evaluate((el) => el.closest("[inert]") !== null)).toBe(false);
   await expect(menuButton).not.toHaveAttribute("aria-controls");
@@ -406,8 +451,17 @@ test("the phone menu opens, traps focus, locks scroll and closes", async ({ page
 
 test("reduced motion stops the shimmer and the number fade-in", async ({ page }) => {
   await page.emulateMedia({ reducedMotion: "reduce" });
-  await open(page, "/vault");
-  // Production has no round, so no number fades in yet: probe the rule with a stand-in.
+  // On the server with the challenge feed, the round arrives but /attempts is held and never
+  // answered, so the attempt counts stay real loading skeletons.
+  await page.route(`${CHALLENGE_URL}/attempts`, () => new Promise<void>(() => undefined));
+  await page.goto(`${LIVE_WEB_URL}/challenge`);
+  const skeletons = page.locator("[data-slot=skeleton]");
+  await expect(skeletons.first()).toBeVisible();
+  const shimmers = () =>
+    skeletons.evaluateAll((els) => els.map((el) => getComputedStyle(el).animationName));
+  expect(new Set(await shimmers())).toEqual(new Set(["none"]));
+
+  // No number has faded in yet: probe the fade-in rule with a stand-in.
   const fade = await page.evaluate(() => {
     const probe = document.createElement("div");
     probe.className = "animate-fade-in";
@@ -418,18 +472,8 @@ test("reduced motion stops the shimmer and the number fade-in", async ({ page })
   });
   expect(fade).toBe("none");
 
-  const shimmers = await page
-    .locator("[data-slot=skeleton]")
-    .evaluateAll((els) => els.map((el) => getComputedStyle(el).animationName));
-  expect(shimmers.length).toBeGreaterThan(0);
-  expect(new Set(shimmers)).toEqual(new Set(["none"]));
-
   await page.emulateMedia({ reducedMotion: "no-preference" });
-  const moving = await page
-    .locator("[data-slot=skeleton]")
-    .first()
-    .evaluate((el) => getComputedStyle(el).animationName);
-  expect(moving).toBe("shimmer");
+  expect(new Set(await shimmers())).toEqual(new Set(["shimmer"]));
 });
 
 test("nav links navigate in place and Back returns", async ({ page }, info) => {

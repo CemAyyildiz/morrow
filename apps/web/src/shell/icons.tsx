@@ -18,38 +18,10 @@ function Icon({ className, children, ...props }: IconProps & { children: ReactNo
   );
 }
 
-export function VaultIcon(props: IconProps) {
-  return (
-    <Icon {...props}>
-      <rect x="3" y="5" width="18" height="14" rx="3" />
-      <circle cx="12" cy="12" r="3" />
-    </Icon>
-  );
-}
-
 export function ChallengeIcon(props: IconProps) {
   return (
     <Icon {...props}>
       <path d="M12 3l8 4v5c0 4.5-3.4 8.3-8 9-4.6-.7-8-4.5-8-9V7z" />
-    </Icon>
-  );
-}
-
-export function GuardiansIcon(props: IconProps) {
-  return (
-    <Icon {...props}>
-      <circle cx="9" cy="8" r="3" />
-      <path d="M3 20c0-3.3 2.7-6 6-6s6 2.7 6 6" />
-      <circle cx="17" cy="9" r="2.5" />
-    </Icon>
-  );
-}
-
-export function PolicyIcon(props: IconProps) {
-  return (
-    <Icon {...props}>
-      <circle cx="12" cy="12" r="9" />
-      <path d="M12 7v5l3 2" />
     </Icon>
   );
 }
@@ -67,6 +39,17 @@ export function XRayIcon(props: IconProps) {
   return (
     <Icon {...props}>
       <path d="M4 12h4l2-6 4 12 2-6h4" />
+    </Icon>
+  );
+}
+
+/** A phone with a question mark: the Lost a device page. */
+export function LostIcon(props: IconProps) {
+  return (
+    <Icon {...props}>
+      <rect x="6" y="3" width="12" height="18" rx="2.5" />
+      <path d="M10 9.5a2 2 0 1 1 2.8 1.8c-.5.3-.8.7-.8 1.2v.5" strokeLinecap="round" />
+      <path d="M12 16.5v.01" strokeLinecap="round" />
     </Icon>
   );
 }

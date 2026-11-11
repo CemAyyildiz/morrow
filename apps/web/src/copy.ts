@@ -25,12 +25,10 @@ export const copy = {
 
   nav: {
     label: "Main",
-    vault: "Vault",
     challenge: "Challenge",
-    guardians: "Guardians",
-    policy: "Policy",
     proof: "Proof",
     xray: "X-Ray",
+    lost: "Lost a device?",
     live: "live",
     openMenu: "Open menu",
     closeMenu: "Close menu",
@@ -38,12 +36,10 @@ export const copy = {
   },
 
   titles: {
-    vault: "Vault",
     challenge: "Challenge vault",
-    guardians: "Guardians",
-    policy: "Policy",
     proof: "Proof",
     xray: "X-Ray",
+    lost: "Lost a device?",
     notFound: "Not found",
   },
 
@@ -637,7 +633,79 @@ export const copy = {
     },
   },
 
-  placeholder: "This screen is not part of this build.",
+  /**
+   * The Lost a device page (story 3.8, FR-31). Static: it reads no chain data and needs no
+   * sign-in or key. It names only what this build has, and says so where a screen is missing.
+   */
+  lost: {
+    intro:
+      "If a device that holds your Owner Key or signs for your Owner Account is lost or stolen, treat those keys as compromised. The Delay is the time you have to act.",
+    stepsTitle: "What to do, in order",
+    steps: {
+      clawback: {
+        title: "Ask any Guardian to Clawback",
+        body: "One Guardian is enough. A Clawback pays the Recovery Address only. The first one voids every live request, vetoes a pending Policy Change and closes the Vault for good. The Owner cannot cancel it, so a thief with the Owner keys cannot either. Afterwards every request fails with ERR_CLAWED_BACK.",
+        build:
+          "In this build a Guardian claws back by calling begin_clawback on the Vault Contract, shown end to end by Scenario S-3. Each call sweeps up to 5 coins from one source, the Vault Address by default or the Allowance Address, so the Guardian repeats it for each source until every coin is at the Recovery Address. The one-tap Guardian view is not in this build.",
+      },
+      backup: {
+        title: "Claw back from your own Backup Device",
+        body: "If one of your Guardians is a Backup Device you still hold, it can claw back by itself: the same call, with the same result.",
+        build:
+          "In this build the Backup Device's Guardian account makes the same begin_clawback call; there is no Backup Device screen yet.",
+      },
+      fresh: {
+        title: "Create a new Vault",
+        body: "Once the coins are at the Recovery Address, create a new Vault with new keys. Never reuse the Owner Key or the Owner Account of the compromised one.",
+        build:
+          "Creating your own Vault is not possible in this build. Scenario S-1 only demonstrates Vault creation on NEAR testnet.",
+      },
+    },
+    guardianTitle: "Reaching a Guardian",
+    guardian:
+      "Call or message your Guardians directly, the way you agreed when you set up the Vault. Any one of them can claw back. Their accounts are in the Vault's Policy, which the Proof Page reads from the chain for any Vault id.",
+    guardianAlert:
+      "A withdrawal request is public, and on a Vault with a Guardian Watcher it alerts the Guardians on Telegram, so they may already be watching.",
+    guardianNoAnswer:
+      "If no Guardian answers, keep trying them: a thief still waits the Delay. On a Vault with a Guardian Watcher every request also alerts you on Telegram, which you can open from another device to keep asking your Guardians for help.",
+    thiefTitle: "What a thief can and cannot do during the Delay",
+    canTitle: "With your Owner keys, a thief can",
+    can: {
+      withdraw:
+        "Request a withdrawal. The request is public, waits the Delay and, on a Vault with a Guardian Watcher, alerts the Guardians on Telegram.",
+      allowance: "Spend the Spending Allowance up to its 24 h limit. It has no Delay, by design.",
+      policy:
+        "Propose a Policy Change. It waits the Policy Change Delay, and any Guardian can veto it.",
+      escape:
+        "After a coin's Escape Timelock, spend it with the Owner Key alone, with no Delay. A Clawback before then, and a routine Refresh, keep that from happening.",
+    },
+    cannotTitle: "A thief cannot",
+    cannot: {
+      execute: "Execute a withdrawal before the Delay ends.",
+      stop: "Stop a Clawback.",
+      redirect: "Redirect a Clawback: it pays the Recovery Address only.",
+      script: "Change the Script-bound fields, such as the Guardians and the Escape Timelock.",
+    },
+    escapeTitle: "Escape and Refresh",
+    escape: {
+      title: "Escape with the Vault Kit",
+      body: "If NEAR or the Co-signer stops, tools/escape signs a spend offline with the Vault Kit and the Owner Key after the Escape Timelock. It uses no NEAR. Scenario S-5 runs it.",
+    },
+    refresh: {
+      title: "Refresh",
+      body: "After a coin's Escape Timelock, the Owner Key alone can spend it, so a thief holding that key could too. That is why Refresh exists: refresh re-locks coins to the Vault Address and resets the Escape Timelock. A Clawback before then moves the coins out of reach.",
+      build: "Refresh is a contract call; it has no screen yet.",
+    },
+    linksTitle: "Read more",
+    links: {
+      scenarios: "Scenarios in the README",
+      trust: "Trust model in the README",
+      escape: "tools/escape on GitHub",
+    },
+    openProof: "Open the Proof Page",
+    /** The accessible name of a link that opens in a new tab. */
+    newTab: (text: string) => `${text} (opens in a new tab)`,
+  },
 
   notFound: {
     body: (path: string) => `Nothing lives at ${path}.`,

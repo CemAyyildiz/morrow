@@ -6,7 +6,7 @@ import { cn } from "@/lib/utils";
 const item =
   "flex min-h-11 items-center gap-3 rounded-sm px-3 py-2.5 text-[15px] leading-none text-muted transition-colors";
 
-// The six nav items, shared by the sidebar and the phone menu. `decorative` draws them as
+// The nav items (built screens only), shared by the sidebar and the phone menu. `decorative` draws them as
 // plain text (no links, no current page) for the product pictured on the landing.
 export function NavItems({
   activeId,

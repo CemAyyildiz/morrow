@@ -264,6 +264,7 @@ export const landingCopy = {
 
   footer: {
     left: "morrow · Bitcoin that can't be rushed.",
+    lost: "Lost a device?",
     right: (btc: BtcNetwork) => `NEAR Chain Signatures · Bitcoin P2WSH · ${COINS[btc]}`,
   },
 

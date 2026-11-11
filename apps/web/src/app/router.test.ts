@@ -14,24 +14,27 @@ describe("route resolution", () => {
     expect(resolveRoute("/rob/")).toEqual({ kind: "redirect", to: "/challenge" });
   });
 
-  it("lists the six nav items in sidebar order", () => {
+  it("lists only the built screens, in sidebar order", () => {
     expect(NAV_ROUTES.map((route) => route.path)).toEqual([
-      "/vault",
       "/challenge",
-      "/guardians",
-      "/policy",
       "/proof",
       "/xray",
+      "/lost",
+    ]);
+    expect(NAV_ROUTES.map((route) => route.label)).toEqual([
+      "Challenge",
+      "Proof",
+      "X-Ray",
+      "Lost a device?",
     ]);
   });
 
   it.each([
-    ["/vault", "vault", "Vault"],
     ["/challenge", "challenge", "Challenge vault"],
-    ["/guardians", "guardians", "Guardians"],
-    ["/policy", "policy", "Policy"],
     ["/proof", "proof", "Proof"],
     ["/xray", "xray", "X-Ray"],
+    ["/lost", "lost", "Lost a device?"],
+    ["/lost/", "lost", "Lost a device?"],
     ["/challenge/", "challenge", "Challenge vault"],
   ])("resolves %s to the %s item", (path, id, title) => {
     const resolved = resolveRoute(path);
@@ -67,6 +70,14 @@ describe("route resolution", () => {
   ])("resolves %s to not found", (path) => {
     expect(resolveRoute(path)).toEqual({ kind: "not-found", path });
   });
+
+  // Unbuilt screens have no route: a typed URL never lands on a placeholder.
+  it.each(["/vault", "/guardians", "/policy", "/guardians/", "/lost/extra"])(
+    "resolves the unbuilt or unknown %s to not found",
+    (path) => {
+      expect(resolveRoute(path)).toEqual({ kind: "not-found", path: normalizePath(path) });
+    },
+  );
 
   it.each(["/g/7/clawback", "/nope", "/Challenge", "/challenge/extra"])(
     "resolves %s to not found",

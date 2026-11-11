@@ -2,7 +2,7 @@ import { useCallback, useRef, type MouseEvent } from "react";
 import { downloadKeys } from "@/app/challenge";
 import { useAppData } from "@/app/data";
 import { Link, useRouter } from "@/app/router";
-import { HOME_PATH, PROOF_PATH } from "@/app/routes";
+import { HOME_PATH, LOST_PATH, PROOF_PATH } from "@/app/routes";
 import { Cards } from "./Cards";
 import { Collage } from "./Collage";
 import { landingCopy } from "./copy";
@@ -152,6 +152,7 @@ export function Landing() {
       </main>
       <footer className="l-footer">
         <span>{t.footer.left}</span>
+        <Link to={LOST_PATH}>{t.footer.lost}</Link>
         <span>{t.footer.right(config.network.btc)}</span>
       </footer>
       <div aria-live="polite" className="sr-only" data-testid="live-region">
