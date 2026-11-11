@@ -6,11 +6,12 @@ import {
   boundFetch,
   contractOver,
   esploraGetTx,
-  isLive,
   parseXRayEntry,
   parseXRayPath,
   readXRay,
   senderHint,
+  pollDelay,
+  xrayDeps,
   xrayEndpoints,
   xrayInput,
   xrayModel,
@@ -189,6 +190,63 @@ describe("X-Ray reads", () => {
     await expect(backend.getTx("bb".repeat(32))).rejects.toThrow(/503/);
   });
 
+  it("a confirmed tx has at least 1 confirmation, even when the tip node lags", async () => {
+    vi.stubGlobal("fetch", async (url: string) =>
+      url.endsWith("/blocks/tip/height")
+        ? new Response("290098")
+        : Response.json({ confirmed: true, block_height: 290_100 }),
+    );
+    const backend = esploraGetTx("https://btc.example/api", new AbortController().signal);
+    expect(await backend.getTx(TXID)).toEqual({
+      txid: TXID,
+      confirmations: 1,
+      block_height: 290_100,
+    });
+  });
+
+  it("a confirmed tx without a numeric block height is a read error, not a mempool tx", async () => {
+    vi.stubGlobal("fetch", async () => Response.json({ confirmed: true, block_height: "290100" }));
+    const backend = esploraGetTx("https://btc.example/api", new AbortController().signal);
+    await expect(backend.getTx(TXID)).rejects.toThrow(/confirmed without a block height/);
+  });
+
+  it("sends each port to its own host: contract views, archival RPC, indexer, Bitcoin backend", async () => {
+    const hosts: [string, string][] = [];
+    const bytes = (value: unknown) => [...new TextEncoder().encode(JSON.stringify(value))];
+    vi.stubGlobal("fetch", async (url: string, init?: RequestInit) => {
+      const { host, pathname } = new URL(url);
+      hosts.push([host, pathname]);
+      if (host === "btc.example") return new Response("not found", { status: 404 });
+      if (host === "tx.example") return Response.json({ account_txs: [] });
+      const body = JSON.parse(String(init?.body)) as { method: string };
+      expect(body.method).toBe("query");
+      return Response.json({ jsonrpc: "2.0", id: "x", result: { result: bytes({ ok: 1 }) } });
+    });
+    const deps = xrayDeps(
+      {
+        contractId: CONTRACT,
+        near: "testnet",
+        rpcUrl: "https://rpc.example",
+        archivalUrl: "https://archival.example",
+        indexerUrl: "https://tx.example/base",
+        btcBackendUrl: "https://btc.example/api",
+      },
+      new AbortController().signal,
+    );
+    expect(deps.contractId).toBe(CONTRACT);
+    expect(deps.nearNetwork).toBe("testnet");
+    expect(await deps.contract.getOp("25")).toEqual({ ok: 1 });
+    expect(await deps.rpc.viewAt("v1.signer-prod.testnet", "state", {}, "B")).toEqual({ ok: 1 });
+    expect(await deps.locator.find(CONTRACT, { method: "sign_input", opId: "25" })).toEqual([]);
+    expect(await deps.bitcoin.getTx(TXID)).toBeNull();
+    expect(hosts).toEqual([
+      ["rpc.example", "/"],
+      ["archival.example", "/"],
+      ["tx.example", "/base/v0/account"],
+      ["btc.example", `/api/tx/${TXID}/status`],
+    ]);
+  });
+
   it("binds fetch to the page's signal, and works when called as a method", async () => {
     const signals: AbortSignal[] = [];
     vi.stubGlobal("fetch", async (_url: string, init?: RequestInit) => {
@@ -197,14 +255,32 @@ describe("X-Ray reads", () => {
     });
     const page = new AbortController();
     const holder = { fetchFn: boundFetch(page.signal) };
-    const own = new AbortController();
-    await holder.fetchFn("https://archival.example", { signal: own.signal });
+    await holder.fetchFn("https://archival.example", { signal: new AbortController().signal });
     await holder.fetchFn("https://archival.example");
     expect(signals).toHaveLength(2);
     expect(signals[1]).toBe(page.signal);
-    expect(signals[0]?.aborted).toBe(false);
+    // Settled: its listener is gone from the page's signal, so leaving the page no longer reaches it.
     page.abort();
-    expect(signals[0]?.aborted).toBe(true);
+    expect(signals[0]?.aborted).toBe(false);
+  });
+
+  it("a request in flight stops when the page's signal aborts", async () => {
+    let seen: AbortSignal | undefined;
+    vi.stubGlobal(
+      "fetch",
+      (_url: string, init?: RequestInit) =>
+        new Promise<Response>((_, reject) => {
+          seen = init?.signal ?? undefined;
+          seen?.addEventListener("abort", () => reject(new DOMException("aborted", "AbortError")));
+        }),
+    );
+    const page = new AbortController();
+    const request = boundFetch(page.signal)("https://archival.example", {
+      signal: new AbortController().signal,
+    });
+    page.abort();
+    await expect(request).rejects.toThrow(/aborted/);
+    expect(seen?.aborted).toBe(true);
   });
 });
 
@@ -218,7 +294,7 @@ describe("X-Ray view model", () => {
       ["bitcoin", "done", "ok"],
     ]);
     expect(model.reveal).toBe(4);
-    expect(model.live).toBe(false);
+    expect(model.pollMs).toBeNull();
     expect(model.chips).toEqual(["op #25", "vault #29"]);
     const [script, rule, mpc, bitcoin] = model.stages;
     expect(script?.headline).toBe("Withdrawal path of the Vault Script");
@@ -284,8 +360,9 @@ describe("X-Ray view model", () => {
     expect(model.stages[2]?.headline).toBe("not reached");
     expect(model.stages[1]?.headline).toBe("Accepted · op pending · executable_at 09:30");
     expect(model.reveal).toBe(4);
-    expect(model.live).toBe(true);
-    expect(isLive(xray)).toBe(true);
+    // Only the op is still open: read again every 60 s, not every 10 s.
+    expect(model.pollMs).toBe(60_000);
+    expect(pollDelay(xray)).toBe(60_000);
   });
 
   it("stops the reveal at the first stage still waiting", () => {
@@ -298,7 +375,7 @@ describe("X-Ray view model", () => {
     expect(model.stages[2]).toMatchObject({ tone: "waiting", statusText: "waiting" });
     expect(model.stages[2]?.headline).toBe("Waiting for the NEAR MPC network");
     expect(model.stages[3]?.headline).toBe("Built by the contract, waiting for its signatures");
-    expect(model.live).toBe(true);
+    expect(model.pollMs).toBe(10_000);
   });
 
   it("a refused call: stage 2 alarm with the code, gloss and the values it was judged on", () => {
@@ -315,7 +392,26 @@ describe("X-Ray view model", () => {
     expect(labels["executable_at when judged"]?.value).toBe("10:30");
     expect(labels["NEAR transaction"]?.url).toBe("https://testnet.nearblocks.io/txns/H");
     expect(model.stages.slice(2).map((s) => s.headline)).toEqual(["not reached", "not reached"]);
-    expect(model.live).toBe(false);
+    expect(model.pollMs).toBeNull();
+    // The refused call keeps its chip next to the op it names.
+    expect(model.chips).toEqual(["refused call", "op #31", "vault #29"]);
+  });
+
+  it("reads again every 10 s while a stage waits, 60 s while only the op is open, else never", () => {
+    const waiting = signedOp();
+    waiting.bitcoin = { ...waiting.bitcoin, status: "pending" };
+    expect(pollDelay(waiting)).toBe(10_000);
+    for (const state of ["pending", "frozen"] as const) {
+      const open = signedOp();
+      open.rule.opState = src(state, `${OP_REF} → state`);
+      expect(pollDelay(open)).toBe(60_000);
+    }
+    for (const state of ["signed", "cancelled", "voided"] as const) {
+      const closed = signedOp();
+      closed.rule.opState = src(state, `${OP_REF} → state`);
+      expect(pollDelay(closed)).toBeNull();
+    }
+    expect(pollDelay(refusedCall())).toBeNull();
   });
 
   it("a voided op names the Clawback that voided it", () => {

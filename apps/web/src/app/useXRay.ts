@@ -1,13 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { XRay } from "@morrow/core-ts/browser";
-import {
-  XRAY_POLL_MS,
-  fetchXRay,
-  isLive,
-  type XRayAnswer,
-  type XRayEndpoints,
-  type XRayTarget,
-} from "./xray";
+import { fetchXRay, pollDelay, type XRayAnswer, type XRayEndpoints, type XRayTarget } from "./xray";
 
 /** Where the X-Ray of one op or refused call stands. */
 export type XRayState =
@@ -51,10 +44,10 @@ export const xrayKey = (endpoints: XRayEndpoints | null, target: XRayTarget) =>
   JSON.stringify([endpoints, target]);
 
 /**
- * Reads the X-Ray of `target` now, then again every 10 s while a stage is waiting or the op is
- * still open, and stops once nothing can change. Nothing is cached beyond this page's memory.
- * A failed read keeps the last data, marked stale, and the re-reads go on while that data was
- * live. `retry` reads again at once. Every read is aborted on unmount or when the target changes.
+ * Reads the X-Ray of `target` now, then again after `pollDelay`: every 10 s while a stage is
+ * waiting, every 60 s while only the op is still open, and stops once nothing can change.
+ * Nothing is cached beyond this page's memory. A failed read keeps the last data, marked stale,
+ * and the re-reads go on at that data's delay. `retry` reads again at once. Every read is aborted on unmount or when the target changes.
  */
 export function useXRay(
   endpoints: XRayEndpoints | null,
@@ -67,8 +60,9 @@ export function useXRay(
   // The values behind `key`, read when it changes.
   const latest = useRef({ endpoints, target });
   latest.current = { endpoints, target };
-  // Whether the data held for `key` can still change: a failed read keeps re-reading only then.
-  const live = useRef<{ key: string; live: boolean }>({ key, live: false });
+  // When the data held for `key` is read again (null: it cannot change). A failed read keeps
+  // re-reading at the last good read's delay.
+  const delay = useRef<{ key: string; ms: number | null }>({ key, ms: null });
 
   useEffect(() => {
     const { endpoints: at, target: what } = latest.current;
@@ -78,11 +72,10 @@ export function useXRay(
     const read = async () => {
       const answer = await fetchXRay(at, what, abort.signal);
       if (abort.signal.aborted) return;
-      if (answer.kind === "ok") live.current = { key, live: isLive(answer.xray) };
+      if (answer.kind === "ok") delay.current = { key, ms: pollDelay(answer.xray) };
       setHeld((previous) => heldAfter(previous, key, answer, Date.now()));
-      if (live.current.key === key && live.current.live) {
-        timer = setTimeout(() => void read(), XRAY_POLL_MS);
-      }
+      const ms = delay.current.key === key ? delay.current.ms : null;
+      if (ms !== null) timer = setTimeout(() => void read(), ms);
     };
     void read();
     return () => {

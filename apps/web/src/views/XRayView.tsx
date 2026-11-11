@@ -87,6 +87,7 @@ function XRayOf({
   );
   const { state, retry } = useXRay(endpoints, full);
   const model = state.kind === "ok" ? xrayModel(state.xray, state.now) : null;
+  const pollMs = model?.pollMs ?? null;
   const reveal = useReveal(model?.reveal ?? 0, JSON.stringify(full));
   const chips = model?.chips ?? (target.kind === "op" ? [x.opChip(target.opId)] : [x.refusedChip]);
   const header = <PageHeader title={copy.titles.xray} chips={chips} />;
@@ -103,7 +104,12 @@ function XRayOf({
     return (
       <>
         {header}
-        <Notice testId="xray-input" title={x.input} body={state.message} />
+        {/* A fresh refused call can be unknown until the archival RPC or the indexer catch up. */}
+        <Notice testId="xray-input" title={x.input} body={state.message}>
+          <Button variant="secondary" onClick={retry}>
+            {x.retry}
+          </Button>
+        </Notice>
         <OpenXRay contractId={contractId} />
       </>
     );
@@ -128,14 +134,20 @@ function XRayOf({
           data-testid="xray-stale"
           className="flex flex-col items-start gap-3 p-card-pad-mobile desktop:flex-row desktop:items-center desktop:justify-between desktop:p-card-pad"
         >
-          <p className="text-[14px] text-alarm">{x.stale(absoluteTime(state.readAt, state.now))}</p>
+          <p role="status" className="text-[14px] text-alarm">
+            {x.stale(absoluteTime(state.readAt, state.now))}
+          </p>
           <Button variant="secondary" onClick={retry}>
             {x.retry}
           </Button>
         </Card>
       )}
       {model && <XRayPipeline model={model} shown={reveal} />}
-      {model?.live && <p className="text-[13px] text-muted">{x.reading}</p>}
+      <p role="status" data-testid="xray-read" className="text-[13px] text-muted">
+        {!state.stale && x.readAt(absoluteTime(state.readAt, state.now))}
+        {!state.stale && pollMs !== null && " · "}
+        {pollMs !== null && x.reading(pollMs / 1000)}
+      </p>
     </>
   );
 }

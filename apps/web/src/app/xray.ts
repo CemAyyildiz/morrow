@@ -38,6 +38,11 @@ const x = copy.xrayPage;
 
 /** How often an X-Ray with a stage still waiting is read again. */
 export const XRAY_POLL_MS = 10_000;
+/**
+ * How often an op still Pending or Frozen, with no stage waiting, is read again: a whole Delay
+ * of 10 s rebuilds (30+ RPC calls each) would meet the free RPCs' rate limits.
+ */
+export const XRAY_SLOW_POLL_MS = 60_000;
 /** The pause between two stages lighting up. */
 export const REVEAL_STEP_MS = 450;
 
@@ -101,23 +106,38 @@ export class XRayReadError extends Error {
   }
 }
 
-/** `a`, also aborted when `b` is. By hand: `AbortSignal.any` needs Safari 17.4. */
-function eitherSignal(a: AbortSignal, b: AbortSignal): AbortSignal {
+/**
+ * A signal aborted when `a` or `b` is, and `release`, which removes its listeners from both.
+ * By hand: `AbortSignal.any` needs Safari 17.4.
+ */
+function eitherSignal(
+  a: AbortSignal,
+  b: AbortSignal,
+): { signal: AbortSignal; release: () => void } {
   const controller = new AbortController();
   const abort = () => controller.abort();
   if (a.aborted || b.aborted) abort();
   a.addEventListener("abort", abort, { once: true });
   b.addEventListener("abort", abort, { once: true });
-  return controller.signal;
+  const release = () => {
+    a.removeEventListener("abort", abort);
+    b.removeEventListener("abort", abort);
+  };
+  return { signal: controller.signal, release };
 }
 
 /**
  * `fetch` that also stops when `signal` aborts (the page left or the op changed). An arrow over
- * the global `fetch`: core-ts calls it as a method, which a bare `fetch` refuses.
+ * the global `fetch`: core-ts calls it as a method, which a bare `fetch` refuses. A request
+ * with its own signal leaves no listener on `signal` once it settles: a live X-Ray re-reads for
+ * hours.
  */
 export function boundFetch(signal: AbortSignal): typeof fetch {
-  return (input, init) =>
-    fetch(input, { ...init, signal: init?.signal ? eitherSignal(init.signal, signal) : signal });
+  return (input, init) => {
+    if (!init?.signal) return fetch(input, { ...init, signal });
+    const both = eitherSignal(init.signal, signal);
+    return fetch(input, { ...init, signal: both.signal }).finally(both.release);
+  };
 }
 
 /** `get_op`, `get_vault_kit` and `events_since` over the NEAR RPC; contract panics throw their `ERR_*`. */
@@ -168,6 +188,9 @@ export function esploraGetTx(btcBackendUrl: string, signal: AbortSignal): XRayDe
       if (response.status === 404) return null;
       if (!response.ok) throw new XRayReadError(`Bitcoin backend: HTTP ${response.status}`);
       const status = (await response.json()) as { confirmed?: unknown; block_height?: unknown };
+      if (status.confirmed === true && typeof status.block_height !== "number") {
+        throw new XRayReadError("Bitcoin backend: confirmed without a block height");
+      }
       if (status.confirmed !== true || typeof status.block_height !== "number") {
         // mempool.space answers `{confirmed: false}` for a txid it has never seen: only
         // `/tx/<txid>` tells a mempool transaction (200) from an unknown one (404).
@@ -182,7 +205,8 @@ export function esploraGetTx(btcBackendUrl: string, signal: AbortSignal): XRayDe
         throw new XRayReadError("Bitcoin backend: tip height");
       return {
         txid,
-        confirmations: Number(text) - status.block_height + 1,
+        // A tip node lagging the one that answered `/status` must not unconfirm the tx.
+        confirmations: Math.max(1, Number(text) - status.block_height + 1),
         block_height: status.block_height,
       };
     },
@@ -299,8 +323,8 @@ export interface XRayModel {
   stages: StageView[];
   /** How many stages light up: up to and including the first one still waiting. */
   reveal: number;
-  /** A stage is waiting, or the op is still open: the page reads again in 10 s. */
-  live: boolean;
+  /** When the page reads again (`pollDelay`), in ms; null once nothing can change. */
+  pollMs: number | null;
   chips: string[];
 }
 
@@ -611,13 +635,15 @@ function bitcoinStage(xray: XRay): StageView {
 }
 
 /**
- * Whether a later read can show something else: a stage is still waiting, or the op is still
- * Pending or Frozen (its MPC and Bitcoin stages are ahead of it).
+ * When a later read can show something else, in ms: 10 s while a stage is still waiting, 60 s
+ * while only the op is still Pending or Frozen (its MPC and Bitcoin stages are ahead of it, at
+ * the end of its Delay), null once nothing can change. Pure.
  */
-export function isLive(xray: XRay): boolean {
+export function pollDelay(xray: XRay): number | null {
   const statuses = [xray.script.status, xray.rule.status, xray.mpc.status, xray.bitcoin.status];
+  if (statuses.includes("pending")) return XRAY_POLL_MS;
   const state = xray.rule.opState?.value;
-  return statuses.includes("pending") || state === "pending" || state === "frozen";
+  return state === "pending" || state === "frozen" ? XRAY_SLOW_POLL_MS : null;
 }
 
 /** What the page draws for `xray`, times formatted against `now`. Pure. */
@@ -625,13 +651,13 @@ export function xrayModel(xray: XRay, now: number): XRayModel {
   const stages = [scriptStage(xray), ruleStage(xray, now), mpcStage(xray), bitcoinStage(xray)];
   const waiting = stages.findIndex((stage) => stage.status === "pending");
   const chips: string[] = [];
+  if (xray.rule.refusal) chips.push(x.refusedChip);
   if (xray.opId) chips.push(x.opChip(xray.opId.value));
-  else if (xray.rule.refusal) chips.push(x.refusedChip);
   if (xray.vaultId) chips.push(x.vaultChip(xray.vaultId.value));
   return {
     stages,
     reveal: waiting === -1 ? stages.length : waiting + 1,
-    live: isLive(xray),
+    pollMs: pollDelay(xray),
     chips,
   };
 }

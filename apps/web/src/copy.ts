@@ -174,14 +174,19 @@ export const copy = {
     },
     noNetwork: "X-Ray needs a NEAR network",
     noNetworkBody:
-      "This deployment runs the mock contract. X-Ray reads transactions, receipts and the MPC signer from NEAR testnet or mainnet.",
+      "X-Ray reads transactions, receipts and the MPC signer from NEAR testnet or mainnet, through an archival NEAR RPC and a transaction indexer. This deployment is not configured with them.",
     input: "Nothing to X-Ray here",
     unreachable: "The chain could not be read",
     unreachableBody:
       "The NEAR RPC, the transaction indexer or the Bitcoin backend did not answer. Nothing is cached, so nothing is shown.",
     stale: (at: string) => `The last read failed. Showing the read from ${at}.`,
     retry: "Retry",
-    reading: "Reading the chain again every 10 s while a stage is waiting.",
+    readAt: (at: string) => `Read at ${at}`,
+    reading: (seconds: number) => `Reading the chain again every ${seconds} s.`,
+    loadFailed: "The X-Ray page could not be loaded",
+    loadFailedBody:
+      "The site may have been updated since this page opened. Reload to get the current version.",
+    reload: "Reload",
     stages: {
       script: "Bitcoin script path",
       rule: "Vault Contract rule",
