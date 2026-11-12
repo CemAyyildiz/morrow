@@ -36,6 +36,14 @@ export async function runThief(ctx: ScenarioContext): Promise<void> {
   ctx.log(
     `Thief's withdrawal ${theft} is public and waits the Delay: ${config.explorerTxUrl(client.lastTransactionHash ?? "")}`,
   );
+  // The real keys buy the thief nothing yet: the contract will not co-sign before the Delay.
+  try {
+    await client.beginExecute(theft, envelope);
+    throw new Error("The thief's Execute succeeded before the Delay");
+  } catch (error) {
+    if (!(error instanceof MorrowContractError && error.code === "ERR_NOT_EXECUTABLE")) throw error;
+    ctx.log("Thief tries to execute at once: ERR_NOT_EXECUTABLE");
+  }
 
   const clawbackId = await guardianClient.beginClawback({
     vault_id: vaultId,

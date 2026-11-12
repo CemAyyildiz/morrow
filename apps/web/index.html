@@ -4,11 +4,38 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <meta name="color-scheme" content="dark" />
+    <meta
+      name="description"
+      content="Morrow: a time-lock vault for Bitcoin. A locked NEAR contract co-signs through NEAR Chain Signatures only after a Delay, and any Guardian can send a theft back to the Recovery Address."
+    />
     <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
     <title>morrow</title>
   </head>
   <body>
     <div id="root"></div>
+    <!-- For readers without JavaScript: the app reads every value below live from NEAR. -->
+    <noscript>
+      <h1>Morrow: Bitcoin that can't be rushed</h1>
+      <p>
+        Morrow is a time-lock vault for Bitcoin. A NEAR smart contract with no access keys co-signs
+        each withdrawal through NEAR Chain Signatures, but only after a Delay the Owner chose.
+        During the Delay any Guardian can send the coins back to the Owner's Recovery Address. If
+        NEAR stops, the Owner still leaves alone after a Bitcoin timelock.
+      </p>
+      <p>
+        This web app needs JavaScript. It reads the Vault Contract
+        <code>morrow-vault-v1.testnet</code> live from NEAR testnet and shows: the Proof Page (<code
+          >/proof/&lt;vault id&gt;</code
+        >: a Vault's Policy, its addresses recomputed in the browser, the contract's code_hash and
+        lock), X-Ray (<code>/xray/&lt;op id&gt;</code>: a withdrawal from the Bitcoin script path
+        through the contract rule and the NEAR MPC signature to the Bitcoin transaction), and what
+        to do after losing a device (<code>/lost</code>).
+      </p>
+      <p>
+        Source, demo and verification steps:
+        <a href="https://github.com/CemAyyildiz/morrow">github.com/CemAyyildiz/morrow</a>.
+      </p>
+    </noscript>
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>

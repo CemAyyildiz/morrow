@@ -76,9 +76,22 @@ export async function runEscapeScenario(ctx: ScenarioContext): Promise<void> {
         bytesToHex(session.ownerSecret),
       );
 
-    const early = offline(await rpc.getTipHeight());
+    const tip = await rpc.getTipHeight();
+    const early = offline(tip);
     if (early.code === 0) throw new Error("Escape succeeded before the timelock");
     ctx.log(`Before the timelock morrow-escape refuses: ${early.stderr.split("\n").pop() ?? ""}`);
+
+    // The CLI's refusal is a courtesy. Lie to it about the height so it signs anyway: Bitcoin
+    // itself (BIP68, the CSV in the Vault Script) refuses the spend before the timelock.
+    const forced = offline(tip + kit.escape_timelock_blocks);
+    if (forced.code !== 0) throw new Error(`morrow-escape did not sign: ${forced.stderr}`);
+    const rejection = await rpc.broadcast(forced.stdout).then(
+      () => null,
+      (error: unknown) => (error instanceof Error ? error.message : String(error)),
+    );
+    if (rejection === null) throw new Error("Bitcoin accepted an Escape before the timelock");
+    if (!/non-BIP68-final/.test(rejection)) throw new Error(`Unexpected rejection: ${rejection}`);
+    ctx.log("Signed anyway with a false height, Bitcoin Core rejects it: non-BIP68-final");
 
     await regtest.mine(kit.escape_timelock_blocks);
     const ready = offline(await rpc.getTipHeight());
