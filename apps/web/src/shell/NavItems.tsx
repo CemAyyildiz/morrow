@@ -1,3 +1,4 @@
+import { useAppData } from "@/app/data";
 import { Link } from "@/app/router";
 import { NAV_ROUTES, type NavId } from "@/app/routes";
 import { Badge } from "@/components/ui/badge";
@@ -17,6 +18,10 @@ export function NavItems({
   onNavigate?: () => void;
   decorative?: boolean;
 }) {
+  // The Challenge item's `live` badge claims an open round: only while the feed shows one. The
+  // landing's picture of the product always shows it, as its illustrated round is open.
+  const { challenge } = useAppData();
+  const showBadges = decorative || challenge !== null;
   return (
     <ul className="flex flex-col gap-0.5">
       {NAV_ROUTES.map(({ id, path, label, Icon, badge }) => {
@@ -24,7 +29,7 @@ export function NavItems({
           <>
             <Icon />
             {label}
-            {badge !== undefined && (
+            {badge !== undefined && showBadges && (
               <Badge
                 variant="chip"
                 className="ml-auto rounded-[8px] border-0 bg-line px-[7px] py-0.5 text-[11px] tracking-normal text-ink"

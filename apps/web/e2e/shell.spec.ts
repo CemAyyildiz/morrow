@@ -532,3 +532,14 @@ test("every app page leads home, and a detail page back to its list", async ({ p
   await page.goBack();
   await expect(page.getByRole("heading", { level: 1 })).toHaveText("Lost a device?");
 });
+
+test("the Challenge item says live only while a round is open", async ({ page }, info) => {
+  test.skip(isPhone(info.project.name), "sidebar navigation");
+  // No challenge feed: no round, so no badge.
+  await open(page, "/proof");
+  const item = page.getByTestId("sidebar").getByRole("link", { name: /Challenge/ });
+  await expect(item).toHaveText("Challenge");
+  // The server with the challenge feed has an open round.
+  await open(page, `${LIVE_WEB_URL}/proof`);
+  await expect(item).toHaveText("Challengelive");
+});

@@ -14,6 +14,7 @@ import {
   type Policy,
 } from "@morrow/core-ts";
 import { Account, JsonRpcProvider, KeyPair, KeyPairSigner } from "near-api-js";
+import { afterWrite } from "./chain.js";
 import { loadJudgeConfig, type JudgeConfig } from "./config.js";
 
 /** One faucet account and one set of keys, shared by every Scenario in a run. */
@@ -205,5 +206,16 @@ export async function createJudgeVault(
       deposit_yocto: MIN_VAULT_STORAGE_YOCTO.toString(),
     }),
   );
-  return { vaultId, tx: session.client.lastTransactionHash ?? "" };
+  const tx = session.client.lastTransactionHash ?? "";
+  // `create_vault` turns the Vault active in a callback, after the MPC network derives its
+  // co-signer keys. The RPC is load-balanced: wait until the answering node shows it active, so no
+  // Scenario reads the Vault Kit of a Vault that node still has pending (ERR_VAULT_NOT_ACTIVE).
+  const vault = await afterWrite(
+    "get_vault",
+    () => session.client.getVault(vaultId),
+    (v) => v.state === "active",
+  );
+  if (vault.state !== "active")
+    throw new Error(`Vault ${vaultId} is ${vault.state}, expected active`);
+  return { vaultId, tx };
 }
