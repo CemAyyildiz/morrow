@@ -163,5 +163,7 @@ describe("readAfter", () => {
     ).rejects.toThrow("ERR_UNAUTHORIZED");
     expect(read).toHaveBeenCalledTimes(1);
     expect(transient(new MorrowContractError("ERR_CHANGE_NOT_FOUND"))).toBe(true);
+    expect(transient(new MorrowContractError("ERR_VAULT_NOT_ACTIVE"))).toBe(true);
+    expect(transient(new MorrowContractError("ERR_UNAUTHORIZED"))).toBe(false);
   });
 });

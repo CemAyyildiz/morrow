@@ -8,7 +8,7 @@ import {
 } from "@morrow/core-ts";
 
 /** Attempts of a read that follows a transaction, for an RPC node that lags behind. */
-const READ_ATTEMPTS = 5;
+const READ_ATTEMPTS = 10;
 const READ_RETRY_MS = 1_000;
 /** `eventCount` gives up above this many events. */
 export const MAX_EVENT_COUNT = 2n ** 32n;
@@ -112,13 +112,16 @@ export async function refused(
 }
 
 /**
- * Worth another try: an RPC failure or timeout, or a change or op the RPC node does not have yet.
+ * Worth another try: an RPC failure or timeout, or a change, op or Vault the RPC node does not
+ * have yet. The public RPC is load-balanced, so one read can show a new Vault active and the next,
+ * from a node that lags, still pending (ERR_VAULT_NOT_ACTIVE).
  */
 export const transient = (error: unknown) =>
   !(error instanceof MorrowContractError) ||
   error.code === "ERR_CHANGE_NOT_FOUND" ||
   error.code === "ERR_OP_NOT_FOUND" ||
-  error.code === "ERR_VAULT_NOT_FOUND";
+  error.code === "ERR_VAULT_NOT_FOUND" ||
+  error.code === "ERR_VAULT_NOT_ACTIVE";
 
 /**
  * A read right after this run's own transaction. The public RPC is load-balanced, so the node
