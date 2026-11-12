@@ -1,5 +1,6 @@
 import { useEffect, useRef, type KeyboardEvent, type Ref } from "react";
-import type { NavId } from "@/app/routes";
+import { Link } from "@/app/router";
+import { LANDING_PATH, type NavId } from "@/app/routes";
 import { copy } from "@/copy";
 import { CloseIcon, MenuIcon } from "./icons";
 import { NavItems } from "./NavItems";
@@ -35,7 +36,13 @@ export function PhoneBar({
       data-testid="phone-bar"
       className="flex items-center justify-between border-b border-line px-gutter-mobile py-2 desktop:hidden"
     >
-      <div className={wordmark}>{copy.wordmark}</div>
+      <Link
+        to={LANDING_PATH}
+        data-testid="home-link"
+        className={`${wordmark} inline-flex min-h-11 items-center`}
+      >
+        {copy.wordmark}
+      </Link>
       <button
         ref={buttonRef}
         type="button"

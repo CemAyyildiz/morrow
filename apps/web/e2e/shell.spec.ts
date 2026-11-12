@@ -123,7 +123,7 @@ test("the desktop shell matches the mockup", async ({ page }, info) => {
   const sidebar = page.getByTestId("sidebar");
   await expect(sidebar).toBeVisible();
   expect((await box(sidebar)).width).toBe(232);
-  await expect(sidebar.getByRole("link")).toHaveText(NAV_PATTERNS);
+  await expect(sidebar.getByRole("navigation").getByRole("link")).toHaveText(NAV_PATTERNS);
   await expect(sidebar.getByRole("link", { name: /Challenge/ })).toHaveAttribute(
     "aria-current",
     "page",
@@ -134,7 +134,7 @@ test("the desktop shell matches the mockup", async ({ page }, info) => {
     const family = (el: Element | null) => (el ? getComputedStyle(el).fontFamily : "");
     return {
       heading: family(document.querySelector("h1")),
-      nav: family(document.querySelector("[data-testid=sidebar] a")),
+      nav: family(document.querySelector("[data-testid=sidebar] nav a")),
       system: family(document.querySelector("[data-testid=system-card]")),
       loaded: [
         document.fonts.check('500 26px "Funnel Display"'),
@@ -243,7 +243,7 @@ test("/lost: the steps, the current nav item and links only to what exists", asy
     .locator("main a")
     .evaluateAll((els) => els.map((el) => el.getAttribute("href") ?? ""));
   expect(hrefs.length).toBeGreaterThan(0);
-  for (const href of hrefs) expect(href).toMatch(/^(\/proof$|https:\/\/github\.com\/)/);
+  for (const href of hrefs) expect(href).toMatch(/^(\/$|\/proof$|https:\/\/github\.com\/)/);
 
   if (isPhone(info.project.name)) {
     await page.getByRole("button", { name: "Open menu" }).click();
@@ -325,8 +325,8 @@ test("unknown and unbuilt routes show a Not found card linking to /challenge", a
 test("Tab shows the focus ring through the nav and the header", async ({ page }, info) => {
   await open(page, "/challenge");
   const expected = isPhone(info.project.name)
-    ? ["Skip to content", "Open menu"]
-    : ["Skip to content", ...NAV_LABELS];
+    ? ["Skip to content", "morrow", "Open menu"]
+    : ["Skip to content", "morrow", ...NAV_LABELS];
 
   const seen: string[] = [];
   for (let i = 0; i < expected.length; i++) {
@@ -497,4 +497,38 @@ test("nav links navigate in place and Back returns", async ({ page }, info) => {
   await expect(page.getByRole("heading", { level: 1 })).toHaveText("Challenge vault");
   await expect(liveRegion).toHaveText("Challenge vault");
   await expect(page.locator("main#main")).toBeFocused();
+});
+
+test("every app page leads home, and a detail page back to its list", async ({ page }, info) => {
+  // A judge who opened a README deep link has no history to go back through.
+  await open(page, "/proof/7");
+  const back = page.getByTestId("back-link");
+  await expect(back).toHaveText("Back to Proof");
+  await expect(back).toHaveAttribute("href", "/proof");
+  await back.click();
+  await expect(page).toHaveURL(/\/proof$/);
+  await expect(page.getByRole("heading", { level: 1 })).toHaveText("Proof");
+  await expect(back).toHaveText("Back to home");
+  await expect(back).toHaveAttribute("href", "/");
+
+  await open(page, "/xray/7");
+  await expect(back).toHaveText("Back to X-Ray");
+  await expect(back).toHaveAttribute("href", "/xray");
+
+  await open(page, "/nope");
+  await expect(back).toHaveText("Back to home");
+  await back.click();
+  await expect(page).toHaveURL(/\/$/);
+  await expect(page.getByRole("heading", { level: 1 })).toHaveText("Bitcoin that can't be rushed.");
+
+  // The wordmark leads home too: in the sidebar on desktop, in the top bar on a phone.
+  await open(page, "/lost");
+  const scope = isPhone(info.project.name) ? "phone-bar" : "sidebar";
+  const home = page.getByTestId(scope).getByTestId("home-link");
+  await expect(home).toHaveText("morrow");
+  await home.click();
+  await expect(page).toHaveURL(/\/$/);
+  await expect(page.getByRole("heading", { level: 1 })).toHaveText("Bitcoin that can't be rushed.");
+  await page.goBack();
+  await expect(page.getByRole("heading", { level: 1 })).toHaveText("Lost a device?");
 });

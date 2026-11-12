@@ -10,7 +10,7 @@ import { LostView } from "@/views/LostView";
 import { NotFoundView } from "@/views/NotFoundView";
 import { ProofView } from "@/views/ProofView";
 import { useRouter } from "./router";
-import { resolveRoute, type ResolvedRoute } from "./routes";
+import { LANDING_PATH, resolveRoute, type ResolvedRoute } from "./routes";
 
 // The X-Ray page carries core-ts `buildXRay`: its own chunk, loaded when an X-Ray route opens.
 // A chunk that fails to load (a redeploy changed the asset hashes) shows a notice, not a blank app.
@@ -61,8 +61,18 @@ export function App() {
   if (resolved.kind === "landing") return <Landing />;
 
   const title = resolved.kind === "nav" ? resolved.route.title : copy.titles.notFound;
+  // A detail page (`/proof/33`, `/xray/30`) leads back to its list page; every other page home.
+  const detail =
+    resolved.kind === "nav" && (resolved.vaultId !== undefined || resolved.xray !== undefined);
+  const back = detail
+    ? { to: resolved.route.path, label: copy.nav.backTo(resolved.route.label) }
+    : { to: LANDING_PATH, label: copy.nav.backHome };
   return (
-    <AppShell activeId={resolved.kind === "nav" ? resolved.route.id : null} title={title}>
+    <AppShell
+      activeId={resolved.kind === "nav" ? resolved.route.id : null}
+      title={title}
+      back={back}
+    >
       {resolved.kind === "not-found" ? (
         <NotFoundView path={resolved.path} />
       ) : (

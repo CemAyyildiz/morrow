@@ -4,6 +4,7 @@ import { useRouter } from "@/app/router";
 import type { NavId } from "@/app/routes";
 import { copy } from "@/copy";
 import { AnnounceContext } from "./announce";
+import { BackLink, type BackTarget } from "./BackLink";
 import { PhoneBar, PhoneMenu, type MenuCloseFocus } from "./PhoneNav";
 import { Sidebar } from "./Sidebar";
 import { TestnetBanner } from "./TestnetBanner";
@@ -20,10 +21,12 @@ import { TestnetBanner } from "./TestnetBanner";
 export function AppShell({
   activeId,
   title,
+  back,
   children,
 }: {
   activeId: NavId | null;
   title: string;
+  back: BackTarget;
   children: ReactNode;
 }) {
   const { config } = useAppData();
@@ -91,6 +94,7 @@ export function AppShell({
               tabIndex={-1}
               className="flex min-w-0 flex-col gap-stack px-gutter-mobile py-4 outline-none desktop:px-7 desktop:py-[22px]"
             >
+              <BackLink {...back} />
               {children}
             </main>
           </div>

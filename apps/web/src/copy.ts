@@ -33,6 +33,8 @@ export const copy = {
     openMenu: "Open menu",
     closeMenu: "Close menu",
     menu: "Menu",
+    backHome: "Back to home",
+    backTo: (page: string) => `Back to ${page}`,
   },
 
   titles: {
