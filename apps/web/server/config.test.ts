@@ -3,6 +3,8 @@ import {
   ConfigError,
   connectSources,
   contentSecurityPolicy,
+  isWalletPath,
+  walletContentSecurityPolicy,
   loadConfig,
   securityHeaders,
 } from "./config.ts";
@@ -222,5 +224,38 @@ describe("content security policy", () => {
       "x-content-type-options": "nosniff",
       "referrer-policy": "no-referrer",
     });
+  });
+});
+
+describe("wallet pages", () => {
+  const NONCE = "AAECAwQFBgcICQoLDA0ODw==";
+
+  it("are /vault/new and /vault/<digits> only", () => {
+    for (const path of ["/vault/new", "/vault/new/", "/vault/7", "/vault/0042/"]) {
+      expect(isWalletPath(path)).toBe(true);
+    }
+    for (const path of ["/vault", "/vault/", "/vault/x", "/vault/7/ops", "/vaults/7", "/proof/7"]) {
+      expect(isWalletPath(path)).toBe(false);
+    }
+  });
+
+  it("get the strict CSP plus a nonce, inline styles, data images, Intear frames and wallet origins", () => {
+    expect(walletContentSecurityPolicy(loadConfig(VALID), NONCE)).toBe(
+      `default-src 'self'; script-src 'self' 'nonce-${NONCE}'; style-src 'self' 'unsafe-inline'; ` +
+        "font-src 'self'; img-src 'self' data:; frame-src 'self' https://wallet.intear.tech; " +
+        "connect-src 'self' https://rpc.testnet.fastnear.com https://archival-rpc.testnet.fastnear.com https://tx.test.fastnear.com https://mempool.space https://watcher.example.org " +
+        "https://*.meteorwallet.app wss://*.meteorwallet.app https://wallet.intear.tech wss://*.intear.tech; " +
+        "frame-ancestors 'none'; base-uri 'none'; form-action 'self'",
+    );
+  });
+
+  it("never allow a third-party script origin, eval, or a malformed nonce", () => {
+    const csp = walletContentSecurityPolicy(loadConfig(VALID), NONCE);
+    const script = csp.split("; ").find((d) => d.startsWith("script-src"));
+    expect(script).toBe(`script-src 'self' 'nonce-${NONCE}'`);
+    expect(csp).not.toMatch(/unsafe-eval/);
+    for (const bad of ["", "abc", `${NONCE}'; script-src *`, "AAECAwQFBgcICQoLDA0ODw"]) {
+      expect(() => walletContentSecurityPolicy(loadConfig(VALID), bad)).toThrow(/nonce/);
+    }
   });
 });

@@ -5,3 +5,6 @@ docs/
 target/
 dist/
 pnpm-lock.yaml
+
+# Pinned third-party wallet executors (apps/web/src/vault/wallets.ts), byte for byte as fetched.
+apps/web/public/wallets/

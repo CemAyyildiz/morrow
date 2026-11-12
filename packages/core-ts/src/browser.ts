@@ -1,7 +1,8 @@
 /**
  * The browser-safe part of core-ts: pure modules only (explorer links, error codes with their
  * meanings, event kinds and types, transaction failure reading) plus what "Try with these keys"
- * needs: NEAR transaction signing, the Watcher Envelope and SegWit address checks, plus the Proof
+ * needs: NEAR transaction signing, the Watcher Envelope and SegWit address checks, the wallet
+ * pages' key generation, signet Policy and spend completion (`assembleSpendHex`), plus the Proof
  * Page's Vault Script decoding and P2WSH address recompute, and X-Ray's assembly (`buildXRay`
  * with its fetch-based RPC and FastNEAR locator), built on @noble and @scure. Nothing
  * here may import near-api-js, libsodium or bitcoinjs-lib, directly or through another module:
@@ -22,7 +23,22 @@ export {
   type EventKind,
   type MorrowEvent,
 } from "./contract/events.js";
-export { canonicalChangesJson, isLoosening, looseningReasons } from "./contract/policy.js";
+export {
+  canonicalChangesJson,
+  isLoosening,
+  looseningReasons,
+  presetPolicy,
+  validatePolicy,
+  type PresetInputs,
+  type PresetName,
+} from "./contract/policy.js";
+export {
+  SIGNET_DELAYS_NS,
+  SIGNET_POLICY,
+  signetPolicy,
+  type SignetDelay,
+  type SignetPolicyInputs,
+} from "./contract/signet-policy.js";
 export type {
   AccountId,
   BtcNetwork,
@@ -91,6 +107,18 @@ export {
   type SignedFunctionCall,
 } from "./near/browser-tx.js";
 export { sealWatcherEnvelope, type WatcherEnvelopeFlag } from "./crypto/browser-envelope.js";
+export {
+  compressedPublicKey,
+  decodeWif,
+  encodeWif,
+  p2wpkhAddress,
+  randomSecretKey,
+  randomX25519SecretKey,
+  x25519PublicKey,
+} from "./crypto/browser-keys.js";
+export { assembleSpendHex } from "./spend/assemble-browser.js";
+export type { LocalSigner } from "./spend/signatures.js";
+export { TxParseError, txidOf } from "./bitcoin/browser-txid.js";
 export {
   linkRequestDigest,
   linkRequestMessage,

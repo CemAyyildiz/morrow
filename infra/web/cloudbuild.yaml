@@ -1,6 +1,9 @@
 # Builds infra/web/Dockerfile from the repository root and pushes it (story 10.3):
 #   gcloud builds submit --project morrow-near-1029-565 --region europe-west1 \
 #     --config infra/web/cloudbuild.yaml --substitutions _IMAGE=<artifact registry image> .
+# The Cloud Run service runs it on NEAR testnet and Bitcoin signet (story 1.11b: the wallet
+# pages create signet Vaults), with Bitcoin read and broadcast through mempool.space:
+#   gcloud run deploy morrow-web --project morrow-near-1029-565 --region europe-west1 --image <artifact registry image> --set-env-vars MORROW_NEAR_NETWORK=testnet,MORROW_VAULT_CONTRACT=morrow-vault-v1.testnet,MORROW_BTC_NETWORK=signet,MORROW_BTC_BACKEND_URL=https://mempool.space/signet/api
 steps:
   - name: gcr.io/cloud-builders/docker
     args: ["build", "-f", "infra/web/Dockerfile", "-t", "${_IMAGE}", "."]

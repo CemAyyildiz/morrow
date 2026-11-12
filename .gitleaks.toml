@@ -1,0 +1,9 @@
+# The default gitleaks rules, minus the pinned third-party wallet executors: minified code
+# byte for byte as fetched (apps/web/src/vault/wallets.ts records each source and sha256),
+# not secrets of ours.
+[extend]
+useDefault = true
+
+[allowlist]
+description = "Pinned third-party wallet executors"
+paths = ['''^apps/web/public/wallets/[a-z]+\.js$''']

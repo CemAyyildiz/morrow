@@ -1,4 +1,5 @@
 export * from "./address.js";
+export * from "./browser-keys.js";
 export * from "./envelope.js";
 export * from "./errors.js";
 export * from "./hex.js";

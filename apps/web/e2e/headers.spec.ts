@@ -9,6 +9,16 @@ const CSP =
   `connect-src 'self' ${RPC_URL} ${BACKEND_URL} ${WATCHER_URL}; ` +
   "frame-ancestors 'none'; base-uri 'none'; form-action 'self'";
 
+/** The wallet pages' CSP (story 1.11b) for a response's nonce. */
+const walletCsp = (nonce: string) =>
+  `default-src 'self'; script-src 'self' 'nonce-${nonce}'; style-src 'self' 'unsafe-inline'; ` +
+  "font-src 'self'; img-src 'self' data:; frame-src 'self' https://wallet.intear.tech; " +
+  `connect-src 'self' ${RPC_URL} ${BACKEND_URL} ${WATCHER_URL} ` +
+  "https://*.meteorwallet.app wss://*.meteorwallet.app https://wallet.intear.tech wss://*.intear.tech; " +
+  "frame-ancestors 'none'; base-uri 'none'; form-action 'self'";
+
+const NONCE_META = /<meta name="csp-nonce" content="([A-Za-z0-9+/]{22}==)" \/>/;
+
 function expectSecurityHeaders(response: APIResponse) {
   const headers = response.headers();
   expect(headers["content-security-policy"]).toBe(CSP);
@@ -59,6 +69,47 @@ test.describe("security headers", () => {
     });
   });
 
+  for (const path of ["/vault/new", "/vault/7"]) {
+    test(`${path} gets the wallet CSP with a fresh nonce, also in the page`, async ({
+      request,
+    }) => {
+      const first = await request.get(path);
+      const second = await request.get(path);
+      const nonces: string[] = [];
+      for (const response of [first, second]) {
+        expect(response.status()).toBe(200);
+        expect(response.headers()["cache-control"]).toBe("no-store");
+        const nonce = NONCE_META.exec(await response.text())?.[1];
+        if (nonce === undefined) throw new Error("no csp-nonce meta");
+        nonces.push(nonce);
+        expect(response.headers()["content-security-policy"]).toBe(walletCsp(nonce));
+        expect(response.headers()["strict-transport-security"]).toBe(
+          "max-age=31536000; includeSubDomains",
+        );
+      }
+      expect(nonces[0]).not.toBe(nonces[1]);
+    });
+  }
+
+  test("the pinned wallet executors are served from our origin with the strict CSP", async ({
+    request,
+  }) => {
+    for (const path of ["/wallets/meteor.js", "/wallets/intear.js"]) {
+      const response = await request.get(path);
+      expect(response.status()).toBe(200);
+      expect(response.headers()["content-type"]).toMatch(/^text\/javascript/);
+      expectSecurityHeaders(response);
+    }
+  });
+
+  test("/vault and every other route keep today's strict CSP and no nonce", async ({ request }) => {
+    for (const path of ["/vault", "/vault/abc", "/proof/7", "/xray", "/lost", "/"]) {
+      const response = await request.get(path);
+      expectSecurityHeaders(response);
+      expect(await response.text()).not.toContain("csp-nonce");
+    }
+  });
+
   for (const path of ["/assets/nope.js", "/nope.css"]) {
     test(`${path} is a 404 with every header`, async ({ request }) => {
       const response = await request.get(path);
@@ -80,6 +131,8 @@ test.describe("no CSP violation on load", () => {
     "/xray/7",
     "/g/1",
     "/nope",
+    "/vault/new",
+    "/vault/7",
   ]) {
     test(path, async ({ page }) => {
       const violations: string[] = [];
@@ -95,7 +148,11 @@ test.describe("no CSP violation on load", () => {
       });
 
       const response = await page.goto(path);
-      expect(response?.headers()["content-security-policy"]).toBe(CSP);
+      const nonce = NONCE_META.exec((await response?.text()) ?? "")?.[1];
+      expect(response?.headers()["content-security-policy"]).toBe(
+        path.startsWith("/vault/") && nonce !== undefined ? walletCsp(nonce) : CSP,
+      );
+      if (path.startsWith("/vault/")) expect(nonce).toBeDefined();
       await page.waitForLoadState("networkidle");
       await expect(page.getByRole("heading", { level: 1 })).toBeVisible();
       await expect(page.getByTestId("live-region")).toBeAttached();

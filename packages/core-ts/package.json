@@ -4,6 +4,7 @@
   "private": true,
   "description": "Contract client, witness assembly, low-S, envelopes and Bitcoin backends shared by every Morrow client.",
   "type": "module",
+  "sideEffects": false,
   "exports": {
     ".": {
       "types": "./src/index.ts",

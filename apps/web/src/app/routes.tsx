@@ -1,15 +1,24 @@
 import type { ComponentType } from "react";
 import { copy } from "@/copy";
-import { ChallengeIcon, LostIcon, ProofIcon, XRayIcon, type IconProps } from "@/shell/icons";
+import {
+  ChallengeIcon,
+  LostIcon,
+  ProofIcon,
+  VaultIcon,
+  XRayIcon,
+  type IconProps,
+} from "@/shell/icons";
 import { canonicalVaultId } from "./proof";
 import { normalizePath } from "./router";
+import { VAULT_NEW_PATH, vaultPath } from "./wallet-paths";
 import { XRAY_PATH, parseXRayPath } from "./xray-paths";
 
 /**
- * Only screens that are built have a nav item and a route. Vault, Guardians and Policy come
- * back with their screens (stories 1.11, 3.7, 5.5); until then their paths are Not found.
+ * Only screens that are built have a nav item and a route. Guardians and Policy come back with
+ * their screens (stories 3.7, 5.5); until then their paths are Not found. The Vault item opens
+ * the wallet pages (story 1.11b): `/vault/new` and `/vault/<vault_id>`.
  */
-export type NavId = "challenge" | "proof" | "xray" | "lost";
+export type NavId = "vault" | "challenge" | "proof" | "xray" | "lost";
 
 export interface NavRoute {
   id: NavId;
@@ -27,6 +36,13 @@ export const LOST_PATH = "/lost";
 
 /** Sidebar and phone menu order. */
 export const NAV_ROUTES: readonly NavRoute[] = [
+  {
+    id: "vault",
+    path: VAULT_NEW_PATH,
+    label: copy.nav.vault,
+    title: copy.titles.vault,
+    Icon: VaultIcon,
+  },
   {
     id: "challenge",
     path: "/challenge",
@@ -50,24 +66,28 @@ export const LANDING_PATH = "/";
 
 /**
  * Paths the router rewrites before rendering. `/rob` (the epic's name for the Challenge page)
- * leads to the canonical `/challenge`; `/x-ray` (the X-Ray item's first path) to `/xray`.
+ * leads to the canonical `/challenge`; `/x-ray` (the X-Ray item's first path) to `/xray`;
+ * `/vault` to the create wizard, `/vault/new` (a full page load: it is a wallet page).
  */
 export const REDIRECTS: Readonly<Record<string, string>> = {
   "/rob": HOME_PATH,
   "/x-ray": XRAY_PATH,
+  "/vault": VAULT_NEW_PATH,
 };
 
 export type ResolvedRoute =
   | { kind: "redirect"; to: string }
   | { kind: "landing" }
   /**
-   * `vaultId` is set on `/proof/<digits>`: the Proof Page of that Vault. `xray` on
+   * `vaultId` is set on `/proof/<digits>`: the Proof Page of that Vault, and on
+   * `/vault/<digits>`: that Vault's page. `xray` on
    * `/xray/<op_id>` and `/xray/tx/<hash>`: what the X-Ray shows.
    */
   | { kind: "nav"; route: NavRoute; vaultId?: string; xray?: XRayRouteTarget }
   | { kind: "not-found"; path: string };
 
 const PROOF_PARAM = /^\/proof\/(\d+)$/;
+const VAULT_PARAM = /^\/vault\/(\d+)$/;
 
 /** An op, or a refused call (its signer is not in the path). */
 export type XRayRouteTarget = { kind: "op"; opId: string } | { kind: "tx"; hash: string };
@@ -92,6 +112,16 @@ export function resolveRoute(pathname: string): ResolvedRoute {
   if (vaultId !== null && vaultId !== proof?.[1])
     return { kind: "redirect", to: proofPath(vaultId) };
   if (vaultId !== null && proofRoute) return { kind: "nav", route: proofRoute, vaultId };
+  // `/vault/<vault_id>`: the wallet page of that Vault, under the Vault nav item.
+  const vault = VAULT_PARAM.exec(path);
+  const vaultParam = vault?.[1] === undefined ? null : canonicalVaultId(vault[1]);
+  const vaultRoute = NAV_ROUTES.find((candidate) => candidate.id === "vault");
+  if (vaultParam !== null && vaultParam !== vault?.[1]) {
+    return { kind: "redirect", to: vaultPath(vaultParam) };
+  }
+  if (vaultParam !== null && vaultRoute) {
+    return { kind: "nav", route: vaultRoute, vaultId: vaultParam };
+  }
   return { kind: "not-found", path };
 }
 

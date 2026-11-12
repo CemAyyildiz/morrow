@@ -184,6 +184,60 @@ export function contentSecurityPolicy(config: PublicConfig): string {
   ].join("; ");
 }
 
+/**
+ * The wallet pages: `/vault/new` (create a Vault) and `/vault/<vault_id>` (operate one). Only
+ * these get the wallet CSP; the router reaches and leaves them with full page loads.
+ */
+export function isWalletPath(path: string): boolean {
+  return /^\/vault\/(new|\d+)\/?$/.test(path);
+}
+
+/**
+ * Origins the wallets' executors talk to from their sandboxed iframe, which inherits the page
+ * CSP: Meteor's connect backend and Intear's logout bridge.
+ */
+export const WALLET_CONNECT_SOURCES = [
+  "https://*.meteorwallet.app",
+  "wss://*.meteorwallet.app",
+  "https://wallet.intear.tech",
+  "wss://*.intear.tech",
+] as const;
+
+/**
+ * Wallet pages a wallet's executor frames: Intear's executor opens wallet.intear.tech in an
+ * iframe to connect and sign (a Chromium check showed the strict `frame-src 'self'` blocks it).
+ * A cross-origin frame runs nothing in our origin.
+ */
+export const WALLET_FRAME_SOURCES = ["https://wallet.intear.tech"] as const;
+
+/** A CSP nonce: 16 random bytes, base64. The caller draws a fresh one per response. */
+export function isNonce(value: string): boolean {
+  return /^[A-Za-z0-9+/]{22}==$/.test(value);
+}
+
+/**
+ * The wallet pages' CSP. near-connect (pinned, from our origin) injects each wallet's pinned
+ * executor inline into a `sandbox="allow-scripts"` srcdoc iframe that inherits this policy, so
+ * scripts also run with this response's nonce; the wallet popup and the iframe use inline
+ * styles and the wallets' data-URI icons; Intear frames its own wallet page. No third-party
+ * script origin is allowed.
+ */
+export function walletContentSecurityPolicy(config: PublicConfig, nonce: string): string {
+  if (!isNonce(nonce)) throw new Error("The CSP nonce must be 16 bytes of base64");
+  return [
+    "default-src 'self'",
+    `script-src 'self' 'nonce-${nonce}'`,
+    "style-src 'self' 'unsafe-inline'",
+    "font-src 'self'",
+    "img-src 'self' data:",
+    `frame-src 'self' ${WALLET_FRAME_SOURCES.join(" ")}`,
+    `connect-src ${[...connectSources(config), ...WALLET_CONNECT_SOURCES].join(" ")}`,
+    "frame-ancestors 'none'",
+    "base-uri 'none'",
+    "form-action 'self'",
+  ].join("; ");
+}
+
 /** The NFR-10 headers sent on every response. */
 export function securityHeaders(config: PublicConfig): Record<string, string> {
   return {

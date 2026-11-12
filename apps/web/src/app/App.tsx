@@ -21,16 +21,63 @@ const XRayView = lazy(() =>
   ),
 );
 
+// The wallet pages (story 1.11b) carry the key, Policy and spend code: their own chunks, loaded
+// only on `/vault/new` and `/vault/<id>`; near-connect is a further chunk, loaded on Connect.
+const CreateVaultView = lazy(() =>
+  import("@/vault/CreateVaultView").then(
+    (m) => ({ default: m.CreateVaultView }),
+    () => ({ default: VaultLoadFailed }),
+  ),
+);
+const VaultView = lazy(() =>
+  import("@/vault/VaultView").then(
+    (m) => ({ default: m.VaultView }),
+    () => ({ default: VaultLoadFailed }),
+  ),
+);
+
 function XRayLoadFailed() {
   return (
+    <LoadFailed
+      testId="xray-load-failed"
+      title={copy.xrayPage.loadFailed}
+      body={copy.xrayPage.loadFailedBody}
+      reload={copy.xrayPage.reload}
+    />
+  );
+}
+
+function VaultLoadFailed() {
+  return (
+    <LoadFailed
+      testId="vault-load-failed"
+      title={copy.vault.loadFailed}
+      body={copy.vault.loadFailedBody}
+      reload={copy.vault.reload}
+    />
+  );
+}
+
+function LoadFailed({
+  testId,
+  title,
+  body,
+  reload,
+}: {
+  testId: string;
+  title: string;
+  body: string;
+  reload: string;
+}) {
+  return (
     <Card
-      data-testid="xray-load-failed"
+      data-testid={testId}
       className="flex flex-col items-start gap-3 p-card-pad-mobile desktop:p-card-pad"
     >
-      <CardTitle>{copy.xrayPage.loadFailed}</CardTitle>
-      <CardDescription className="max-w-[560px]">{copy.xrayPage.loadFailedBody}</CardDescription>
+      <CardTitle>{title}</CardTitle>
+      <CardDescription className="max-w-[560px]">{body}</CardDescription>
       <Button variant="secondary" onClick={() => window.location.reload()}>
-        {copy.xrayPage.reload}
+        {reload}
       </Button>
     </Card>
   );
@@ -61,9 +108,12 @@ export function App() {
   if (resolved.kind === "landing") return <Landing />;
 
   const title = resolved.kind === "nav" ? resolved.route.title : copy.titles.notFound;
-  // A detail page (`/proof/33`, `/xray/30`) leads back to its list page; every other page home.
+  // A detail page (`/proof/33`, `/xray/30`) leads back to its list page; every other page home,
+  // the Vault pages included (`/vault/new` is no list of Vaults).
   const detail =
-    resolved.kind === "nav" && (resolved.vaultId !== undefined || resolved.xray !== undefined);
+    resolved.kind === "nav" &&
+    resolved.route.id !== "vault" &&
+    (resolved.vaultId !== undefined || resolved.xray !== undefined);
   const back = detail
     ? { to: resolved.route.path, label: copy.nav.backTo(resolved.route.label) }
     : { to: LANDING_PATH, label: copy.nav.backHome };
@@ -85,6 +135,12 @@ export function App() {
 /** One screen per nav item; the switch is exhaustive, so a nav item without a screen fails to compile. */
 function Screen({ route, vaultId, xray }: Extract<ResolvedRoute, { kind: "nav" }>): ReactElement {
   switch (route.id) {
+    case "vault":
+      return (
+        <Suspense fallback={null}>
+          {vaultId === undefined ? <CreateVaultView /> : <VaultView vaultId={vaultId} />}
+        </Suspense>
+      );
     case "challenge":
       return <ChallengeView />;
     case "proof":

@@ -5,3 +5,4 @@ export * from "./from-url.js";
 export * from "./regtest.js";
 export * from "./browser-address.js";
 export * from "./browser-script.js";
+export { TxParseError, txidOf } from "./browser-txid.js";

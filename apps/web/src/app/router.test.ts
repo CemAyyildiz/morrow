@@ -3,12 +3,15 @@ import { copy, plural } from "@/copy";
 import type { BtcNetwork, NearNetwork, NetworkPair } from "./data";
 import { normalizePath } from "./router";
 import { NAV_ROUTES, REDIRECTS, resolveRoute } from "./routes";
+import { crossesWalletBoundary, isWalletPath } from "./wallet-paths";
 
 describe("route resolution", () => {
-  it("resolves / to the landing; the redirects are /rob to /challenge and /x-ray to /xray", () => {
+  it("resolves / to the landing; the redirects are /rob, /x-ray and /vault", () => {
     expect(resolveRoute("/")).toEqual({ kind: "landing" });
     expect(resolveRoute("")).toEqual({ kind: "landing" });
-    expect(REDIRECTS).toEqual({ "/rob": "/challenge", "/x-ray": "/xray" });
+    expect(REDIRECTS).toEqual({ "/rob": "/challenge", "/x-ray": "/xray", "/vault": "/vault/new" });
+    expect(resolveRoute("/vault")).toEqual({ kind: "redirect", to: "/vault/new" });
+    expect(resolveRoute("/vault/")).toEqual({ kind: "redirect", to: "/vault/new" });
     expect(resolveRoute("/x-ray")).toEqual({ kind: "redirect", to: "/xray" });
     expect(resolveRoute("/rob")).toEqual({ kind: "redirect", to: "/challenge" });
     expect(resolveRoute("/rob/")).toEqual({ kind: "redirect", to: "/challenge" });
@@ -16,12 +19,14 @@ describe("route resolution", () => {
 
   it("lists only the built screens, in sidebar order", () => {
     expect(NAV_ROUTES.map((route) => route.path)).toEqual([
+      "/vault/new",
       "/challenge",
       "/proof",
       "/xray",
       "/lost",
     ]);
     expect(NAV_ROUTES.map((route) => route.label)).toEqual([
+      "Vault",
       "Challenge",
       "Proof",
       "X-Ray",
@@ -30,6 +35,8 @@ describe("route resolution", () => {
   });
 
   it.each([
+    ["/vault/new", "vault", "Vault"],
+    ["/vault/new/", "vault", "Vault"],
     ["/challenge", "challenge", "Challenge vault"],
     ["/proof", "proof", "Proof"],
     ["/xray", "xray", "X-Ray"],
@@ -72,7 +79,34 @@ describe("route resolution", () => {
   });
 
   // Unbuilt screens have no route: a typed URL never lands on a placeholder.
-  it.each(["/vault", "/guardians", "/policy", "/guardians/", "/lost/extra"])(
+  it("resolves /vault/<vault_id> to the Vault item, canonical", () => {
+    expect(resolveRoute("/vault/7")).toMatchObject({ kind: "nav", vaultId: "7" });
+    const route = resolveRoute("/vault/7");
+    if (route.kind === "nav") expect(route.route.id).toBe("vault");
+    expect(resolveRoute("/vault/new")).toMatchObject({ kind: "nav" });
+    expect("vaultId" in resolveRoute("/vault/new")).toBe(false);
+    expect(resolveRoute("/vault/007")).toEqual({ kind: "redirect", to: "/vault/7" });
+    for (const path of ["/vault/abc", "/vault/7/ops", "/vault/99999999999999999999"]) {
+      expect(resolveRoute(path)).toEqual({ kind: "not-found", path });
+    }
+  });
+
+  it("marks the wallet pages, and only moves across their edge with a full page load", () => {
+    for (const path of ["/vault/new", "/vault/new/", "/vault/7", "/vault/0042"]) {
+      expect(isWalletPath(path)).toBe(true);
+    }
+    for (const path of ["/vault", "/vault/x", "/proof/7", "/challenge", "/"]) {
+      expect(isWalletPath(path)).toBe(false);
+    }
+    expect(crossesWalletBoundary("/challenge", "/vault/new")).toBe(true);
+    expect(crossesWalletBoundary("/vault/7", "/proof/7")).toBe(true);
+    expect(crossesWalletBoundary("/vault", "/vault/new")).toBe(true);
+    expect(crossesWalletBoundary("/vault/new", "/vault/7")).toBe(false);
+    expect(crossesWalletBoundary("/challenge", "/proof/7")).toBe(false);
+    expect(crossesWalletBoundary("/vault/new?x=1", "/vault/7#a")).toBe(false);
+  });
+
+  it.each(["/guardians", "/policy", "/guardians/", "/lost/extra"])(
     "resolves the unbuilt or unknown %s to not found",
     (path) => {
       expect(resolveRoute(path)).toEqual({ kind: "not-found", path: normalizePath(path) });

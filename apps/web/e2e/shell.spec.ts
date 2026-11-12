@@ -1,11 +1,20 @@
 import { expect, test, type Locator, type Page, type Request } from "@playwright/test";
 import { BACKEND_URL, CHALLENGE_URL, LIVE_WEB_URL, RPC_URL, WATCHER_URL } from "./services.ts";
 
-// Only built screens are in the nav (story 3.8); Vault, Guardians and Policy are Not found.
-const NAV_ROUTES = ["/challenge", "/proof", "/xray", "/lost"];
-const UNBUILT = ["/vault", "/guardians", "/policy"];
-const ROUTES = [...NAV_ROUTES, "/proof/7", "/xray/7", "/g/7/clawback", "/nope", ...UNBUILT];
-const NAV_LABELS = ["Challenge", "Proof", "X-Ray", "Lost a device?"];
+// Only built screens are in the nav (story 3.8); Guardians and Policy are Not found. The Vault
+// item opens the wallet pages (story 1.11b).
+const NAV_ROUTES = ["/vault/new", "/challenge", "/proof", "/xray", "/lost"];
+const UNBUILT = ["/guardians", "/policy"];
+const ROUTES = [
+  ...NAV_ROUTES,
+  "/vault/7",
+  "/proof/7",
+  "/xray/7",
+  "/g/7/clawback",
+  "/nope",
+  ...UNBUILT,
+];
+const NAV_LABELS = ["Vault", "Challenge", "Proof", "X-Ray", "Lost a device?"];
 /** Labels as exact-start patterns (the Challenge item ends with its `live` badge). */
 const NAV_PATTERNS = NAV_LABELS.map((l) => new RegExp(`^${l.replace(/[?]/g, "\\$&")}`));
 

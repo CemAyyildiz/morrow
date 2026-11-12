@@ -8,7 +8,7 @@ Morrow is a time-lock vault for Bitcoin that works today, with no soft fork, no 
 
 **What NEAR does here.** The Vault Contract is a NEAR smart contract with no access keys. It holds the rules, builds every Bitcoin transaction itself, and asks NEAR Chain Signatures (the MPC signer `v1.signer-prod.testnet`, and `v1.signer` on mainnet) to sign it with a Bitcoin key that no person holds. That key is one of the two keys every spend needs, so the contract's rules are the Bitcoin coins' rules.
 
-Live web app: [morrow-web-341572138939.europe-west1.run.app](https://morrow-web-341572138939.europe-west1.run.app). It reads the locked testnet contract `morrow-vault-v1.testnet`; nothing on it holds real bitcoin.
+Live web app: [morrow-web-341572138939.europe-west1.run.app](https://morrow-web-341572138939.europe-west1.run.app). It reads the locked testnet contract `morrow-vault-v1.testnet` and Bitcoin signet; nothing on it holds real bitcoin. Connect a NEAR testnet wallet at [`/vault/new`](https://morrow-web-341572138939.europe-west1.run.app/vault/new) to create and operate a Vault of your own: see [Use it yourself](#use-it-yourself).
 
 ## Verify it
 
@@ -78,18 +78,35 @@ Optional environment variables:
 
 ## Read it in the browser
 
-The web app (`apps/web`) is hosted on Google Cloud Run at [morrow-web-341572138939.europe-west1.run.app](https://morrow-web-341572138939.europe-west1.run.app), built from `infra/web/Dockerfile` with the same settings as the local run below. To run it yourself against the locked testnet contract, after `pnpm install --frozen-lockfile`:
+The web app (`apps/web`) is hosted on Google Cloud Run at [morrow-web-341572138939.europe-west1.run.app](https://morrow-web-341572138939.europe-west1.run.app), built from `infra/web/Dockerfile` with the same settings as the local run below: NEAR testnet and Bitcoin signet, read through mempool.space's Esplora API (`MORROW_BTC_NETWORK=signet`, `MORROW_BTC_BACKEND_URL=https://mempool.space/signet/api`). To run it yourself against the locked testnet contract, after `pnpm install --frozen-lockfile`:
 
 ```sh
 pnpm --filter @morrow/web build
-MORROW_NEAR_NETWORK=testnet MORROW_VAULT_CONTRACT=morrow-vault-v1.testnet MORROW_BTC_NETWORK=regtest MORROW_BTC_BACKEND_URL=http://127.0.0.1:3002 PORT=8080 pnpm --filter @morrow/web start
+MORROW_NEAR_NETWORK=testnet MORROW_VAULT_CONTRACT=morrow-vault-v1.testnet MORROW_BTC_NETWORK=signet MORROW_BTC_BACKEND_URL=https://mempool.space/signet/api PORT=8080 pnpm --filter @morrow/web start
 ```
 
-Then open `http://localhost:8080` (or the hosted link). The page reads NEAR testnet through FastNEAR (`rpc.testnet.fastnear.com`, its archival RPC and its transaction API). `MORROW_BTC_BACKEND_URL` is required, but nothing has to listen there: there is no regtest Bitcoin backend to read.
+Then open `http://localhost:8080` (or the hosted link). The page reads NEAR testnet through FastNEAR (`rpc.testnet.fastnear.com`, its archival RPC and its transaction API) and Bitcoin signet through mempool.space.
 
 - `/xray/30`: X-Ray of Withdrawal 30 from [CI run 42989446444](https://github.com/CemAyyildiz/morrow/actions/runs/42989446444) (log in [`evidence/`](evidence/judge-ci-42989446444.txt)), in four stages: the Bitcoin script path, the Vault Contract rule, the NEAR MPC signature and the Bitcoin transaction. The first three are done, and the signature stage reads "Signed by the NEAR MPC network (11 of 16)". The fourth reads "The Bitcoin transaction could not be read", because that transaction confirmed on CI's own regtest node, which nothing public serves. It shows the txid; compare it with the CI log line `Bitcoin transaction 684e09dcfb2098048fd3ce1f54aa64e35dfb8a827c2cadc2723289cb83ded70f confirmed; destination received 1,500,000 sats`. `/xray` opens any op id, or the hash of a refused NEAR transaction.
 - `/proof/33`: the Proof Page of Vault 33 from the same run: its Policy, Vault Address and Allowance Address read live from the contract, the contract's `code_hash`, and "Locked: no full-access keys".
 - `/lost`: what to do when a device that holds your Owner Key or signs for your Owner Account is lost or stolen.
+
+## Use it yourself
+
+Create a Vault on Bitcoin signet with your own keys, fund it with signet test coins, and claw it back. You need a NEAR testnet account in [Meteor Wallet](https://wallet.meteorwallet.app) or [Intear Wallet](https://wallet.intear.tech) with about 1 testnet NEAR (from the [NEAR testnet faucet](https://near-faucet.io)). Signet coins are test coins with no value.
+
+1. Open [`/vault/new`](https://morrow-web-341572138939.europe-west1.run.app/vault/new) and press **Connect a NEAR wallet**. Pick Meteor or Intear and sign in on testnet. You see "Connected as `<your account>`". Your account becomes the Owner Account and the Backup Device Guardian.
+2. Choose the Delay: **1 hour** (for testing) or **24 hours**. The rest of the Policy is fixed: Policy Change Delay 7 days, Escape Timelock 4,320 blocks, Fee Cap 100,000 sats, Spending Allowance 10,000 sats per 24 hours, Fast Approval off. A withdrawal or a Clawback spends at most 5 coins; a Clawback of more coins needs another press once the first is on Bitcoin.
+3. Paste a signet Recovery Address you control (`tb1…`), or press **Generate a test Recovery Address** (testing only: its key goes into the key file). Re-type its last 6 characters.
+4. Press **Download key file**. The Owner Key, the Backup Device Guardian Key and the watcher key were drawn in your browser; this file is their only copy. **Create Vault** stays disabled until it is saved.
+5. Press **Create Vault** and approve `create_vault` in the wallet (0.5 NEAR storage deposit, 100 TGas). The page waits until NEAR shows the Vault active and opens `/vault/<id>`, with its Vault Address.
+6. Fund the Vault Address from a signet faucet, such as [signetfaucet.com](https://signetfaucet.com). After one confirmation the page shows the balance and the actions open.
+7. **Request a withdrawal** to any signet address. You see "Withdrawal Request op #N accepted. It is pending until `<time>`." Note the op id: this browser remembers it for the Vault's page, and on any other you open the request by its op id.
+8. **Claw back**. Approve `begin_clawback`, then one `sign_input` per coin, in the wallet. The browser signs with the Backup Device Guardian Key, assembles the transaction and broadcasts it to mempool.space. You see "On Bitcoin signet: `<txid>`" with a link to the transaction, which pays your Recovery Address. The pending request is voided and the Vault is closed. If the wallet or the Bitcoin backend stops it halfway, pressing **Claw back** again carries the same Clawback on (and **Broadcast again** resends a transaction already signed).
+
+Instead of step 8 you can wait out the Delay and press **Execute** on the request: the browser signs with the Owner Key and the withdrawal pays its destination. On a later visit, open `/vault/<id>` and load the key file: the keys stay in the page's memory and are never sent or stored. A key file for another account, Vault or network is refused with the reason, and nothing is sent.
+
+The wallet pages are the only pages that run wallet code. near-connect (`@hot-labs/near-connect`, pinned) loads only there, and each wallet's executor is a pinned copy served from this app's own origin (`apps/web/public/wallets/`, with its source URL and sha256 in `apps/web/src/vault/wallets.ts`, checked by a test). near-connect runs it in a sandboxed iframe under the page's per-response CSP nonce. So no page loads script from a third-party origin; the wallet pages also allow inline styles, data-URI images, the wallets' own connection origins (`*.meteorwallet.app`, `*.intear.tech`) and Intear's framed wallet page. Every other page keeps the strict CSP, and moving between the two kinds of page is a full page load.
 
 ## Scenarios
 
@@ -271,7 +288,8 @@ BitVault sells spend delays by subscription, which shows people pay for this. Mo
 - Against the older `morrow-vault-dev3.testnet`, which predates Policy Changes and Fast Approval, S-6 and S-7 end in a SKIP.
 - There is no Duress PIN or Duress Session UI yet (Story 8.1): S-4 checks the duress-mode labels that core-ts gives such a client.
 - The Guardian Watcher's Telegram alerts for Fast Approval ("fast-approved by" a Guardian, and a possible-duress alert to Trusted Contacts only) are not built yet (Story 8.5b).
-- The hosted web app reads NEAR testnet with regtest labels; it shows no signet or mainnet Vault yet. The Rob This Vault recording, the demo video and the Mainnet Bounty come with their own stories and are not claimed here.
+- The hosted web app runs on NEAR testnet and Bitcoin signet; the wallet pages create signet Vaults only, never mainnet or regtest ones. The Rob This Vault recording, the demo video and the Mainnet Bounty come with their own stories and are not claimed here.
+- The wallet pages keep no keystore and no PIN (Story 1.10): the key file is the only copy of a web-created Vault's keys. They create one Backup Device Guardian, the Owner's own account, with no Guardian invites or Telegram alerts.
 - No live Rob This Vault round has run on signet yet.
 - Against the default `morrow-vault-v1.testnet`, `make demo` uses the live testnet MPC signer, with no fallback to a mock signer: a Scenario that needs a signature cannot pass while that signer is down.
 - X-Ray cannot read a regtest Bitcoin transaction, because there is no public regtest Bitcoin backend.
@@ -284,7 +302,7 @@ BitVault sells spend delays by subscription, which shows people pay for this. Mo
 | `contracts/vault`       | Vault Contract (Rust, near-sdk): the only place that builds Vault Scripts, transactions and sighashes |
 | `contracts/mock-signer` | Sandbox-only stand-in for the NEAR MPC signer                                                         |
 | `packages/core-ts`      | Shared TypeScript: contract client, witness assembly, low-S, envelopes, Bitcoin backends              |
-| `apps/web`              | Web app: the public site, Proof Page, X-Ray, Lost a device and Rob This Vault pages                   |
+| `apps/web`              | Web app: the public site, the wallet pages, Proof Page, X-Ray, Lost a device and Rob This Vault pages |
 | `services/watcher`      | Guardian Watcher: event loop, Telegram alerts, Auto-Clawback                                          |
 | `tools/escape`          | Standalone offline Escape CLI (no other repo dependencies)                                            |
 | `tools/judge`           | Judge Mode Scenario runner (`make demo`)                                                              |
@@ -313,20 +331,21 @@ pnpm check:readme # this README's Scenario table against tools/judge
 
 **AI-generated code.** Most of the code was written with Claude Code, under the author's direction and review. Commits made with it carry a `Co-Authored-By` trailer.
 
-**NEAR tools used.** Chain Signatures (the MPC signer `v1.signer-prod.testnet` on testnet, `v1.signer` on mainnet), NEAR testnet and its faucet, `near-sdk` and `omni-transaction` (Bitcoin transactions and sighashes inside the contract), and `near-api-js`.
+**NEAR tools used.** Chain Signatures (the MPC signer `v1.signer-prod.testnet` on testnet, `v1.signer` on mainnet), NEAR testnet and its faucet, `near-sdk` and `omni-transaction` (Bitcoin transactions and sighashes inside the contract), `near-api-js`, and `@hot-labs/near-connect` (the web app's wallet connection, with Meteor Wallet and Intear Wallet).
 
 **Libraries**, by workspace. Exact versions are pinned in `Cargo.toml`, `Cargo.lock`, each `package.json` and `pnpm-lock.yaml`; CI checks that every runtime dependency is named here.
 
 - `contracts/vault`: `near-sdk`, `omni-transaction`, `bech32`, `bs58`, `sha2`.
 - `contracts/mock-signer`: `near-sdk`.
 - `packages/core-ts`: `near-api-js`, `bitcoinjs-lib`, `@noble/curves`, `@noble/hashes`, `@noble/ciphers`, `@scure/base`, `libsodium-wrappers-sumo`.
-- `apps/web`: `react`, `react-dom`, `@radix-ui/react-slot`, `class-variance-authority`, `clsx`, `tailwind-merge`, `@fontsource/anton`, `@fontsource/doto`, `@fontsource/funnel-display`, `@fontsource/funnel-sans`, `@fontsource/geist-mono`. Dev: `vite`, `@vitejs/plugin-react`, `tailwindcss`, `@tailwindcss/vite`, `@playwright/test`.
+- `apps/web`: `react`, `react-dom`, `@hot-labs/near-connect`, `@radix-ui/react-slot`, `class-variance-authority`, `clsx`, `tailwind-merge`, `@fontsource/anton`, `@fontsource/doto`, `@fontsource/funnel-display`, `@fontsource/funnel-sans`, `@fontsource/geist-mono`. Dev: `vite`, `@vitejs/plugin-react`, `tailwindcss`, `@tailwindcss/vite`, `@playwright/test`.
 - `services/watcher`: `grammy`, `@noble/curves`. Dev: `near-api-js`.
 - `tools/escape`: `bitcoinjs-lib`, `@noble/curves`.
 - `tools/judge`: `near-api-js`, `@noble/curves`.
 - `tools/challenge`: `near-api-js`, `bitcoinjs-lib`, `@noble/curves`.
 - `tools/deploy`: `near-api-js`.
 - Dev, repository-wide: `typescript`, `eslint`, `@eslint/js`, `typescript-eslint`, `prettier`, `vitest`, `tsx`.
+- Pinned third-party wallet code, not written for Morrow: Meteor Wallet's and Intear Wallet's near-connect executors, byte for byte as fetched on 2026-11-12, in `apps/web/public/wallets/` (sources and sha256 in `apps/web/src/vault/wallets.ts`).
 - Contract build: the Rust Docker image `rust:1.97.1@sha256:b1b3c9c0d921d7fa0a6d1f9ec7e4eab87f8c8ec97644c3d791450f131dec813f` (`make wasm`).
 - Runtime services: Bitcoin Core (Docker `bitcoin/bitcoin:32.1@sha256:d2454aaf2ff4ce1ebbc49f4aa05ed044c907b849a80a3f4c0ad23e488e50bbe0`, from `infra/regtest`), Telegram Bot API.
 

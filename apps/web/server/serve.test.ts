@@ -7,7 +7,7 @@ import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { brotliDecompressSync, gunzipSync } from "node:zlib";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { contentSecurityPolicy, loadConfig } from "./config.ts";
+import { contentSecurityPolicy, loadConfig, walletContentSecurityPolicy } from "./config.ts";
 import { byteRange, createWebServer, negotiateEncoding, parsePort } from "./serve.ts";
 
 const ENV = {
@@ -95,6 +95,42 @@ function expectSecurityHeaders(headers: IncomingHttpHeaders) {
 }
 
 describe("web server", () => {
+  it.each(["/vault/new", "/vault/7", "/vault/7/", "/vault/new?x=1"])(
+    "%s gets the wallet CSP with a fresh nonce, also in the page",
+    async (path) => {
+      const [a, b] = [await get(path), await get(path, "GET", { "accept-encoding": "br" })];
+      for (const reply of [a, b]) {
+        expect(reply.status).toBe(200);
+        expect(reply.headers["content-type"]).toMatch(/^text\/html/);
+        expect(reply.headers["cache-control"]).toBe("no-store");
+        expect(reply.headers["content-encoding"]).toBeUndefined();
+        const nonce = /<meta name="csp-nonce" content="([A-Za-z0-9+/]{22}==)" \/>/.exec(
+          reply.body,
+        )?.[1];
+        if (nonce === undefined) throw new Error("no nonce meta");
+        expect(reply.body).toContain(INDEX);
+        expect(reply.headers["content-security-policy"]).toBe(
+          walletContentSecurityPolicy(config, nonce),
+        );
+        expect(reply.headers["strict-transport-security"]).toBe(
+          "max-age=31536000; includeSubDomains",
+        );
+        expect(reply.headers["x-content-type-options"]).toBe("nosniff");
+        expect(reply.headers["referrer-policy"]).toBe("no-referrer");
+      }
+      expect(a.headers["content-security-policy"]).not.toBe(b.headers["content-security-policy"]);
+    },
+  );
+
+  it.each(["/vault", "/vault/abc", "/vault/new/x", "/vaults/7", "/challenge"])(
+    "%s keeps the strict CSP and no nonce",
+    async (path) => {
+      const reply = await get(path);
+      expectSecurityHeaders(reply.headers);
+      expect(reply.body).not.toContain("csp-nonce");
+    },
+  );
+
   it("serves /config.json with the whitelist only, no-store", async () => {
     const reply = await get("/config.json");
     expect(reply.status).toBe(200);

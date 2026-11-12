@@ -11,4 +11,5 @@ export * from "./errors.js";
 export * from "./events.js";
 export * from "./mock.js";
 export * from "./policy.js";
+export * from "./signet-policy.js";
 export type * from "./types.js";

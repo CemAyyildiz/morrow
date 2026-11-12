@@ -2,7 +2,11 @@
 // dependencies). Serves `dist/` with the NFR-10 headers on every response, `/config.json` from
 // the whitelisted env vars, and `index.html` for any path without a file extension so deep
 // links such as `/g/<vault_id>` load the app. Text responses go out brotli or gzip encoded
-// when the client accepts it (story 9.5). Refuses to start on a bad config.
+// when the client accepts it (story 9.5). The wallet pages (`/vault/new`, `/vault/<id>`) get
+// their own CSP with a fresh nonce per response, also written into the page as
+// `<meta name="csp-nonce">`; every other response keeps the strict CSP. Refuses to start on a
+// bad config.
+import { randomBytes } from "node:crypto";
 import { createReadStream, readFileSync } from "node:fs";
 import { readdir, readFile, stat } from "node:fs/promises";
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
@@ -10,7 +14,14 @@ import { extname, join, resolve, sep } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { promisify } from "node:util";
 import { brotliCompress, constants as zlib, gzip } from "node:zlib";
-import { ConfigError, loadConfig, securityHeaders, type PublicConfig } from "./config.ts";
+import {
+  ConfigError,
+  isWalletPath,
+  loadConfig,
+  securityHeaders,
+  walletContentSecurityPolicy,
+  type PublicConfig,
+} from "./config.ts";
 
 const HTML = "text/html; charset=utf-8";
 const JSON_TYPE = "application/json; charset=utf-8";
@@ -220,6 +231,21 @@ export function createWebServer({ config, distDir }: WebServerOptions): Server {
       return sendText(request, response, "/config.json", configBody, {
         "content-type": JSON_TYPE,
         "cache-control": NO_STORE,
+      });
+    }
+
+    if (isWalletPath(path)) {
+      // A fresh nonce per response, so this body is never cached or pre-encoded.
+      const nonce = randomBytes(16).toString("base64");
+      const meta = `<meta name="csp-nonce" content="${nonce}" />`;
+      const text = index.toString("utf8");
+      const html = text.includes("</head>")
+        ? text.replace("</head>", `  ${meta}\n  </head>`)
+        : `${meta}${text}`;
+      return send(request, response, 200, Buffer.from(html), {
+        "content-type": HTML,
+        "cache-control": NO_STORE,
+        "content-security-policy": walletContentSecurityPolicy(config, nonce),
       });
     }
 

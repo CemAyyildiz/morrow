@@ -18,6 +18,17 @@ function Icon({ className, children, ...props }: IconProps & { children: ReactNo
   );
 }
 
+/** A vault door with its dial: the wallet pages. */
+export function VaultIcon(props: IconProps) {
+  return (
+    <Icon {...props}>
+      <rect x="3.5" y="4.5" width="17" height="15" rx="2.5" />
+      <circle cx="12" cy="12" r="3.2" />
+      <path d="M12 8.8v1.2M12 14v1.2M8.8 12h1.2M14 12h1.2" strokeLinecap="round" />
+    </Icon>
+  );
+}
+
 export function ChallengeIcon(props: IconProps) {
   return (
     <Icon {...props}>

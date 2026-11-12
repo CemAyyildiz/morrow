@@ -11,6 +11,8 @@ export default tseslint.config(
       "_bmad-output/**",
       ".claude/**",
       "docs/**",
+      // Pinned third-party wallet executors, byte for byte as fetched (apps/web/src/vault/wallets.ts).
+      "apps/web/public/wallets/**",
     ],
   },
   js.configs.recommended,

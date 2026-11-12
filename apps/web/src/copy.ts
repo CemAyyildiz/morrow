@@ -25,6 +25,7 @@ export const copy = {
 
   nav: {
     label: "Main",
+    vault: "Vault",
     challenge: "Challenge",
     proof: "Proof",
     xray: "X-Ray",
@@ -38,6 +39,7 @@ export const copy = {
   },
 
   titles: {
+    vault: "Vault",
     challenge: "Challenge vault",
     proof: "Proof",
     xray: "X-Ray",
@@ -632,6 +634,207 @@ export const copy = {
         `Byte ${at} flipped: ${address}. Script check: ${script}.`,
       announceReset: (address: string, script: string) =>
         `Reset to the published script: ${address}. Script check: ${script}.`,
+    },
+  },
+
+  /**
+   * The wallet pages (story 1.11b): `/vault/new` creates a Vault, `/vault/<id>` operates it. A
+   * NEAR wallet signs every contract call; the Bitcoin keys stay in the page.
+   */
+  vault: {
+    unsupported: "The wallet pages need NEAR testnet and Bitcoin signet",
+    unsupportedBody:
+      "This deployment runs on other networks. Vaults are created from the web app on NEAR testnet with Bitcoin signet only: no mainnet, no regtest.",
+    loadFailed: "The Vault page could not be loaded",
+    loadFailedBody:
+      "Part of the wallet page did not download, often because a new version was deployed. Reload to get it. Nothing was sent.",
+    noNonce: "This page was served without its wallet nonce, so no wallet can load. Reload it.",
+    reload: "Reload",
+    wallet: {
+      title: "NEAR wallet",
+      connect: "Connect a NEAR wallet",
+      connecting: "Opening the wallet",
+      connected: (account: string) => `Connected as ${account}`,
+      disconnect: "Disconnect",
+      hint: "Meteor Wallet or Intear Wallet, on NEAR testnet. The wallet signs every contract call. The Bitcoin keys never leave this page.",
+      loadFailed: (message: string) =>
+        `The wallet could not load or connect: ${message}. Check the connection and try again.`,
+      retry: "Try again",
+    },
+    create: {
+      title: "Create a Vault",
+      intro:
+        "A Vault on Bitcoin signet with your own keys. This account becomes the Owner Account and the Backup Device Guardian. Signet coins are test coins with no value.",
+      delayTitle: "Delay",
+      delayLegend: "How long a withdrawal waits in public before it can execute",
+      delays: {
+        "1h": { label: "1 hour", note: "For testing" },
+        "24h": { label: "24 hours", note: "The standard preset" },
+      },
+      policyFacts:
+        "Policy Change Delay 7 days · Escape Timelock 4,320 blocks · Fee Cap 100,000 sats · Spending Allowance 10,000 sats per 24 hours · at most 5 coins per withdrawal or Clawback · Fast Approval off · one Backup Device Guardian: the connected account",
+      recoveryTitle: "Recovery Address",
+      recoveryLabel: "Signet Recovery Address",
+      recoveryHint:
+        "Where a Clawback sends the coins: a signet address you control (tb1…). It is fixed into the Vault's Policy.",
+      generate: "Generate a test Recovery Address",
+      generateNote:
+        "Testing only: the browser draws a key for it and writes the key into the key file.",
+      addressProblem: {
+        malformed: "This is not a valid SegWit address.",
+        network: "This is not a signet address.",
+        version: "The Vault pays SegWit v0 and Taproot addresses only.",
+        program: "This address has a witness program the Vault does not accept.",
+      },
+      retypeLabel: "Re-type the last 6 characters of the Recovery Address",
+      retypeMismatch: "These are not the last 6 characters of the Recovery Address.",
+      keysTitle: "Key file",
+      keysBody:
+        "The Owner Key, the Backup Device Guardian Key and the watcher key were drawn in this browser. The key file is their only copy: save it before you create the Vault, and load it on the Vault page to sign.",
+      download: "Download key file",
+      downloaded:
+        "Key file downloaded. Keep it safe: anyone with it and this NEAR account can sign for the Vault.",
+      missingTitle: "Before Create",
+      missing: {
+        wallet: "Connect a NEAR wallet.",
+        address: "Enter a signet Recovery Address.",
+        retype: "Re-type the last 6 characters of the Recovery Address.",
+        download: "Download the key file.",
+        reload: "Reload the page to draw new keys: a Vault may exist for these.",
+      },
+      submit: "Create Vault",
+      cost: "create_vault attaches 0.5 NEAR for the Vault's storage, from the connected account.",
+      waitingWallet: "Waiting for the wallet to sign create_vault",
+      activating: (id: string) =>
+        `Vault #${id} created. Waiting for NEAR to show it active with its Co-signer keys.`,
+      active: (id: string) => `Vault #${id} is active. Opening its page.`,
+      notActive: (id: string) =>
+        `Vault #${id} was created but NEAR does not show it active yet. Open its page to read it again.`,
+      openVault: (id: string) => `Open Vault #${id}`,
+      noVaultId:
+        "The wallet sent create_vault, but its answer has no Vault id: the Vault may exist. Check this account's transactions before you try again.",
+      maybeCreated:
+        "The wallet may have sent create_vault, but its answer could not be read: the Vault may exist. Check this account's transactions before you try again.",
+      viewTx: "View the transaction on NearBlocks",
+      invalidPolicy: (code: string) => `The Policy was refused before sending · ${code}`,
+    },
+    page: {
+      title: (id: string) => `Vault #${id}`,
+      loading: "Reading the Vault from NEAR",
+      unreachable: "NEAR is not answering",
+      unreachableBody: "The Vault could not be read. Nothing was sent.",
+      notSignet:
+        "This Vault is not on Bitcoin signet. The wallet pages operate signet Vaults only.",
+      retry: "Retry",
+      factsTitle: "Policy",
+      facts: {
+        owner: "Owner Account",
+        guardian: "Guardians",
+        delay: "Delay",
+        recovery: "Recovery Address",
+      },
+      states: {
+        pending_keys: "pending keys",
+        active: "active",
+        clawed_back: "clawed back",
+      },
+      proof: "Open its Proof Page",
+      addressTitle: "Vault Address",
+      addressPending: "The Vault has no address until its Co-signer keys are stored.",
+      balance: (btc: string) => `${btc} BTC on signet`,
+      unconfirmed: (btc: string) => `${btc} BTC not confirmed yet`,
+      tip: (height: string) => `Signet tip block ${height}`,
+      unfunded:
+        "No coins yet. Fund it from a signet faucet, then wait for one confirmation. The actions open once a coin is confirmed.",
+      faucet: "Open a signet faucet",
+      btcUnreachable: "The Bitcoin backend is not answering, so the Vault's coins are unknown.",
+      keysTitle: "Key file",
+      keysBody:
+        "Load the key file you saved when you created this Vault. It stays in this page's memory: never sent, never stored.",
+      loadKeys: "Load key file",
+      keysLoaded: "Keys loaded for this Vault.",
+      downloadKeys: "Download key file with the Vault id",
+      keyProblem: {
+        format: "Refused: this is not a Morrow Vault key file. Nothing was sent.",
+        key: "Refused: a key in this file is not valid. Nothing was sent.",
+        network:
+          "Refused: this key file is for another network or Vault Contract. Nothing was sent.",
+        vault: "Refused: this key file is for another Vault. Nothing was sent.",
+        account: "Refused: this key file is for another Owner Account. Nothing was sent.",
+        "owner-key": "Refused: this key file's Owner Key is not this Vault's. Nothing was sent.",
+        "guardian-key":
+          "Refused: this key file's Guardian Key is not one of this Vault's. Nothing was sent.",
+      },
+      gates: {
+        wallet: "Connect a NEAR wallet first.",
+        owner: (account: string) => `Only the Owner Account, ${account}, can do this.`,
+        guardian: "The connected account is not a Guardian of this Vault.",
+        keys: "Load the key file first.",
+        funds: "The Vault Address has no confirmed coins.",
+        coins: "Reading the Vault's coins.",
+        closed: "The Vault was clawed back to its Recovery Address and is closed.",
+        notActive: "The Vault is not active yet.",
+        busy: "Another action is running.",
+      },
+      request: {
+        title: "Request a withdrawal",
+        body: "The request waits in public for the Delay. Any Guardian can claw it back until then.",
+        destination: "Destination (signet address)",
+        amount: "Amount in sats",
+        max: (sats: string) => `At most ${sats} sats from the confirmed coins, after the fee.`,
+        submit: "Request withdrawal",
+        amountProblem: "Enter whole sats between 546 and the most shown.",
+        fundsProblem: "The confirmed coins do not cover a withdrawal and its fee.",
+        sealProblem: "The Watcher Envelope could not be sealed. Nothing was sent.",
+      },
+      pending: {
+        title: "Withdrawal Request",
+        none: "No request is open in this page. Open one by its op id, or request a withdrawal.",
+        opLabel: "Op id",
+        open: "Open request",
+        badOp: "Enter the op id of a withdrawal of this Vault.",
+        notThisVault: "That op is not a withdrawal of this Vault.",
+        summary: (op: string, sats: string, destination: string) =>
+          `Op #${op} · ${sats} sats to ${destination}`,
+        state: (state: string) => `State: ${state}`,
+        executableAt: (at: string) => `Executable from ${at}`,
+        execute: "Execute",
+        notYet: (at: string) => `Execute opens at ${at}.`,
+        notPending: "This request is no longer pending.",
+      },
+      clawback: {
+        title: "Claw back",
+        body: "Sends up to 5 confirmed coins to the Recovery Address, signed with the Backup Device Guardian Key. The first Clawback cancels every pending request and closes the Vault for good.",
+        submit: "Claw back",
+        resumeNote: (op: string) =>
+          `Clawback op #${op} is started but not on Bitcoin. Claw back carries it on without starting another.`,
+        rebroadcast: "Broadcast again",
+      },
+      steps: {
+        wallet: (method: string) => `Waiting for the wallet to sign ${method}`,
+        signInput: (input: string, inputs: string) =>
+          `Waiting for the wallet to sign sign_input, input ${input} of ${inputs}`,
+        reading: "Reading NEAR",
+        broadcasting: "Broadcasting to Bitcoin signet",
+      },
+      outcome: {
+        requested: (op: string, at: string) =>
+          `Withdrawal Request op #${op} accepted. It is pending until ${at}. Note op #${op}: to execute it after the Delay, open it here by its op id.`,
+        requestedNoTime: (op: string) =>
+          `Withdrawal Request op #${op} accepted. Note op #${op}: to execute it after the Delay, open it here by its op id.`,
+        failed: (message: string) =>
+          `The action stopped with an error: ${message}. Read the Vault again before you retry.`,
+        broadcast: (txid: string) => `On Bitcoin signet: ${txid}`,
+        viewTx: "View the transaction on mempool.space",
+        refused: (code: string, meaning: string) => `Refused · ${code} · ${meaning}`,
+        refusedRaw: (message: string) => `Refused by NEAR · ${message}`,
+        rejected: (message: string) => `The wallet did not send it: ${message}`,
+        unreadable:
+          "The wallet sent it, but NEAR's answer could not be read. Read the Vault again before you retry.",
+        broadcastFailed: (message: string) =>
+          `The Bitcoin backend did not take the transaction: ${message}`,
+        broadcastUnreachable: "The Bitcoin backend did not answer. Nothing was broadcast.",
+      },
     },
   },
 

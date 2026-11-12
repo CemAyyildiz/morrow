@@ -14,7 +14,8 @@
 //   InvalidNonce, as when other visitors use the key at the same time: the error names the
 //   nonce they took while `view_access_key` (final) still answers the older one.
 // - Watcher: `/heartbeat`, one minute old.
-// - Bitcoin backend: the challenge Vault's UTXOs and the tip height; 404 otherwise.
+// - Bitcoin backend: the challenge Vault's UTXOs, none for Vault #7 (the wallet page's unfunded
+//   Vault) and the tip height; 404 otherwise.
 // - Challenge feed (`tools/challenge run`): `GET /round` and `GET /attempts` from
 //   challenge-fixture.ts. `POST /__attempt` appends a clawed-back attempt, so a spec can see a
 //   new row arrive; its optional body `{op_id, clawback_txid, clawback_broadcast}` ties it to
@@ -40,6 +41,7 @@ import {
   PROOF_EVENTS,
   PROOF_KIT,
   PROOF_VAULT,
+  PROOF_VAULT_ADDRESS,
   PROOF_VAULT_ID,
 } from "./proof-fixture.ts";
 import {
@@ -447,6 +449,9 @@ const backend = createServer((request, response) => {
     return json(response, 200, [
       { txid: ROUND.funding_txid, vout: 0, value: VAULT_SATS, status: { confirmed: true } },
     ]);
+  }
+  if (request.method === "GET" && request.url === `/address/${PROOF_VAULT_ADDRESS}/utxo`) {
+    return json(response, 200, []);
   }
   if (request.method === "GET" && request.url === "/blocks/tip/height") {
     response.writeHead(200, { ...CORS, "content-type": "text/plain" });
