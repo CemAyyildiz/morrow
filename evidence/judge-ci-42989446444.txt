@@ -1,0 +1,76 @@
+./infra/regtest/up.sh
+ Container morrow-regtest-bitcoind-1 Running 
+ Container morrow-regtest-bitcoind-1 Waiting 
+ Container morrow-regtest-bitcoind-1 Healthy 
+regtest ready: height 114, miner balance 699.98374562 BTC
+MORROW_REGTEST_RPC=http://morrow:morrow@127.0.0.1:18443
+pnpm --filter @morrow/judge start
+$ tsx src/main.ts
+Morrow Judge Mode: Scenarios S-1, S-2, S-3, S-4, S-5, S-6, S-7
+  Owner account morrow-judge-mwbvj6gj-eq49a3.testnet created through the testnet faucet
+  Vault 32 created on morrow-vault-v1.testnet: https://testnet.nearblocks.io/txns/Fn4dvLuuL9kVJzri5hQPcaCzxeLeavx28Rpiy7qSaPpd
+  Co-signer keys derived by the NEAR MPC network (v1.signer-prod.testnet)
+  Vault Address bcrt1qfknyxnjaaqz4tw3tazxuq4swjn48plyxy3rn5yfmsggrqk8rujespcg6ns recomputed independently: match
+  Allowance Address bcrt1qfk8cgpjfkq98rsed8lqsvx4xeh2wel2j5c2ep09xg2kcu5lkcmpqr3m0qc recomputed independently: match
+S-1 Create PASS
+  Vault 33 funded on regtest with 2 coins (0.02 BTC)
+  Withdrawal 30 requested: https://testnet.nearblocks.io/txns/THNMSmN2Tua5asN5iwewscMJ9UhMSrznmeTefarZoWq
+  Execute before the Delay rejected: ERR_NOT_EXECUTABLE
+  Waiting for the Delay (executable at 2026-11-11T08:46:48.605Z)
+  Contract built the transaction and froze 2 sighashes
+  Input 0 co-signed by the NEAR MPC network in 6.7 s
+  Input 1 co-signed by the NEAR MPC network in 7.0 s
+  Bitcoin transaction 684e09dcfb2098048fd3ce1f54aa64e35dfb8a827c2cadc2723289cb83ded70f confirmed; destination received 1,500,000 sats
+S-2 Withdraw after Delay PASS
+  Vault 34 holds 0.01 BTC on regtest
+  You hold the Owner keys. Trying to rob the vault…
+  Thief's withdrawal 31 is public and waits the Delay: https://testnet.nearblocks.io/txns/Gw287RpLjgHGYngjmfKtV799g5proMYPzwQ5gUMNCYHH
+  Guardian guardian.morrow-judge-mwbvj6gj-eq49a3.testnet claws back: https://testnet.nearblocks.io/txns/Cm4fV9CgSkQWytLECBsBbshRFyNMMGgSDTUoANMFrJVi
+  Clawback input 0 co-signed by the NEAR MPC network in 6.5 s
+  Clawback bc0bc5e96f6dab3e60856db6b454c1d32c63c711548ecaebe004d220da930024 confirmed: 999328 sats back at the Recovery Address
+  Thief tries to execute: ERR_CLAWED_BACK
+  Attacker received 0 sats
+S-3 Thief and Clawback PASS
+  Vault 35: the Watcher's duress handler and Clawback runner run in-process as its Auto-Clawback Guardian guardian.morrow-judge-mwbvj6gj-eq49a3.testnet
+  Vault 35 holds 1,100,000 sats on regtest in 2 coins
+  Control: the Owner requests 50,000 sats with a normal Watcher Envelope (withdrawal 33)
+  You are coerced: the Owner requests 900,000 sats to the attacker, with a duress-flagged Watcher Envelope (withdrawal 34)
+  Withdrawal 34 looks like the normal withdrawal 33 on-chain: 160-hex envelopes, the same fields in the event and get_op, and no duress field
+  Duress Clawback queued for 2026-11-11T08:47:34.378Z: min(executable_at, signal + Delay) − 65 min = 2026-11-11T07:52:32.552Z has already passed with the 10-minute Delay, so it is due at once
+  The Vault coins are still unspent when the Clawback runner starts
+  Clawback 73aaab90abd0a034da4a407247489bf9db82029d2048f6a2ec4e93ce4a2568a8 confirmed: 1099412 sats back at the Recovery Address, co-signed by the NEAR MPC network and broadcast by the Watcher's runner
+  The Clawback began 593 s before either withdrawal could execute
+  Coerced Execute rejected: ERR_CLAWED_BACK
+  Attacker received 0 sats
+  Normal mode shows withdrawal 34 as Clawed back, the Vault as Clawed back, and Execute as "The Vault was clawed back to its Recovery Address and is closed."
+  Duress mode still shows the request as Pending, the Vault as Active, and Execute as network busy
+S-4 Duress PASS
+  Vault 36 holds 0.01 BTC; Escape Timelock 6 blocks
+  Vault Kit saved; from here on NEAR is not used
+  Before the timelock morrow-escape refuses: Escape Timelock not reached: 5 blocks remaining
+  morrow-escape --offline signed the Escape transaction with no network access
+  Escape a1ed16e7833b622db65c642c24100c4513b35998fcaf965e5a7f3af21119f79e confirmed: 999702 sats back with the Owner. NEAR not used.
+S-5 Escape PASS
+  Vault 37: the Watcher's loosening guard runs as watcher.morrow-judge-mwbvj6gj-eq49a3.testnet (auto_clawback); Guardian guardian.morrow-judge-mwbvj6gj-eq49a3.testnet (backup_device) vetoes by hand
+  Script-bound change rejected: ERR_SCRIPT_BOUND
+  Policy Change 13 proposed: Delay and Policy Change Delay from 1 to 2 minutes
+  Apply before the Policy Change Delay rejected: ERR_CHANGE_NOT_EFFECTIVE
+  Waiting for the Policy Change Delay (effective at 2026-11-11T08:49:13.911Z)
+  Applied after the delay: get_vault shows delay_ns 120000000000
+  The guard left that change alone: it tightens the rules
+  Guardian vetoed Policy Change 14 (a lower Fee Cap)
+  Applying the vetoed change rejected: ERR_BAD_OP_STATE; get_policy_change reports vetoed
+  Policy Change 15 raises the Allowance limit with no Owner Confirmation; waiting up to 90 s for the guard
+  Unconfirmed loosening change auto-vetoed by the Guardian Watcher
+S-6 Policy Change PASS
+  Vault 38: Delay 10 minutes, Fast Approval Floor 1 minute; Trusted Contact contact.morrow-judge-mwbvj6gj-eq49a3.testnet, Backup Device guardian.morrow-judge-mwbvj6gj-eq49a3.testnet
+  Withdrawal 36 requested: executable at 2026-11-11T08:59:43.294Z, after the 10-minute Delay
+  Backup Device fast_approve rejected: ERR_NOT_TRUSTED_CONTACT
+  Owner fast_approve rejected: ERR_UNAUTHORIZED
+  Fast-approved by the Trusted Contact: the Delay now ends at the Fast Approval Floor
+  Execute before the Fast Approval Floor rejected: ERR_NOT_EXECUTABLE
+  Waiting for the Fast Approval Floor (executable at 2026-11-11T08:50:51.184Z)
+  Contract froze the transaction 527 s before the original Delay would have ended
+  Input 0 co-signed by the NEAR MPC network in 6.6 s
+  Bitcoin transaction cae2f9f889d756520e78e7a0f998380291ff4d339262fbc93997263bba7e8463 confirmed; destination received 500,000 sats
+S-7 Fast Approval PASS
