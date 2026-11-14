@@ -494,7 +494,7 @@ describe("display", () => {
   });
 
   it("lists the watcher key in full among the Policy rows", () => {
-    expect(policyRows(vault().policy).at(-1)).toEqual({
+    expect(policyRows(vault().policy).at(-1)).toMatchObject({
       label: "Watcher key",
       value: "cc".repeat(32),
       mono: true,

@@ -79,7 +79,11 @@ export function useProof(
     if (scan.current.current?.vaultId !== vaultId) scan.current = { current: null };
     const holder = scan.current;
     return poll(
-      (signal) => readProof(proofRpc(rpcUrl, contractId, signal), contractId, vaultId, holder),
+      (signal) =>
+        readProof(proofRpc(rpcUrl, contractId, signal), contractId, vaultId, holder, (facts) => {
+          if (signal.aborted) return;
+          setHeld((previous) => heldAfter(previous, vaultId, { kind: "ok", facts }, Date.now()));
+        }),
       (answer) => setHeld((previous) => heldAfter(previous, vaultId, answer, Date.now())),
       PROOF_POLL_MS,
     );

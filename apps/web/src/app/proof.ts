@@ -533,6 +533,12 @@ export async function readProof(
   contractId: string,
   vaultId: string,
   holder: ScanHolder = { current: null },
+  /**
+   * Called once the Vault, the contract account and its keys are read, before the history
+   * scan is done: the page can draw those facts while the scan (many sequential RPC reads on a
+   * first visit) still runs. Its facts say `history.caughtUp: false`.
+   */
+  onFirst?: (facts: ProofFacts) => void,
 ): Promise<ProofAnswer> {
   const answer = await rpc.view("get_vault", { vault_id: vaultId });
   if (answer.kind === "error") {
@@ -547,28 +553,34 @@ export async function readProof(
     const before = holder.current;
     const same = before?.vaultId === vaultId && before.createdAt === vault.created_at;
     const scan = same && before ? copyScan(before) : newScan(vaultId, vault.created_at);
+    const scanDone = advanceScan(eventPage(rpc), scan);
+    // A scan that fails is reported once, below, after the account reads are in.
+    scanDone.catch(() => undefined);
     const [account, keys] = await Promise.all([
       rpc.query({ request_type: "view_account", account_id: contractId }),
       rpc.query({ request_type: "view_access_key_list", account_id: contractId }),
-      advanceScan(eventPage(rpc), scan),
     ]);
     if (account.kind === "unreachable" || keys.kind === "unreachable") {
+      await scanDone.catch(() => undefined);
       return { kind: "unreachable" };
     }
-    if (account.kind === "error" || keys.kind === "error") return { kind: "misconfigured" };
+    if (account.kind === "error" || keys.kind === "error") {
+      await scanDone.catch(() => undefined);
+      return { kind: "misconfigured" };
+    }
+    const facts = (): ProofFacts => ({
+      vault,
+      withdrawals: [...scan.open.values()].map((op) => ({ ...op })),
+      clawedBack: scan.clawedBack,
+      history: { caughtUp: scan.caughtUp, read: scan.read },
+      codeHash: codeHashFrom(account.value),
+      fullAccessKeys: fullAccessKeysFrom(keys.value),
+    });
+    if (!scan.caughtUp) onFirst?.(facts());
+    await scanDone;
     // Another refresh may have moved the scan on meanwhile: then this one is not kept.
     if (holder.current === before) holder.current = scan;
-    return {
-      kind: "ok",
-      facts: {
-        vault,
-        withdrawals: [...scan.open.values()].map((op) => ({ ...op })),
-        clawedBack: scan.clawedBack,
-        history: { caughtUp: scan.caughtUp, read: scan.read },
-        codeHash: codeHashFrom(account.value),
-        fullAccessKeys: fullAccessKeysFrom(keys.value),
-      },
-    };
+    return { kind: "ok", facts: facts() };
   } catch (error) {
     // A page that could not be read, or any other surprise: nothing is shown that was not
     // read, and the next refresh tries again.
@@ -640,27 +652,45 @@ export interface PolicyRow {
   label: string;
   value: string;
   mono?: boolean;
+  /** One plain sentence saying what the row means. */
+  hint: string;
 }
 
 /** The Policy rows; the Guardians, with their keys, are drawn by the view. */
 export function policyRows(policy: Policy): PolicyRow[] {
   const r = copy.proof.rows;
+  const h = copy.proof.hints;
   const net = policy.btc_network;
   return [
-    { label: r.delay, value: durationOf(policy.delay_ns) },
-    { label: r.policyChangeDelay, value: durationOf(policy.policy_change_delay_ns) },
-    { label: r.escapeTimelock, value: blocksOf(policy.escape_timelock_blocks) },
-    { label: r.recoveryAddress, value: policy.recovery_address, mono: true },
+    { label: r.delay, value: durationOf(policy.delay_ns), hint: h.delay },
+    {
+      label: r.policyChangeDelay,
+      value: durationOf(policy.policy_change_delay_ns),
+      hint: h.policyChangeDelay,
+    },
+    {
+      label: r.escapeTimelock,
+      value: blocksOf(policy.escape_timelock_blocks),
+      hint: h.escapeTimelock,
+    },
+    {
+      label: r.recoveryAddress,
+      value: policy.recovery_address,
+      mono: true,
+      hint: h.recoveryAddress,
+    },
     {
       label: r.allowanceLimit,
       value: r.perDay(formatAmount(policy.allowance_limit_sats, net)),
+      hint: h.allowanceLimit,
     },
-    { label: r.feeCap, value: formatAmount(policy.fee_cap_sats, net) },
+    { label: r.feeCap, value: formatAmount(policy.fee_cap_sats, net), hint: h.feeCap },
     {
       label: r.fastApproval,
       value: policy.fast_approval ? r.fastOn(durationOf(policy.fast_approval_floor_ns)) : r.fastOff,
+      hint: h.fastApproval,
     },
-    { label: r.watcherKey, value: policy.watcher_x25519_pk, mono: true },
+    { label: r.watcherKey, value: policy.watcher_x25519_pk, mono: true, hint: h.watcherKey },
   ];
 }
 

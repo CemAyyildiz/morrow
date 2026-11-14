@@ -21,10 +21,11 @@ import {
 } from "@/app/proof";
 import { Link, useRouter } from "@/app/router";
 import { proofPath } from "@/app/routes";
+import { vaultPath } from "@/app/wallet-paths";
 import { useProof } from "@/app/useProof";
 import { xrayOpPath } from "@/app/xray-paths";
 import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
+import { Button, buttonVariants } from "@/components/ui/button";
 import { Card, CardDescription, CardTitle } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { copy } from "@/copy";
@@ -85,7 +86,25 @@ function VaultProof({
   const chips = [p.vaultChip(vaultId)];
   if (round !== undefined) chips.push(p.liveRound(round));
   if (state.kind === "ok") chips.push(p.states[state.facts.vault.state]);
-  const header = <PageHeader title={copy.titles.proof} chips={chips} />;
+  const header = (
+    <div className="flex flex-col gap-3">
+      <PageHeader
+        title={copy.titles.proof}
+        chips={chips}
+        actions={
+          // A full page load: the Vault page runs under the wallet CSP.
+          <a
+            href={vaultPath(vaultId)}
+            data-testid="proof-open-vault"
+            className={buttonVariants({ variant: "secondary" })}
+          >
+            {p.openVault(vaultId)}
+          </a>
+        }
+      />
+      <p className="max-w-[720px] text-[15px] leading-[1.55] text-muted">{p.lede}</p>
+    </div>
+  );
 
   if (state.kind === "no-rpc") {
     return (
@@ -203,6 +222,16 @@ function ProofBody({ facts, now, config }: { facts: ProofFacts; now: number; con
                 absoluteTime(nsToMs(facts.clawedBack.at), now),
               )
             : p.clawedBackUntimed(policy.recovery_address)}
+          {net === "signet" && (
+            <a
+              href={`https://mempool.space/signet/address/${facts.clawedBack?.recoveryAddress ?? policy.recovery_address}`}
+              target="_blank"
+              rel="noreferrer"
+              className="ml-2 inline-flex min-h-11 items-center text-[13px] text-muted underline decoration-line underline-offset-4 hover:text-ink"
+            >
+              {p.onExplorer}
+            </a>
+          )}
         </Card>
       )}
       <div
@@ -213,11 +242,11 @@ function ProofBody({ facts, now, config }: { facts: ProofFacts; now: number; con
           <Section id="policy" title={p.sections.policy}>
             <Rows>
               {policyRows(policy).map((row) => (
-                <Row key={row.label} label={row.label} mono={row.mono}>
+                <Row key={row.label} label={row.label} mono={row.mono} hint={row.hint}>
                   {row.value}
                 </Row>
               ))}
-              <Row label={p.rows.guardians}>
+              <Row label={p.rows.guardians} hint={p.hints.guardians}>
                 <ul data-testid="proof-guardians" className="flex flex-col gap-1.5">
                   {policy.guardians.map((guardian) => (
                     <li key={guardian.guardian_account}>
@@ -424,15 +453,23 @@ function Rows({ children }: { children: ReactNode }) {
 function Row({
   label,
   mono = false,
+  hint,
   children,
 }: {
   label: string;
   mono?: boolean | undefined;
+  /** What the row means, in one plain sentence under its label. */
+  hint?: string | undefined;
   children: ReactNode;
 }) {
   return (
     <div className="flex flex-col gap-1 py-2.5 first:pt-0 last:pb-0 desktop:flex-row desktop:items-baseline desktop:justify-between desktop:gap-4">
-      <dt className="shrink-0 text-[13px] text-muted">{label}</dt>
+      <dt className="shrink-0 text-[13px] text-muted desktop:max-w-[46%]">
+        <span className="text-ink">{label}</span>
+        {hint !== undefined && (
+          <span className="mt-0.5 block text-[12px] leading-[1.45] text-faint">{hint}</span>
+        )}
+      </dt>
       <dd
         className={cn(
           "min-w-0 text-[14px] text-ink [overflow-wrap:anywhere] desktop:text-right",

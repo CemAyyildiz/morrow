@@ -377,7 +377,7 @@ test.describe("Proof Page states", () => {
       vaultSeven({ ...PROOF_VAULT, state: "clawed_back", pending_change: null }, events),
     );
     await open(page, "/proof/7");
-    await expect(page.getByTestId("proof-clawed-back")).toHaveText(
+    await expect(page.getByTestId("proof-clawed-back")).toContainText(
       `Sent home to ${PROOF_RECOVERY} · 08:30`,
     );
     await expect(page.getByText("clawed back", { exact: true }).first()).toBeVisible();
@@ -437,8 +437,11 @@ test.describe("Proof Page states", () => {
     await expect(lock).toHaveCSS("color", ALARM);
 
     keys = [{ public_key: "ed25519:1", access_key: { nonce: 1, permission: "Odd" } }];
-    await page.clock.runFor(30_000);
-    await expect(lock).toHaveText("Lock status could not be read");
+    // A 30 s tick that lands while the first read is still out is skipped: tick until one reads.
+    await expect(async () => {
+      await page.clock.runFor(30_000);
+      await expect(lock).toHaveText("Lock status could not be read", { timeout: 1_000 });
+    }).toPass();
     await expect(lock).toHaveCSS("color", ALARM);
   });
 
