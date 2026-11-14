@@ -314,3 +314,45 @@ export async function viewContract(
 export function errorGloss(code: string): string | null {
   return isErrorCode(code) ? ERROR_CODES[code] : null;
 }
+
+/** What `create_vault` needs in the wallet: the 0.5 NEAR storage deposit plus gas headroom. */
+export const CREATE_NEEDS = CREATE_DEPOSIT + 100_000_000_000_000_000_000_000n;
+
+/** The free testnet NEAR faucet, for a new wallet account that holds none. */
+export const NEAR_FAUCET_URL = "https://near-faucet.io/";
+
+/**
+ * The account's spendable balance in yoctoNEAR (`view_account`, `final`), or null when the RPC
+ * does not answer with one.
+ */
+export async function accountBalance(
+  rpcUrl: string,
+  accountId: string,
+  signal: AbortSignal,
+): Promise<bigint | null> {
+  try {
+    const response = await fetch(rpcUrl, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        jsonrpc: "2.0",
+        id: "morrow-balance",
+        method: "query",
+        params: { request_type: "view_account", finality: "final", account_id: accountId },
+      }),
+      signal: withTimeout(signal),
+    });
+    const body: unknown = await response.json();
+    if (!isRecord(body) || !isRecord(body.result)) return null;
+    const amount = body.result.amount;
+    return typeof amount === "string" && /^\d+$/.test(amount) ? BigInt(amount) : null;
+  } catch {
+    return null;
+  }
+}
+
+/** yoctoNEAR as "0.25" NEAR, two decimals, rounded down. */
+export function formatNear(yocto: bigint): string {
+  const hundredths = yocto / 10_000_000_000_000_000_000_000n;
+  return `${hundredths / 100n}.${(hundredths % 100n).toString().padStart(2, "0")}`;
+}

@@ -8,6 +8,8 @@ import { PROOF_VAULT_ADDRESS } from "./proof-fixture.ts";
 // call and answers with Vault #7, which the stub RPC serves as active.
 
 const ACCOUNT = "e2e-owner.testnet";
+/** The stub RPC answers a zero balance for this account. */
+const EMPTY_ACCOUNT = "e2e-empty.testnet";
 const SIGNET_ADDRESS = "tb1qrp33g0q5c5txsp9arysrx4k6zdkfs4nce4xj0gdcccefvpysxf3q0sl5k7";
 const MAINNET_ADDRESS = "bc1qar0srrr7xfkvy5l643lydnw9re59gtzzwf5mdq";
 const AXE_TAGS = ["wcag2a", "wcag2aa", "wcag21a", "wcag21aa", "wcag22aa", "best-practice"];
@@ -21,7 +23,7 @@ interface WalletCall {
 }
 
 /** Injects the stand-in wallet before the page loads. */
-async function injectWallet(page: Page, reject = false) {
+async function injectWallet(page: Page, reject = false, account = ACCOUNT) {
   await page.addInitScript(
     ([account, rejects]) => {
       const calls: unknown[] = [];
@@ -58,7 +60,7 @@ async function injectWallet(page: Page, reject = false) {
         window.dispatchEvent(new CustomEvent("near-wallet-injected", { detail: wallet })),
       );
     },
-    [ACCOUNT, reject] as const,
+    [account, reject] as const,
   );
 }
 
@@ -305,6 +307,25 @@ for (const [walletId, file] of [
       .toBe(true);
   });
 }
+
+test("/vault/new: an account without testnet NEAR is sent to the faucet", async ({ page }) => {
+  await injectWallet(page, false, EMPTY_ACCOUNT);
+  await open(page, "/vault/new");
+  await page.getByTestId("wallet-connect").click();
+  await page.locator('.hot-connector-popup .connect-item[data-type="e2e-wallet"]').click();
+  await expect(page.getByTestId("wallet-account")).toHaveText(`Connected as ${EMPTY_ACCOUNT}`);
+  const low = page.getByTestId("wallet-low-funds");
+  await expect(low).toContainText("This account holds 0.00 testnet NEAR");
+  await expect(low.getByRole("link", { name: "Get free testnet NEAR" })).toHaveAttribute(
+    "href",
+    "https://near-faucet.io/",
+  );
+  await expect(page.getByTestId("create-missing")).toContainText(
+    "Get 1 testnet NEAR into the wallet account.",
+  );
+  await expect(page.getByTestId("vault-wallet")).toHaveAttribute("data-status", "current");
+  expect(await violations(page)).toEqual([]);
+});
 
 test("/vault/new: a wallet that rejects keeps the form", async ({ page }) => {
   await injectWallet(page, true);

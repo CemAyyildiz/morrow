@@ -742,12 +742,19 @@ export const copy = {
         address: "Enter a signet Recovery Address.",
         retype: "Re-type the last 6 characters of the Recovery Address.",
         download: "Download the key file.",
+        funds: "Get 1 testnet NEAR into the wallet account.",
         reload: "Reload the page to draw new keys: a Vault may exist for these.",
       },
       submit: "Create Vault",
       createTitle: "Create the Vault",
       cost: "Your wallet asks you to approve one transaction. It pays 0.5 testnet NEAR for the Vault's storage on NEAR.",
-      waitingWallet: "Waiting for the wallet to sign create_vault",
+      waitingWallet:
+        "Waiting for your wallet to approve create_vault. No window opened? Click the wallet's icon in the browser toolbar.",
+      lowFunds: {
+        title: (near: string) => `This account holds ${near} testnet NEAR`,
+        body: "Creating a Vault costs 0.5 testnet NEAR plus a little gas, and a new wallet account starts empty. Get free testnet NEAR from the faucet with this account's name; this page sees it within seconds.",
+        faucet: "Get free testnet NEAR",
+      },
       activating: (id: string) =>
         `Vault #${id} created. Waiting for NEAR to show it active with its Co-signer keys.`,
       active: (id: string) => `Vault #${id} is active. Opening its page.`,

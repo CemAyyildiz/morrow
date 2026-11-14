@@ -1,4 +1,4 @@
-import { useId, useMemo, useState } from "react";
+import { useEffect, useId, useMemo, useState } from "react";
 import {
   MorrowContractError,
   decodeSegwitAddress,
@@ -25,7 +25,16 @@ import {
   type LoadedKeys,
   type RecoveryKey,
 } from "./keys";
-import { CREATE_DEPOSIT, CREATE_GAS, callContract, viewContract } from "./near";
+import {
+  CREATE_DEPOSIT,
+  CREATE_GAS,
+  CREATE_NEEDS,
+  NEAR_FAUCET_URL,
+  accountBalance,
+  callContract,
+  formatNear,
+  viewContract,
+} from "./near";
 import { Badge } from "@/components/ui/badge";
 import { VaultIcon } from "@/shell/icons";
 import {
@@ -111,6 +120,32 @@ export function CreateVaultView() {
   // A download counts only for the file as it is now (account and test key included).
   const downloaded = fileText !== null && downloadedFile === fileText;
 
+  // A new wallet account holds no testnet NEAR, and its wallet then never asks to approve
+  // create_vault: read the balance and point to the faucet until it covers the deposit.
+  const [balance, setBalance] = useState<{ account: string; yocto: bigint } | null>(null);
+  const accountId = connected?.accountId ?? null;
+  const rpcUrl = config.nearRpcUrl;
+  useEffect(() => {
+    if (accountId === null || rpcUrl === null) return;
+    const abort = new AbortController();
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const read = async () => {
+      const yocto = await accountBalance(rpcUrl, accountId, abort.signal);
+      if (abort.signal.aborted) return;
+      if (yocto !== null) setBalance({ account: accountId, yocto });
+      if (yocto === null || yocto < CREATE_NEEDS) timer = setTimeout(() => void read(), 10_000);
+    };
+    void read();
+    return () => {
+      abort.abort();
+      clearTimeout(timer);
+    };
+  }, [accountId, rpcUrl]);
+  const lowFunds =
+    balance !== null && balance.account === accountId && balance.yocto < CREATE_NEEDS
+      ? balance.yocto
+      : null;
+
   const problem = walletPageProblem(config, wallet.nonce);
   if (problem !== null) {
     return (
@@ -123,6 +158,7 @@ export function CreateVaultView() {
 
   const missing: string[] = [];
   if (connected === null) missing.push(t.missing.wallet);
+  if (lowFunds !== null) missing.push(t.missing.funds);
   if (!addressOk) missing.push(t.missing.address);
   if (!retypeOk) missing.push(t.missing.retype);
   if (!downloaded) missing.push(t.missing.download);
@@ -252,7 +288,7 @@ export function CreateVaultView() {
   };
 
   // The rail: each step is done, the current one, or still to come.
-  const doneFlags = [connected !== null, retypeOk, retypeOk, downloaded];
+  const doneFlags = [connected !== null && lowFunds === null, retypeOk, retypeOk, downloaded];
   const current = doneFlags.findIndex((done) => !done);
   const status = (index: number): StepStatus =>
     doneFlags[index] === true ? "done" : index === current ? "current" : "later";
@@ -288,6 +324,25 @@ export function CreateVaultView() {
               onConnect={wallet.connect}
               onDisconnect={wallet.disconnect}
             />
+            {lowFunds !== null && (
+              <div
+                data-testid="wallet-low-funds"
+                className="flex flex-col gap-3 rounded-[12px] border border-orange/40 bg-orange/5 p-4"
+              >
+                <p className="text-[14px] font-semibold text-ink">
+                  {t.lowFunds.title(formatNear(lowFunds))}
+                </p>
+                <p className={body}>{t.lowFunds.body}</p>
+                <a
+                  href={NEAR_FAUCET_URL}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="inline-flex min-h-11 w-fit items-center rounded-full border border-line bg-card-raised px-4 text-[14px] font-medium text-ink hover:bg-line"
+                >
+                  {t.lowFunds.faucet}
+                </a>
+              </div>
+            )}
           </RailStep>
 
           <RailStep

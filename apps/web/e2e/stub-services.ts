@@ -107,6 +107,17 @@ function rpcResult(params: Record<string, unknown> | undefined): unknown {
       ],
     };
   }
+  if (params?.request_type === "view_account" && params.account_id === "e2e-empty.testnet") {
+    return {
+      amount: "0",
+      locked: "0",
+      code_hash: "11111111111111111111111111111111",
+      storage_usage: 182,
+      storage_paid_at: 0,
+      block_hash: "stub",
+      block_height: 1,
+    };
+  }
   if (
     params?.request_type === "view_account" &&
     params.account_id === WEB_ENV.MORROW_VAULT_CONTRACT
