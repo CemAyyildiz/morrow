@@ -642,6 +642,18 @@ export const copy = {
    * NEAR wallet signs every contract call; the Bitcoin keys stay in the page.
    */
   vault: {
+    copy: "Copy",
+    copied: "Copied",
+    diagram: {
+      caption: (delay: string) =>
+        `A withdrawal request waits ${delay} in public before NEAR co-signs it. During that wait, Claw back sends the coins to the safe address instead.`,
+      request: "request",
+      waits: (delay: string) => `waits ${delay}`,
+      cosign: "co-sign",
+      near: "NEAR",
+      clawback: "Claw back, any time before",
+      noRecovery: "your safe address",
+    },
     unsupported: "The wallet pages need NEAR testnet and Bitcoin signet",
     unsupportedBody:
       "This deployment runs on other networks. Vaults are created from the web app on NEAR testnet with Bitcoin signet only: no mainnet, no regtest.",
@@ -664,14 +676,35 @@ export const copy = {
     },
     create: {
       title: "Create a Vault",
-      howTitle: "How a Vault works",
-      how: [
-        "You put bitcoin in the Vault. This page uses Bitcoin signet: free test coins with no value.",
-        "Every withdrawal waits in public for the time you choose. The NEAR contract that co-signs refuses to sign before that time is up.",
-        "While it waits, you press Claw back and the coins go to your safe address. Someone who stole your keys gets nothing.",
+      free: "Free test coins",
+      lede: "Lock test bitcoin behind a waiting time that a NEAR contract enforces, then stop a pretend theft yourself. About five minutes and two wallet approvals.",
+      howSteps: [
+        {
+          title: "Put bitcoin in",
+          body: "Coins sit at a Bitcoin address that needs your key and the NEAR contract's signature.",
+        },
+        {
+          title: "Every withdrawal waits",
+          body: "A withdrawal is public for the waiting time. NEAR will not co-sign it before then, whoever asks.",
+        },
+        {
+          title: "Claw back sends it home",
+          body: "While it waits, one tap sends every coin to your safe address. A thief with your keys gets nothing.",
+        },
       ],
-      howNote:
-        "Five steps below. Your NEAR wallet approves two transactions: creating the Vault, and each action later.",
+      previewEyebrow: "Your Vault",
+      draft: "draft",
+      preview: {
+        owner: "Owner",
+        guardian: "Guardian",
+        delay: "Waiting time",
+        recovery: "Safe address",
+        keys: "Key file",
+        none: "not set",
+        notSaved: "not saved",
+      },
+      savedShort: "saved",
+      generateTitle: "No signet wallet?",
       delayTitle: "Choose the waiting time",
       delayLegend:
         "Every withdrawal waits this long, in public, before the NEAR contract signs it. This is the time you have to stop a thief.",
@@ -688,7 +721,7 @@ export const copy = {
         "Claw back sends the coins here and nowhere else. It is written into the Vault, so a thief cannot change it. Paste a signet address you control (tb1…), or let this page make one.",
       generate: "Make a test address for me",
       generateNote:
-        "For testing: this page makes the address and puts its key in your key file. Connect your wallet first.",
+        "This page makes a test address and puts its key in your key file. Connect your wallet first.",
       addressProblem: {
         malformed: "This is not a valid SegWit address.",
         network: "This is not a signet address.",
@@ -772,8 +805,16 @@ export const copy = {
       proof: "Open its Proof Page",
       addressTitle: "Vault Address",
       fundTitle: "Put test bitcoin in",
+      heldTitle: "Held in this Vault",
+      copyAddress: "Copy the Vault Address",
+      delayChip: (delay: string) => `waiting time ${delay}`,
+      stepLabel: (n: number) => `step ${n}`,
+      clawedTitle: "Clawed back",
+      clawedBody:
+        "Every coin went to the safe address below, and the Vault is closed for good. No request can execute any more.",
       addressPending: "The Vault has no address until its Co-signer keys are stored.",
       balance: (btc: string) => `${btc} BTC on signet`,
+      balanceUnit: "BTC on signet",
       unconfirmed: (btc: string) => `${btc} BTC not confirmed yet`,
       tip: (height: string) => `Signet tip block ${height}`,
       unfunded:
@@ -823,6 +864,12 @@ export const copy = {
       pending: {
         title: "Withdrawal Request",
         stepTitle: "The open request",
+        ready: "Ready",
+        left: "left",
+        progress: "Waiting time passed",
+        nothing: "Nothing is waiting",
+        stopHint: "Claw back can still stop it.",
+        byOp: "Open a request by its op id",
         none: "No request is open in this page. Open one by its op id, or request a withdrawal.",
         opLabel: "Op id",
         open: "Open request",
@@ -838,7 +885,8 @@ export const copy = {
       },
       clawback: {
         title: "Claw back",
-        stepTitle: "Send the coins home: Claw back",
+        stepTitle: "Send the coins home",
+        to: "to",
         body: "Sends the Vault's coins (up to 5) to your safe address. It cancels every open request and closes the Vault for good. Your wallet approves it, and this page signs the Bitcoin side with your Guardian Key.",
         submit: "Claw back",
         resumeNote: (op: string) =>

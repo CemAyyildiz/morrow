@@ -76,19 +76,30 @@ export function WalletCard({
   status,
   onConnect,
   onDisconnect,
-  step,
 }: {
   status: WalletStatus;
   onConnect: () => void;
   onDisconnect: () => void;
-  step?: number | undefined;
 }) {
   return (
-    <Section
-      id="wallet"
-      title={step === undefined ? t.wallet.title : t.wallet.stepTitle}
-      step={step}
-    >
+    <Section id="wallet" title={t.wallet.title}>
+      <WalletBody status={status} onConnect={onConnect} onDisconnect={onDisconnect} />
+    </Section>
+  );
+}
+
+/** The wallet card's contents, for a page that draws its own frame around them. */
+export function WalletBody({
+  status,
+  onConnect,
+  onDisconnect,
+}: {
+  status: WalletStatus;
+  onConnect: () => void;
+  onDisconnect: () => void;
+}) {
+  return (
+    <>
       {status.kind === "connected" ? (
         <div className="flex flex-wrap items-center gap-3">
           <Badge variant="ok" data-testid="wallet-account">
@@ -121,7 +132,7 @@ export function WalletCard({
         </p>
       )}
       <p className={body}>{t.wallet.hint}</p>
-    </Section>
+    </>
   );
 }
 

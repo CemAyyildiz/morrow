@@ -19,6 +19,21 @@ import { Card, CardDescription, CardTitle } from "@/components/ui/card";
 import { copy } from "@/copy";
 import { cn } from "@/lib/utils";
 import { PageHeader } from "@/shell/PageHeader";
+import { ProofIcon } from "@/shell/icons";
+import { Badge } from "@/components/ui/badge";
+import { Skeleton } from "@/components/ui/skeleton";
+import { ProgressBar } from "@/components/ProgressBar";
+import {
+  CopyButton,
+  DelayDiagram,
+  DepositIcon,
+  HomeIcon,
+  KeyIcon,
+  StepNode,
+  ThiefIcon,
+  shorten,
+  type StepStatus,
+} from "./visual";
 import {
   actionGate,
   asSpendOp,
@@ -51,7 +66,6 @@ import {
   WalletCard,
   body,
   inputClass,
-  linkClass,
   refusalText,
   softDisabled,
   type Outcome,
@@ -476,52 +490,117 @@ export function VaultView({ vaultId }: { vaultId: string }) {
     keys: `${id}-keys`,
   };
 
+  const clawedBack = vault.state === "clawed_back";
+  const delayMs = nsToMs(vault.policy.delay_ns);
+  const delayText = formatDuration(delayMs);
+  const executableMs = op?.executable_at == null ? null : nsToMs(op.executable_at);
+  const remainingMs = executableMs === null ? null : Math.max(0, executableMs - now);
+  const elapsed =
+    remainingMs === null || delayMs <= 0 ? null : Math.min(1, 1 - remainingMs / delayMs);
+  const opPending = op !== null && op.state === "pending";
+
   return (
     <>
-      <PageHeader title={t.title(vault.vault_id)} chips={[t.states[vault.state], "signet"]} />
+      <header className="flex flex-wrap items-end justify-between gap-4">
+        <div className="flex flex-col gap-3">
+          <div className="flex flex-wrap items-center gap-2">
+            <Badge variant={clawedBack ? "ok" : "chip"}>{t.states[vault.state]}</Badge>
+            <Badge variant="chip">Bitcoin signet</Badge>
+            <Badge variant="chip">{t.delayChip(delayText)}</Badge>
+          </div>
+          <h1 className="font-display text-[34px] leading-[1.1] font-normal tracking-[-0.03em] desktop:text-[46px]">
+            {t.title(vault.vault_id)}
+          </h1>
+        </div>
+        <Link to={proofPath(vault.vault_id)} className={buttonVariants({ variant: "secondary" })}>
+          <ProofIcon className="size-4" />
+          {t.proof}
+        </Link>
+      </header>
 
-      <Guide
-        funded={confirmed.length > 0 || vault.state === "clawed_back"}
-        requested={op !== null || vault.state === "clawed_back"}
-        clawedBack={vault.state === "clawed_back"}
-      />
-      <div className="flex max-w-[720px] flex-col gap-stack">
+      {connected === null && (
         <WalletCard
           status={wallet.status}
           onConnect={wallet.connect}
           onDisconnect={wallet.disconnect}
         />
-        <Section id="address" step={1} title={t.fundTitle}>
+      )}
+
+      <Guide
+        funded={confirmed.length > 0 || clawedBack}
+        requested={op !== null || clawedBack}
+        clawedBack={clawedBack}
+      />
+
+      <Card
+        data-testid="vault-hero"
+        className="grid grid-cols-1 gap-6 p-card-pad-mobile desktop:grid-cols-2 desktop:gap-10 desktop:px-[30px] desktop:py-[26px]"
+      >
+        <section
+          role="region"
+          aria-labelledby="vault-address-title"
+          data-testid="vault-address"
+          className="flex min-w-0 flex-col gap-3"
+        >
+          <h2 id="vault-address-title" className="text-label text-muted">
+            {t.heldTitle}
+          </h2>
           {address === null ? (
             <p className={body}>{t.addressPending}</p>
           ) : (
             <>
-              <p
-                data-testid="vault-address-text"
-                className="font-mono text-[13px] text-ink [overflow-wrap:anywhere]"
-              >
-                {address}
-              </p>
-              {coins.kind === "ok" && (
+              {coins.kind === "ok" ? (
                 <div className="flex flex-col gap-1">
                   <p
                     data-testid="vault-balance"
-                    className="font-display text-numeral font-light tabular-nums"
+                    className="animate-fade-in flex flex-wrap items-baseline gap-x-3 gap-y-1"
                   >
-                    {t.balance(formatBtc(confirmedSats))}
+                    <span className="font-display text-[44px] leading-none font-light tracking-[-0.04em] tabular-nums desktop:text-[60px]">
+                      {formatBtc(confirmedSats)}
+                    </span>{" "}
+                    <span className="text-[16px] text-muted">{t.balanceUnit}</span>
                   </p>
                   {totalSats > confirmedSats && (
-                    <p className={body}>{t.unconfirmed(formatBtc(totalSats - confirmedSats))}</p>
-                  )}
-                  {coins.tip !== null && (
-                    <p className="font-mono text-mono text-muted">{t.tip(String(coins.tip))}</p>
+                    <p className="text-[14px] text-ink">
+                      {t.unconfirmed(formatBtc(totalSats - confirmedSats))}
+                    </p>
                   )}
                 </div>
-              )}
-              {coins.kind === "ok" && confirmed.length === 0 && (
-                <div data-testid="vault-unfunded" className="flex flex-col items-start gap-1">
-                  <p className={body}>{t.unfunded}</p>
-                  <a href={FAUCET_URL} target="_blank" rel="noreferrer" className={linkClass}>
+              ) : coins.kind === "loading" ? (
+                <Skeleton className="h-12 w-64" />
+              ) : null}
+              <div className="flex flex-col gap-2 rounded-[14px] border border-line bg-page/60 p-3">
+                <div className="flex items-center justify-between gap-3">
+                  <span className="text-label text-muted">{t.addressTitle}</span>
+                  {coins.kind === "ok" && coins.tip !== null && (
+                    <span className="font-mono text-mono text-faint">
+                      {t.tip(String(coins.tip))}
+                    </span>
+                  )}
+                </div>
+                <div className="flex items-center gap-3">
+                  <p
+                    data-testid="vault-address-text"
+                    className="min-w-0 flex-1 font-mono text-[13px] text-ink [overflow-wrap:anywhere]"
+                  >
+                    {address}
+                  </p>
+                  <CopyButton text={address} label={t.copyAddress} />
+                </div>
+              </div>
+              {coins.kind === "ok" && confirmed.length === 0 && !clawedBack && (
+                <div
+                  data-testid="vault-unfunded"
+                  className="flex flex-col items-start gap-2 desktop:flex-row desktop:items-center desktop:justify-between"
+                >
+                  <p className={cn(body, "text-[13px]")}>{t.unfunded}</p>
+                  <a
+                    href={FAUCET_URL}
+                    target="_blank"
+                    rel="noreferrer"
+                    className={buttonVariants({ variant: "secondary" })}
+                  >
+                    <DepositIcon className="size-4" />
                     {t.faucet}
                   </a>
                 </div>
@@ -539,8 +618,133 @@ export function VaultView({ vaultId }: { vaultId: string }) {
               )}
             </>
           )}
-        </Section>
-        <Section id="request" step={2} title={t.request.stepTitle}>
+        </section>
+
+        <section
+          role="region"
+          aria-labelledby="vault-pending-title"
+          data-testid="vault-pending"
+          className="flex min-w-0 flex-col gap-3 desktop:border-l desktop:border-line desktop:pl-10"
+        >
+          <h2 id="vault-pending-title" className="text-label text-muted">
+            {t.pending.title}
+          </h2>
+          {clawedBack ? (
+            <div className="flex flex-col gap-3">
+              <div className="flex items-center gap-3">
+                <span className="inline-flex size-12 items-center justify-center rounded-full border border-ok/40 bg-ok/10 text-ok">
+                  <HomeIcon className="size-6" />
+                </span>
+                <p className="font-display text-[28px] leading-tight font-light text-ok">
+                  {t.clawedTitle}
+                </p>
+              </div>
+              <p className={body}>{t.clawedBody}</p>
+              <p className="font-mono text-[12px] text-muted [overflow-wrap:anywhere]">
+                {vault.policy.recovery_address}
+              </p>
+            </div>
+          ) : op !== null ? (
+            <div data-testid="pending-op" className="flex flex-col gap-3">
+              <div className="flex items-baseline gap-3">
+                <span className="animate-fade-in font-display text-[44px] leading-none font-light tracking-[-0.04em] tabular-nums desktop:text-[56px]">
+                  {!opPending
+                    ? op.state
+                    : remainingMs === null || remainingMs > 0
+                      ? formatDuration(remainingMs ?? delayMs)
+                      : t.pending.ready}
+                </span>
+                {opPending && remainingMs !== null && remainingMs > 0 && (
+                  <span className="text-[15px] text-muted">{t.pending.left}</span>
+                )}
+              </div>
+              {opPending && <ProgressBar value={elapsed ?? 0} label={t.pending.progress} />}
+              <p className="font-mono text-[12.5px] text-ink [overflow-wrap:anywhere]">
+                {t.pending.summary(op.op_id, op.amount_sats, op.destination)}
+              </p>
+              <p className={cn(body, "text-[13px]")}>{t.pending.state(op.state)}</p>
+              {op.executable_at !== null && (
+                <p data-testid="pending-executable-at" className="text-[13px] text-ink">
+                  {t.pending.executableAt(absoluteTime(nsToMs(op.executable_at), now))}
+                </p>
+              )}
+              {opPending && <p className="text-[13px] text-ok">{t.pending.stopHint}</p>}
+            </div>
+          ) : (
+            <div className="flex flex-col gap-3">
+              <p className="font-display text-[28px] leading-tight font-light">
+                {t.pending.nothing}
+              </p>
+              <DelayDiagram
+                delay={delayText}
+                recovery={shorten(vault.policy.recovery_address, 10, 8)}
+              />
+            </div>
+          )}
+          <div className="mt-auto flex flex-col gap-2 pt-1">
+            <div>
+              <Button
+                variant={primary === "execute" ? "primary" : "secondary"}
+                data-testid="withdraw-execute"
+                aria-disabled={executeGate !== null}
+                aria-describedby={executeGate === null ? undefined : ids.execute}
+                className={softDisabled}
+                onClick={execute}
+              >
+                {t.pending.execute}
+              </Button>
+            </div>
+            {executeGate !== null && (
+              <p id={ids.execute} data-testid="execute-reason" className="text-[13px] text-muted">
+                {executeGate}
+              </p>
+            )}
+            <details className="text-[13px]">
+              <summary className="min-h-11 cursor-pointer content-center text-muted hover:text-ink">
+                {t.pending.byOp}
+              </summary>
+              <div className="flex flex-wrap items-end gap-2">
+                <div className="flex flex-col gap-1">
+                  <label htmlFor={ids.op} className="text-[13px] font-medium">
+                    {t.pending.opLabel}
+                  </label>
+                  <input
+                    id={ids.op}
+                    data-testid="op-input"
+                    inputMode="numeric"
+                    value={opInput}
+                    onChange={(event) => setOpInput(event.target.value)}
+                    className={cn(inputClass, "max-w-[160px]")}
+                  />
+                </div>
+                <Button variant="secondary" data-testid="op-open" onClick={() => void openOp()}>
+                  {t.pending.open}
+                </Button>
+              </div>
+              {opProblem !== null && <p className="mt-2 text-[13px] text-alarm">{opProblem}</p>}
+            </details>
+          </div>
+        </section>
+      </Card>
+
+      <div className="grid grid-cols-1 items-stretch gap-stack desktop:grid-cols-2">
+        <section
+          role="region"
+          aria-labelledby="vault-request-title"
+          data-testid="vault-request"
+          className="bg-card-surface flex min-w-0 flex-col gap-3 rounded-lg border border-line p-card-pad-mobile desktop:px-[24px] desktop:py-[22px]"
+        >
+          <div className="flex items-center gap-3">
+            <span className="inline-flex size-10 shrink-0 items-center justify-center rounded-[12px] border border-line bg-card-raised text-ink">
+              <ThiefIcon className="size-5" />
+            </span>
+            <div>
+              <p className="font-mono text-mono text-muted">{t.stepLabel(2)}</p>
+              <h2 id="vault-request-title" className="font-display text-[20px] tracking-[-0.01em]">
+                {t.request.stepTitle}
+              </h2>
+            </div>
+          </div>
           <p className={body}>{t.request.body}</p>
           <label htmlFor={ids.destination} className="text-[14px] font-medium">
             {t.request.destination}
@@ -549,6 +753,7 @@ export function VaultView({ vaultId }: { vaultId: string }) {
             id={ids.destination}
             data-testid="withdraw-destination"
             value={destination}
+            placeholder="tb1q…"
             onChange={(event) => setDestination(event.target.value)}
             spellCheck={false}
             autoComplete="off"
@@ -571,7 +776,7 @@ export function VaultView({ vaultId }: { vaultId: string }) {
           <p id={ids.amountHint} className={cn(body, "text-[13px]")}>
             {t.request.max(max.toString())}
           </p>
-          <div>
+          <div className="mt-auto pt-1">
             <Button
               variant={primary === "request" ? "primary" : "secondary"}
               data-testid="withdraw-request"
@@ -588,69 +793,39 @@ export function VaultView({ vaultId }: { vaultId: string }) {
               {requestGate}
             </p>
           )}
-        </Section>
-        <Section id="pending" title={t.pending.stepTitle}>
-          {op === null ? (
-            <p className={body}>{t.pending.none}</p>
-          ) : (
-            <div data-testid="pending-op" className="flex flex-col gap-1">
-              <p className="font-mono text-[13px] text-ink [overflow-wrap:anywhere]">
-                {t.pending.summary(op.op_id, op.amount_sats, op.destination)}
-              </p>
-              <p className={body}>{t.pending.state(op.state)}</p>
-              {op.executable_at !== null && (
-                <p data-testid="pending-executable-at" className="text-[14px] text-ink">
-                  {t.pending.executableAt(absoluteTime(nsToMs(op.executable_at), now))}
-                </p>
-              )}
+        </section>
+
+        <section
+          role="region"
+          aria-labelledby="vault-clawback-title"
+          data-testid="vault-clawback"
+          className="flex min-w-0 flex-col gap-3 rounded-lg border border-alarm/30 bg-alarm/[0.04] p-card-pad-mobile desktop:px-[24px] desktop:py-[22px]"
+        >
+          <div className="flex items-center gap-3">
+            <span className="inline-flex size-10 shrink-0 items-center justify-center rounded-[12px] border border-alarm/40 bg-alarm/10 text-alarm">
+              <HomeIcon className="size-5" />
+            </span>
+            <div>
+              <p className="font-mono text-mono text-muted">{t.stepLabel(3)}</p>
+              <h2 id="vault-clawback-title" className="font-display text-[20px] tracking-[-0.01em]">
+                {t.clawback.stepTitle}
+              </h2>
             </div>
-          )}
-          <div className="flex flex-wrap items-end gap-2">
-            <div className="flex flex-col gap-1">
-              <label htmlFor={ids.op} className="text-[14px] font-medium">
-                {t.pending.opLabel}
-              </label>
-              <input
-                id={ids.op}
-                data-testid="op-input"
-                inputMode="numeric"
-                value={opInput}
-                onChange={(event) => setOpInput(event.target.value)}
-                className={cn(inputClass, "max-w-[160px]")}
-              />
-            </div>
-            <Button variant="secondary" data-testid="op-open" onClick={() => void openOp()}>
-              {t.pending.open}
-            </Button>
           </div>
-          {opProblem !== null && <p className="text-[13px] text-alarm">{opProblem}</p>}
-          <div>
-            <Button
-              variant={primary === "execute" ? "primary" : "secondary"}
-              data-testid="withdraw-execute"
-              aria-disabled={executeGate !== null}
-              aria-describedby={executeGate === null ? undefined : ids.execute}
-              className={softDisabled}
-              onClick={execute}
-            >
-              {t.pending.execute}
-            </Button>
-          </div>
-          {executeGate !== null && (
-            <p id={ids.execute} data-testid="execute-reason" className="text-[13px] text-muted">
-              {executeGate}
-            </p>
-          )}
-        </Section>
-        <Section id="clawback" step={3} title={t.clawback.stepTitle}>
           <p className={body}>{t.clawback.body}</p>
-          <div>
+          <div className="flex items-center gap-2 rounded-[12px] border border-line bg-page/60 px-3 py-2">
+            <span className="text-label text-muted">{t.clawback.to}</span>
+            <span className="min-w-0 truncate font-mono text-[12.5px] text-ink">
+              {vault.policy.recovery_address}
+            </span>
+          </div>
+          <div className="mt-auto pt-1">
             <Button
               variant="clawback"
               data-testid="clawback"
               aria-disabled={clawbackGate !== null}
               aria-describedby={clawbackGate === null ? undefined : ids.clawback}
-              className={softDisabled}
+              className={cn(softDisabled, "w-full text-[15px] desktop:w-auto desktop:px-8")}
               onClick={clawback}
             >
               {t.clawback.submit}
@@ -677,17 +852,29 @@ export function VaultView({ vaultId }: { vaultId: string }) {
               )}
             </div>
           )}
-        </Section>
-        {outcome !== null && (
-          <Card
-            aria-busy={running !== null}
-            className="p-card-pad-mobile desktop:px-[22px] desktop:py-[18px]"
-          >
-            <OutcomeLine testId="vault-outcome" outcome={outcome} />
-          </Card>
+        </section>
+      </div>
+
+      {outcome !== null && (
+        <Card
+          aria-busy={running !== null}
+          className="p-card-pad-mobile desktop:px-[24px] desktop:py-[18px]"
+        >
+          <OutcomeLine testId="vault-outcome" outcome={outcome} />
+        </Card>
+      )}
+
+      <div className="grid grid-cols-1 items-start gap-stack desktop:grid-cols-3">
+        {connected !== null && (
+          <WalletCard
+            status={wallet.status}
+            onConnect={wallet.connect}
+            onDisconnect={wallet.disconnect}
+          />
         )}
+
         <Section id="keys" title={t.keysTitle}>
-          <p className={body}>{t.keysBody}</p>
+          <p className={cn(body, "text-[13px]")}>{t.keysBody}</p>
           <div className="flex flex-wrap items-center gap-3">
             <label
               className={cn(
@@ -695,6 +882,7 @@ export function VaultView({ vaultId }: { vaultId: string }) {
                 "has-[:focus-visible]:outline-2 has-[:focus-visible]:outline-ink",
               )}
             >
+              <KeyIcon className="size-4" />
               {t.loadKeys}
               <input
                 type="file"
@@ -748,32 +936,28 @@ export function VaultView({ vaultId }: { vaultId: string }) {
                   : "")}
           </p>
         </Section>
+
         <Section id="facts" title={t.factsTitle}>
-          <dl className="grid grid-cols-[max-content_minmax(0,1fr)] gap-x-4 gap-y-2 text-[14px]">
+          <dl className="grid grid-cols-[max-content_minmax(0,1fr)] gap-x-4 gap-y-2 text-[13px]">
             <dt className="text-muted">{t.facts.owner}</dt>
-            <dd className="font-mono text-[13px] [overflow-wrap:anywhere]">
+            <dd className="font-mono text-[12.5px] [overflow-wrap:anywhere]">
               {vault.owner_account}
             </dd>
             {vault.policy.guardians.length > 0 && (
               <>
                 <dt className="text-muted">{t.facts.guardian}</dt>
-                <dd className="font-mono text-[13px] [overflow-wrap:anywhere]">
+                <dd className="font-mono text-[12.5px] [overflow-wrap:anywhere]">
                   {vault.policy.guardians.map((g) => g.guardian_account).join(", ")}
                 </dd>
               </>
             )}
             <dt className="text-muted">{t.facts.delay}</dt>
-            <dd className="font-mono text-[13px]">
-              {formatDuration(nsToMs(vault.policy.delay_ns))}
-            </dd>
+            <dd className="font-mono text-[12.5px]">{delayText}</dd>
             <dt className="text-muted">{t.facts.recovery}</dt>
-            <dd className="font-mono text-[13px] [overflow-wrap:anywhere]">
+            <dd className="font-mono text-[12.5px] [overflow-wrap:anywhere]">
               {vault.policy.recovery_address}
             </dd>
           </dl>
-          <Link to={proofPath(vault.vault_id)} className={linkClass}>
-            {t.proof}
-          </Link>
         </Section>
       </div>
     </>
@@ -792,73 +976,70 @@ function Guide({
 }) {
   const g = t.guide;
   const steps = [
-    { key: "fund", ...g.fund, done: funded },
-    { key: "request", ...g.request, done: requested },
-    { key: "clawback", ...g.clawback, done: clawedBack },
+    { key: "fund", ...g.fund, done: funded, Icon: DepositIcon },
+    { key: "request", ...g.request, done: requested, Icon: ThiefIcon },
+    { key: "clawback", ...g.clawback, done: clawedBack, Icon: HomeIcon },
   ];
   const next = steps.findIndex((step) => !step.done);
   return (
     <section
       aria-labelledby="vault-guide-title"
       data-testid="vault-guide"
-      className="max-w-[720px] rounded-[16px] border border-line p-card-pad-mobile desktop:px-[22px] desktop:py-[18px]"
+      className="flex flex-col gap-3"
     >
-      <h2 id="vault-guide-title" className="text-[16px] font-semibold text-ink">
-        {t.guideTitle}
-      </h2>
-      <ol className="mt-3 flex flex-col gap-3">
+      <div className="flex flex-wrap items-baseline justify-between gap-2">
+        <h2 id="vault-guide-title" className="font-display text-[20px] tracking-[-0.01em]">
+          {t.guideTitle}
+        </h2>
+        {!clawedBack && <p className="text-[13px] text-muted">{g.honest}</p>}
+      </div>
+      <ol className="grid grid-cols-1 gap-3 desktop:grid-cols-3">
         {steps.map((step, index) => {
-          const status = step.done ? "done" : index === next ? "next" : "later";
+          const status: StepStatus = step.done ? "done" : index === next ? "current" : "later";
+          const label = step.done ? g.status.done : index === next ? g.status.next : g.status.later;
           return (
             <li
               key={step.key}
               data-testid={`guide-${step.key}`}
-              data-status={status}
+              data-status={step.done ? "done" : index === next ? "next" : "later"}
               className={cn(
-                "flex gap-3 rounded-[12px] border px-3 py-2",
-                status === "next" ? "border-muted bg-card-raised" : "border-transparent",
+                "bg-card-surface relative flex gap-3 rounded-lg border p-4 transition-colors",
+                status === "current" && "border-ink/70",
+                status === "done" && "border-ok/30",
+                status === "later" && "border-line",
               )}
             >
-              <span
-                aria-hidden="true"
-                className={cn(
-                  "inline-flex size-7 shrink-0 items-center justify-center rounded-full border font-mono text-[13px]",
-                  status === "done" ? "border-ok text-ok" : "border-line text-muted",
-                )}
-              >
-                {index + 1}
-              </span>
-              <div className="flex min-w-0 flex-col gap-0.5">
-                <p className="text-[15px] font-semibold text-ink">
+              <StepNode n={index + 1} status={status} />
+              <div className="flex min-w-0 flex-col gap-1">
+                <p className="flex flex-wrap items-center gap-2 text-[15px] font-semibold text-ink">
+                  <step.Icon className="size-4 text-muted" />
                   {step.title}
-                  {g.status[status] !== "" && (
+                  {label !== "" && (
                     <span
                       className={cn(
-                        "ml-2 font-mono text-[12px] font-normal",
-                        status === "done" ? "text-ok" : "text-muted",
+                        "rounded-full px-2 py-0.5 font-mono text-[11px] font-normal",
+                        step.done ? "bg-ok/10 text-ok" : "bg-ink/10 text-ink",
                       )}
                     >
-                      {g.status[status]}
+                      {label}
                     </span>
                   )}
                 </p>
-                <p className={body}>{step.body}</p>
+                <p className="text-[13px] leading-[1.5] text-muted">{step.body}</p>
               </div>
             </li>
           );
         })}
       </ol>
-      {clawedBack ? (
-        <div className="mt-3 flex flex-col items-start gap-1">
-          <p data-testid="guide-done" className="text-[14px] text-ok">
+      {clawedBack && (
+        <div className="flex flex-wrap items-center gap-3 rounded-lg border border-ok/30 bg-ok/5 p-4">
+          <p data-testid="guide-done" className="flex-1 text-[14px] text-ok">
             {g.doneAll}
           </p>
-          <a href={VAULT_NEW_PATH} className={linkClass}>
+          <a href={VAULT_NEW_PATH} className={buttonVariants({ variant: "secondary" })}>
             {g.again}
           </a>
         </div>
-      ) : (
-        <p className={cn(body, "mt-3 text-[13px]")}>{g.honest}</p>
       )}
     </section>
   );
