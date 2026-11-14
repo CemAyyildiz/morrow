@@ -654,47 +654,56 @@ export const copy = {
       title: "NEAR wallet",
       connect: "Connect a NEAR wallet",
       connecting: "Opening the wallet",
+      stepTitle: "Connect your NEAR wallet",
       connected: (account: string) => `Connected as ${account}`,
       disconnect: "Disconnect",
-      hint: "Meteor Wallet or Intear Wallet, on NEAR testnet. The wallet signs every contract call. The Bitcoin keys never leave this page.",
+      hint: "Meteor Wallet or Intear Wallet, on NEAR testnet. Your wallet approves each step on NEAR. The Bitcoin keys are made in this page and never leave it.",
       loadFailed: (message: string) =>
         `The wallet could not load or connect: ${message}. Check the connection and try again.`,
       retry: "Try again",
     },
     create: {
       title: "Create a Vault",
-      intro:
-        "A Vault on Bitcoin signet with your own keys. This account becomes the Owner Account and the Backup Device Guardian. Signet coins are test coins with no value.",
-      delayTitle: "Delay",
-      delayLegend: "How long a withdrawal waits in public before it can execute",
+      howTitle: "How a Vault works",
+      how: [
+        "You put bitcoin in the Vault. This page uses Bitcoin signet: free test coins with no value.",
+        "Every withdrawal waits in public for the time you choose. The NEAR contract that co-signs refuses to sign before that time is up.",
+        "While it waits, you press Claw back and the coins go to your safe address. Someone who stole your keys gets nothing.",
+      ],
+      howNote:
+        "Five steps below. Your NEAR wallet approves two transactions: creating the Vault, and each action later.",
+      delayTitle: "Choose the waiting time",
+      delayLegend:
+        "Every withdrawal waits this long, in public, before the NEAR contract signs it. This is the time you have to stop a thief.",
       delays: {
-        "1h": { label: "1 hour", note: "For testing" },
-        "24h": { label: "24 hours", note: "The standard preset" },
+        "1h": { label: "1 hour", note: "For trying it out" },
+        "24h": { label: "24 hours", note: "For real use" },
       },
+      detailsSummary: "All the Vault's rules",
       policyFacts:
         "Policy Change Delay 7 days · Escape Timelock 4,320 blocks · Fee Cap 100,000 sats · Spending Allowance 10,000 sats per 24 hours · at most 5 coins per withdrawal or Clawback · Fast Approval off · one Backup Device Guardian: the connected account",
-      recoveryTitle: "Recovery Address",
-      recoveryLabel: "Signet Recovery Address",
+      recoveryTitle: "Choose where rescued coins go",
+      recoveryLabel: "Your safe address (the Recovery Address, on signet)",
       recoveryHint:
-        "Where a Clawback sends the coins: a signet address you control (tb1…). It is fixed into the Vault's Policy.",
-      generate: "Generate a test Recovery Address",
+        "Claw back sends the coins here and nowhere else. It is written into the Vault, so a thief cannot change it. Paste a signet address you control (tb1…), or let this page make one.",
+      generate: "Make a test address for me",
       generateNote:
-        "Testing only: the browser draws a key for it and writes the key into the key file.",
+        "For testing: this page makes the address and puts its key in your key file. Connect your wallet first.",
       addressProblem: {
         malformed: "This is not a valid SegWit address.",
         network: "This is not a signet address.",
         version: "The Vault pays SegWit v0 and Taproot addresses only.",
         program: "This address has a witness program the Vault does not accept.",
       },
-      retypeLabel: "Re-type the last 6 characters of the Recovery Address",
+      retypeLabel: "To confirm it, type the address's last 6 characters",
       retypeMismatch: "These are not the last 6 characters of the Recovery Address.",
-      keysTitle: "Key file",
+      keysTitle: "Save your key file",
       keysBody:
-        "The Owner Key, the Backup Device Guardian Key and the watcher key were drawn in this browser. The key file is their only copy: save it before you create the Vault, and load it on the Vault page to sign.",
+        "This page made your Vault's Bitcoin keys (the Owner Key and the Guardian Key). The file is their only copy: download it before you create the Vault, and keep it private. The Vault page asks for it if you come back later.",
       download: "Download key file",
       downloaded:
         "Key file downloaded. Keep it safe: anyone with it and this NEAR account can sign for the Vault.",
-      missingTitle: "Before Create",
+      missingTitle: "Still to do",
       missing: {
         wallet: "Connect a NEAR wallet.",
         address: "Enter a signet Recovery Address.",
@@ -703,7 +712,8 @@ export const copy = {
         reload: "Reload the page to draw new keys: a Vault may exist for these.",
       },
       submit: "Create Vault",
-      cost: "create_vault attaches 0.5 NEAR for the Vault's storage, from the connected account.",
+      createTitle: "Create the Vault",
+      cost: "Your wallet asks you to approve one transaction. It pays 0.5 testnet NEAR for the Vault's storage on NEAR.",
       waitingWallet: "Waiting for the wallet to sign create_vault",
       activating: (id: string) =>
         `Vault #${id} created. Waiting for NEAR to show it active with its Co-signer keys.`,
@@ -720,13 +730,34 @@ export const copy = {
     },
     page: {
       title: (id: string) => `Vault #${id}`,
+      guideTitle: "Try it: stop a theft in 3 steps",
+      guide: {
+        fund: {
+          title: "Put test bitcoin in",
+          body: "Copy the Vault Address and get free signet coins from the faucet. One confirmation takes about 10 minutes; this page checks every 30 seconds.",
+        },
+        request: {
+          title: "Play the thief: ask to withdraw",
+          body: "Request a withdrawal to any signet address, as a thief holding your keys would. The request is public, and NEAR will not sign it before the waiting time ends.",
+        },
+        clawback: {
+          title: "Send the coins home",
+          body: "Press Claw back. The coins go to your safe address, the request is cancelled, and the thief gets nothing. The Vault then closes.",
+        },
+        honest:
+          "An honest withdrawal works the same way without step 3: wait out the time, then press Execute.",
+        status: { done: "done", next: "next", later: "" },
+        doneAll:
+          "Done: the theft was stopped. The coins are at your safe address. Create another Vault to try again.",
+        again: "Create another Vault",
+      },
       loading: "Reading the Vault from NEAR",
       unreachable: "NEAR is not answering",
       unreachableBody: "The Vault could not be read. Nothing was sent.",
       notSignet:
         "This Vault is not on Bitcoin signet. The wallet pages operate signet Vaults only.",
       retry: "Retry",
-      factsTitle: "Policy",
+      factsTitle: "This Vault's rules",
       facts: {
         owner: "Owner Account",
         guardian: "Guardians",
@@ -740,6 +771,7 @@ export const copy = {
       },
       proof: "Open its Proof Page",
       addressTitle: "Vault Address",
+      fundTitle: "Put test bitcoin in",
       addressPending: "The Vault has no address until its Co-signer keys are stored.",
       balance: (btc: string) => `${btc} BTC on signet`,
       unconfirmed: (btc: string) => `${btc} BTC not confirmed yet`,
@@ -750,7 +782,7 @@ export const copy = {
       btcUnreachable: "The Bitcoin backend is not answering, so the Vault's coins are unknown.",
       keysTitle: "Key file",
       keysBody:
-        "Load the key file you saved when you created this Vault. It stays in this page's memory: never sent, never stored.",
+        "Your keys sign the Bitcoin side of each action. Right after you create a Vault they are already loaded. If you come back later, load the key file you saved: it stays in this page's memory, never sent, never stored.",
       loadKeys: "Load key file",
       keysLoaded: "Keys loaded for this Vault.",
       downloadKeys: "Download key file with the Vault id",
@@ -778,7 +810,8 @@ export const copy = {
       },
       request: {
         title: "Request a withdrawal",
-        body: "The request waits in public for the Delay. Any Guardian can claw it back until then.",
+        stepTitle: "Play the thief: ask to withdraw",
+        body: "Any signet address will do. The request waits in public for the waiting time. Until then, Claw back can stop it.",
         destination: "Destination (signet address)",
         amount: "Amount in sats",
         max: (sats: string) => `At most ${sats} sats from the confirmed coins, after the fee.`,
@@ -789,6 +822,7 @@ export const copy = {
       },
       pending: {
         title: "Withdrawal Request",
+        stepTitle: "The open request",
         none: "No request is open in this page. Open one by its op id, or request a withdrawal.",
         opLabel: "Op id",
         open: "Open request",
@@ -804,7 +838,8 @@ export const copy = {
       },
       clawback: {
         title: "Claw back",
-        body: "Sends up to 5 confirmed coins to the Recovery Address, signed with the Backup Device Guardian Key. The first Clawback cancels every pending request and closes the Vault for good.",
+        stepTitle: "Send the coins home: Claw back",
+        body: "Sends the Vault's coins (up to 5) to your safe address. It cancels every open request and closes the Vault for good. Your wallet approves it, and this page signs the Bitcoin side with your Guardian Key.",
         submit: "Claw back",
         resumeNote: (op: string) =>
           `Clawback op #${op} is started but not on Bitcoin. Claw back carries it on without starting another.`,
@@ -851,19 +886,19 @@ export const copy = {
         title: "Ask any Guardian to Clawback",
         body: "One Guardian is enough. A Clawback pays the Recovery Address only. The first one voids every live request, vetoes a pending Policy Change and closes the Vault for good. The Owner cannot cancel it, so a thief with the Owner keys cannot either. Afterwards every request fails with ERR_CLAWED_BACK.",
         build:
-          "In this build a Guardian claws back by calling begin_clawback on the Vault Contract, shown end to end by Scenario S-3. Each call sweeps up to 5 coins from one source, the Vault Address by default or the Allowance Address, so the Guardian repeats it for each source until every coin is at the Recovery Address. The one-tap Guardian view is not in this build.",
+          "In this build a Guardian claws back by calling begin_clawback on the Vault Contract, shown end to end by Scenario S-3. Each call sweeps up to 5 coins from one source, the Vault Address by default or the Allowance Address, so the Guardian repeats it for each source until every coin is at the Recovery Address. On a signet Vault made in this web app, the Vault page has a Claw back button that does this.",
       },
       backup: {
         title: "Claw back from your own Backup Device",
         body: "If one of your Guardians is a Backup Device you still hold, it can claw back by itself: the same call, with the same result.",
         build:
-          "In this build the Backup Device's Guardian account makes the same begin_clawback call; there is no Backup Device screen yet.",
+          "In this build the Backup Device's Guardian account makes the same begin_clawback call. A signet Vault made in this web app uses your own NEAR account as its Backup Device Guardian, so its Claw back button is this step.",
       },
       fresh: {
         title: "Create a new Vault",
         body: "Once the coins are at the Recovery Address, create a new Vault with new keys. Never reuse the Owner Key or the Owner Account of the compromised one.",
         build:
-          "Creating your own Vault is not possible in this build. Scenario S-1 only demonstrates Vault creation on NEAR testnet.",
+          "In this build you create your own Vault at /vault/new, on NEAR testnet with Bitcoin signet test coins.",
       },
     },
     guardianTitle: "Reaching a Guardian",

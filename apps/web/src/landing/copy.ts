@@ -24,14 +24,15 @@ export const landingCopy = {
     label: "Site",
     howItWorks: "How it works",
     rob: "Rob this vault",
+    tryIt: "Try it",
     proof: "Proof",
     github: "GitHub",
   },
 
   hero: {
     title: "Bitcoin that can't be rushed.",
-    lede: "We published the keys to this vault. Nobody has taken a single sat, because a NEAR contract won't co-sign before tomorrow.",
-    rob: "Rob this vault",
+    lede: "Every withdrawal waits in public, and your guardian can send it home first. A NEAR contract won't co-sign early, even for a thief.",
+    tryIt: "Try it with test coins",
     readProof: "Read the proof",
     sceneAlt:
       "A pale oak desk and a cognac leather chair on an alpine meadow at sunrise, an open laptop on the desk, a sea of clouds and mountains behind",
@@ -85,8 +86,14 @@ export const landingCopy = {
     newTab: " (opens in a new tab)",
     doorsLabel: "Ways in",
     doors: {
-      rob: { label: "Rob this vault", detail: "The keys are published. Try them." },
-      create: { label: "Create a vault", detail: "Pick a delay and name your guardians." },
+      rob: {
+        label: "Rob this vault",
+        detail: "The Challenge vault, whose keys are published while a round is open.",
+      },
+      create: {
+        label: "Try it with test coins",
+        detail: "Connect a NEAR testnet wallet, create a vault on Bitcoin signet, stop a theft.",
+      },
       proof: { label: "Read the proof", detail: "Read the rules and recompute the address." },
     },
   },
@@ -254,7 +261,7 @@ export const landingCopy = {
   final: {
     title: "Tomorrow, it's still yours.",
     body: "Set a delay, name a guardian, keep the kit. Morrow takes care of the night.",
-    rob: "Rob this vault",
+    tryIt: "Try it with test coins",
     alt: "The desk on the alpine meadow in full morning sun",
   },
 

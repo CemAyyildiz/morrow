@@ -1,7 +1,8 @@
-import { useEffect, useMemo, useRef, useState, type MouseEvent, type RefObject } from "react";
+import { useEffect, useMemo, useRef, useState, type RefObject } from "react";
 import { useAppData } from "@/app/data";
 import { Link } from "@/app/router";
 import { PROOF_PATH } from "@/app/routes";
+import { VAULT_NEW_PATH } from "@/app/wallet-paths";
 import { HERO, HERO_GOLD, HERO_POSTER, HERO_VIDEO } from "./assets";
 import { landingCopy } from "./copy";
 import type { DemoView } from "./demo";
@@ -16,7 +17,6 @@ interface HeroDiveProps {
   demo: DemoView;
   onTry: () => void;
   onDownload: () => void;
-  onRob: (event: MouseEvent<HTMLAnchorElement>) => void;
   reduced: boolean;
   scrollRef: RefObject<HTMLDivElement | null>;
   navRef: RefObject<HTMLElement | null>;
@@ -32,7 +32,6 @@ export function HeroDive({
   demo,
   onTry,
   onDownload,
-  onRob,
   reduced,
   scrollRef,
   navRef,
@@ -178,8 +177,9 @@ export function HeroDive({
           <h1>{t.title}</h1>
           <p>{t.lede}</p>
           <div className="l-headline-row">
-            <a className="l-pill l-pill-or" href="#app" onClick={onRob}>
-              {t.rob}
+            {/* A full page load: the wallet page runs under its own CSP. */}
+            <a className="l-pill l-pill-or" href={VAULT_NEW_PATH}>
+              {t.tryIt}
             </a>
             <Link className="l-pill l-pill-glass" to={PROOF_PATH}>
               {t.readProof}

@@ -1,6 +1,7 @@
 import { useRef, type MouseEvent } from "react";
 import { Link } from "@/app/router";
 import { LIVE_PATHS } from "@/app/routes";
+import { VAULT_NEW_PATH } from "@/app/wallet-paths";
 import { landingCopy } from "./copy";
 import { useReveal } from "./motion";
 
@@ -13,10 +14,11 @@ export type DoorId = keyof typeof t.doors;
 
 /** The three doors, in order, each with the product path it leads to. */
 export const DOORS: readonly { id: DoorId; path: string }[] = [
-  // "Rob this vault" jumps to the product end of the dive, the live Challenge view.
-  { id: "rob", path: "/challenge" },
+  // "Try it with test coins" opens the wallet page with a full page load (its own CSP).
   { id: "create", path: "/vault" },
   { id: "proof", path: "/proof" },
+  // "Rob this vault" jumps to the product end of the dive, the Challenge view.
+  { id: "rob", path: "/challenge" },
 ];
 
 /** The doors whose destination is live; the others are left out, not shown disabled. */
@@ -103,8 +105,12 @@ export function Doors({
         );
         return (
           <li key={id}>
-            {id === "rob" ? (
-              <a className="l-door l-door-or" href="#app" onClick={rob}>
+            {id === "create" ? (
+              <a className="l-door l-door-or" href={VAULT_NEW_PATH}>
+                {inner}
+              </a>
+            ) : id === "rob" ? (
+              <a className="l-door" href="#app" onClick={rob}>
                 {inner}
               </a>
             ) : (

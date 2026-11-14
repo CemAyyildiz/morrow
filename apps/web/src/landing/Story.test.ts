@@ -43,26 +43,22 @@ describe("story beats", () => {
 });
 
 describe("story doors", () => {
-  it("keeps the three doors in order: rob, create, proof", () => {
+  it("keeps the three doors in order: create, proof, rob", () => {
     expect(DOORS).toEqual([
-      { id: "rob", path: "/challenge" },
       { id: "create", path: "/vault" },
       { id: "proof", path: "/proof" },
+      { id: "rob", path: "/challenge" },
     ]);
   });
 
-  it("shows only the doors whose destination is live; today Rob this vault and Read the proof", () => {
-    expect([...LIVE_PATHS]).toEqual(["/challenge", "/proof"]);
-    expect(ids(liveDoors())).toEqual(["rob", "proof"]);
+  it("shows only the doors whose destination is live; today all three", () => {
+    expect([...LIVE_PATHS]).toEqual(["/challenge", "/vault", "/proof"]);
+    expect(ids(liveDoors())).toEqual(["create", "proof", "rob"]);
   });
 
   it("adds a door once its path is flagged live, with no other change", () => {
-    expect(ids(liveDoors(new Set(["/challenge", "/vault"])))).toEqual(["rob", "create"]);
-    expect(ids(liveDoors(new Set(["/proof", "/vault", "/challenge"])))).toEqual([
-      "rob",
-      "create",
-      "proof",
-    ]);
+    expect(ids(liveDoors(new Set(["/challenge", "/vault"])))).toEqual(["create", "rob"]);
+    expect(ids(liveDoors(new Set(["/proof", "/challenge"])))).toEqual(["proof", "rob"]);
     expect(ids(liveDoors(new Set(["/vault"])))).toEqual(["create"]);
     expect(liveDoors(new Set())).toEqual([]);
   });
@@ -88,21 +84,22 @@ describe("story doors, rendered", () => {
     expect(items[0]).toContain('href="#app"');
   });
 
-  it("draws Read the proof after Rob this vault with today's live paths", () => {
+  it("draws Try it first, then Read the proof, then Rob this vault, with today's live paths", () => {
     const { items } = render(LIVE_PATHS);
-    expect(items).toHaveLength(2);
+    expect(items).toHaveLength(3);
+    expect(items[0]).toContain('href="/vault/new"');
+    expect(items[0]).toContain(landingCopy.story.doors.create.label);
+    expect(items[0]).toContain(landingCopy.story.doors.create.detail);
     expect(items[1]).toContain('href="/proof"');
     expect(items[1]).toContain(landingCopy.story.doors.proof.label);
+    expect(items[2]).toContain('href="#app"');
+    expect(items[2]).toContain(landingCopy.story.doors.rob.label);
   });
 
-  it("adds Create a vault after Rob this vault once /vault is live", () => {
+  it("leaves out a door whose path is not live", () => {
     const { html, items } = render(new Set(["/challenge", "/vault"]));
     expect(items).toHaveLength(2);
-    expect(items[0]).toBe(render(new Set(["/challenge"])).items[0]);
-    expect(items[0]).toContain(landingCopy.story.doors.rob.label);
-    expect(items[1]).toContain('href="/vault"');
-    expect(items[1]).toContain(landingCopy.story.doors.create.label);
-    expect(items[1]).toContain(landingCopy.story.doors.create.detail);
+    expect(items[1]).toBe(render(new Set(["/challenge"])).items[0]);
     expect(html).not.toContain(landingCopy.story.doors.proof.label);
   });
 });

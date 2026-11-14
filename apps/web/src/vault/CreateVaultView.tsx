@@ -135,7 +135,8 @@ export function CreateVaultView() {
     const key = generateRecoveryKey();
     setTestRecovery(key);
     setRecovery(key.address);
-    setRetype("");
+    // This page made the address, so there is no pasted text to check: confirm it for the user.
+    setRetype(key.address.slice(-6));
   };
 
   const create = async () => {
@@ -243,169 +244,185 @@ export function CreateVaultView() {
   return (
     <>
       <PageHeader title={t.title} chips={["signet", "NEAR testnet"]} />
-      <p className="max-w-[720px] text-[15px] leading-[1.55] text-ink">{t.intro}</p>
+      <section
+        aria-labelledby={`${id}-how`}
+        data-testid="vault-how"
+        className="max-w-[720px] rounded-[16px] border border-line p-card-pad-mobile desktop:px-[22px] desktop:py-[18px]"
+      >
+        <h2 id={`${id}-how`} className="text-[16px] font-semibold text-ink">
+          {t.howTitle}
+        </h2>
+        <ol className="mt-3 flex list-decimal flex-col gap-2 pl-5 text-[15px] leading-[1.55] text-ink">
+          {t.how.map((line) => (
+            <li key={line}>{line}</li>
+          ))}
+        </ol>
+        <p className={cn(body, "mt-3 text-[13px]")}>{t.howNote}</p>
+      </section>
 
-      <div className="grid grid-cols-1 items-start gap-stack desktop:grid-cols-2">
-        <div className="flex min-w-0 flex-col gap-stack">
-          <WalletCard
-            status={wallet.status}
-            onConnect={wallet.connect}
-            onDisconnect={wallet.disconnect}
+      <div className="flex max-w-[720px] flex-col gap-stack">
+        <WalletCard
+          step={1}
+          status={wallet.status}
+          onConnect={wallet.connect}
+          onDisconnect={wallet.disconnect}
+        />
+
+        <Section id="recovery" step={2} title={t.recoveryTitle}>
+          <label htmlFor={ids.recovery} className="text-[14px] font-medium">
+            {t.recoveryLabel}
+          </label>
+          <input
+            id={ids.recovery}
+            data-testid="recovery-address"
+            value={recovery}
+            onChange={(event) => {
+              setRecovery(event.target.value);
+              setRetype("");
+            }}
+            spellCheck={false}
+            autoComplete="off"
+            autoCapitalize="off"
+            aria-invalid={decoded !== null && !decoded.ok}
+            aria-describedby={
+              decoded !== null && !decoded.ok
+                ? `${ids.recoveryError} ${ids.recoveryHint}`
+                : ids.recoveryHint
+            }
+            className={inputClass}
           />
-
-          <Section id="delay" title={t.delayTitle}>
-            <fieldset className="flex flex-col gap-2">
-              <legend className={cn(body, "mb-2")}>{t.delayLegend}</legend>
-              {DELAYS.map((value) => (
-                <label
-                  key={value}
-                  className="flex min-h-11 cursor-pointer items-center gap-3 rounded-[12px] border border-line px-3 py-2 has-checked:border-muted has-checked:bg-card-raised"
-                >
-                  <input
-                    type="radio"
-                    name={`${id}-delay`}
-                    value={value}
-                    checked={delay === value}
-                    onChange={() => setDelay(value)}
-                    className="size-4 accent-[var(--color-ink)]"
-                  />
-                  <span className="text-[14px] font-semibold">{t.delays[value].label}</span>
-                  <span className="text-[13px] text-muted">{t.delays[value].note}</span>
-                </label>
-              ))}
-            </fieldset>
-            <p className={cn(body, "text-[13px]")}>{t.policyFacts}</p>
-          </Section>
-        </div>
-
-        <div className="flex min-w-0 flex-col gap-stack">
-          <Section id="recovery" title={t.recoveryTitle}>
-            <label htmlFor={ids.recovery} className="text-[14px] font-medium">
-              {t.recoveryLabel}
-            </label>
-            <input
-              id={ids.recovery}
-              data-testid="recovery-address"
-              value={recovery}
-              onChange={(event) => {
-                setRecovery(event.target.value);
-                setRetype("");
-              }}
-              spellCheck={false}
-              autoComplete="off"
-              autoCapitalize="off"
-              aria-invalid={decoded !== null && !decoded.ok}
-              aria-describedby={
-                decoded !== null && !decoded.ok
-                  ? `${ids.recoveryError} ${ids.recoveryHint}`
-                  : ids.recoveryHint
-              }
-              className={inputClass}
-            />
-            {decoded !== null && !decoded.ok && (
-              <p
-                id={ids.recoveryError}
-                data-testid="recovery-error"
-                className="text-[13px] text-alarm"
-              >
-                {t.addressProblem[decoded.problem]}
-              </p>
-            )}
-            <p id={ids.recoveryHint} className={cn(body, "text-[13px]")}>
-              {t.recoveryHint}
+          {decoded !== null && !decoded.ok && (
+            <p
+              id={ids.recoveryError}
+              data-testid="recovery-error"
+              className="text-[13px] text-alarm"
+            >
+              {t.addressProblem[decoded.problem]}
             </p>
-            <div className="flex flex-col items-start gap-1">
-              <Button
-                variant="secondary"
-                data-testid="generate-recovery"
-                aria-disabled={connected === null}
-                className={softDisabled}
-                onClick={() => connected !== null && generate()}
-              >
-                {t.generate}
-              </Button>
-              <p className={cn(body, "text-[13px]")}>{t.generateNote}</p>
-            </div>
-            <label htmlFor={ids.retype} className="text-[14px] font-medium">
-              {t.retypeLabel}
-            </label>
-            <input
-              id={ids.retype}
-              data-testid="recovery-retype"
-              value={retype}
-              maxLength={6}
-              onChange={(event) => setRetype(event.target.value)}
-              spellCheck={false}
-              autoComplete="off"
-              autoCapitalize="off"
-              aria-invalid={retypeWrong}
-              aria-describedby={retypeWrong ? ids.retypeError : undefined}
-              className={cn(inputClass, "max-w-[160px]")}
-            />
-            {retypeWrong && (
-              <p id={ids.retypeError} data-testid="retype-error" className="text-[13px] text-alarm">
-                {t.retypeMismatch}
-              </p>
-            )}
-          </Section>
+          )}
+          <p id={ids.recoveryHint} className={cn(body, "text-[13px]")}>
+            {t.recoveryHint}
+          </p>
+          <div className="flex flex-col items-start gap-1">
+            <Button
+              variant="secondary"
+              data-testid="generate-recovery"
+              aria-disabled={connected === null}
+              className={softDisabled}
+              onClick={() => connected !== null && generate()}
+            >
+              {t.generate}
+            </Button>
+            <p className={cn(body, "text-[13px]")}>{t.generateNote}</p>
+          </div>
+          <label htmlFor={ids.retype} className="text-[14px] font-medium">
+            {t.retypeLabel}
+          </label>
+          <input
+            id={ids.retype}
+            data-testid="recovery-retype"
+            value={retype}
+            maxLength={6}
+            onChange={(event) => setRetype(event.target.value)}
+            spellCheck={false}
+            autoComplete="off"
+            autoCapitalize="off"
+            aria-invalid={retypeWrong}
+            aria-describedby={retypeWrong ? ids.retypeError : undefined}
+            className={cn(inputClass, "max-w-[160px]")}
+          />
+          {retypeWrong && (
+            <p id={ids.retypeError} data-testid="retype-error" className="text-[13px] text-alarm">
+              {t.retypeMismatch}
+            </p>
+          )}
+        </Section>
 
-          <Section id="keys" title={t.keysTitle}>
-            <p className={body}>{t.keysBody}</p>
-            <div className="flex flex-wrap items-center gap-3">
-              <Button
-                variant="secondary"
-                data-testid="download-keys"
-                aria-disabled={fileText === null}
-                className={softDisabled}
-                onClick={download}
+        <Section id="delay" step={3} title={t.delayTitle}>
+          <fieldset className="flex flex-col gap-2">
+            <legend className={cn(body, "mb-2")}>{t.delayLegend}</legend>
+            {DELAYS.map((value) => (
+              <label
+                key={value}
+                className="flex min-h-11 cursor-pointer items-center gap-3 rounded-[12px] border border-line px-3 py-2 has-checked:border-muted has-checked:bg-card-raised"
               >
-                {t.download}
-              </Button>
-            </div>
-            {downloaded && (
-              <p data-testid="keys-downloaded" className="text-[13px] text-ok">
-                {t.downloaded}
-              </p>
-            )}
-          </Section>
+                <input
+                  type="radio"
+                  name={`${id}-delay`}
+                  value={value}
+                  checked={delay === value}
+                  onChange={() => setDelay(value)}
+                  className="size-4 accent-[var(--color-ink)]"
+                />
+                <span className="text-[14px] font-semibold">{t.delays[value].label}</span>
+                <span className="text-[13px] text-muted">{t.delays[value].note}</span>
+              </label>
+            ))}
+          </fieldset>
+          <details className="text-[13px]">
+            <summary className="min-h-11 cursor-pointer content-center text-muted">
+              {t.detailsSummary}
+            </summary>
+            <p className={cn(body, "text-[13px]")}>{t.policyFacts}</p>
+          </details>
+        </Section>
 
-          <Section id="create" title={t.submit}>
-            {missing.length > 0 && (
-              <div id={ids.missing} data-testid="create-missing">
-                <h3 className="text-[14px] font-semibold">{t.missingTitle}</h3>
-                <ul className="mt-1 flex list-disc flex-col gap-1 pl-5">
-                  {missing.map((item) => (
-                    <li key={item} className={body}>
-                      {item}
-                    </li>
-                  ))}
-                </ul>
-              </div>
-            )}
-            <div>
-              <Button
-                variant={connected === null ? "secondary" : "primary"}
-                data-testid="create-vault"
-                aria-disabled={!canCreate}
-                aria-describedby={missing.length > 0 ? ids.missing : undefined}
-                className={softDisabled}
-                onClick={() => void create()}
-              >
-                {t.submit}
-              </Button>
+        <Section id="keys" step={4} title={t.keysTitle}>
+          <p className={body}>{t.keysBody}</p>
+          <div className="flex flex-wrap items-center gap-3">
+            <Button
+              variant="secondary"
+              data-testid="download-keys"
+              aria-disabled={fileText === null}
+              className={softDisabled}
+              onClick={download}
+            >
+              {t.download}
+            </Button>
+          </div>
+          {downloaded && (
+            <p data-testid="keys-downloaded" className="text-[13px] text-ok">
+              {t.downloaded}
+            </p>
+          )}
+        </Section>
+
+        <Section id="create" step={5} title={t.createTitle}>
+          {missing.length > 0 && (
+            <div id={ids.missing} data-testid="create-missing">
+              <h3 className="text-[14px] font-semibold">{t.missingTitle}</h3>
+              <ul className="mt-1 flex list-disc flex-col gap-1 pl-5">
+                {missing.map((item) => (
+                  <li key={item} className={body}>
+                    {item}
+                  </li>
+                ))}
+              </ul>
             </div>
-            <p className={cn(body, "text-[13px]")}>{t.cost}</p>
-            <OutcomeLine
-              testId="create-outcome"
-              outcome={phase.kind === "idle" ? null : phase.outcome}
-            />
-            {phase.kind === "done" && phase.vaultId !== null && phase.outcome.tone === "alarm" && (
-              <Button variant="secondary" onClick={() => navigate(vaultPath(phase.vaultId ?? ""))}>
-                {t.openVault(phase.vaultId)}
-              </Button>
-            )}
-          </Section>
-        </div>
+          )}
+          <div>
+            <Button
+              variant={connected === null ? "secondary" : "primary"}
+              data-testid="create-vault"
+              aria-disabled={!canCreate}
+              aria-describedby={missing.length > 0 ? ids.missing : undefined}
+              className={softDisabled}
+              onClick={() => void create()}
+            >
+              {t.submit}
+            </Button>
+          </div>
+          <p className={cn(body, "text-[13px]")}>{t.cost}</p>
+          <OutcomeLine
+            testId="create-outcome"
+            outcome={phase.kind === "idle" ? null : phase.outcome}
+          />
+          {phase.kind === "done" && phase.vaultId !== null && phase.outcome.tone === "alarm" && (
+            <Button variant="secondary" onClick={() => navigate(vaultPath(phase.vaultId ?? ""))}>
+              {t.openVault(phase.vaultId)}
+            </Button>
+          )}
+        </Section>
       </div>
     </>
   );

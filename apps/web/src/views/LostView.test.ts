@@ -66,11 +66,11 @@ describe("Lost a device page", () => {
     }
   });
 
-  it("says which screens are not in this build", () => {
+  it("says what this build has for each step", () => {
     const page = text(render());
-    expect(page).toContain("The one-tap Guardian view is not in this build.");
-    expect(page).toContain("Creating your own Vault is not possible in this build.");
-    expect(page).toContain("there is no Backup Device screen yet.");
+    expect(page).toContain("the Vault page has a Claw back button that does this.");
+    expect(page).toContain("you create your own Vault at /vault/new");
+    expect(page).toContain("its Claw back button is this step.");
     expect(page).toContain("it has no screen yet");
     // Every numbered step carries its build note.
     const steps = render().match(/<li[^>]*data-testid="lost-step"[\s\S]*?<\/li>/g) ?? [];

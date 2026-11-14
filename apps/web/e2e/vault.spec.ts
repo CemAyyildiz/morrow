@@ -209,7 +209,8 @@ test("/vault/new: connect, gate Create on the address, the re-type and the downl
   await expect(page.getByTestId("recovery-address")).toHaveValue(/^tb1q/);
   await expect(missing).toContainText("Download the key file.");
   const generated = await page.getByTestId("recovery-address").inputValue();
-  await page.getByTestId("recovery-retype").fill(generated.slice(-6));
+  // A generated address is confirmed for the user: its last 6 characters are filled in.
+  await expect(page.getByTestId("recovery-retype")).toHaveValue(generated.slice(-6));
   const [second] = await Promise.all([
     page.waitForEvent("download"),
     page.getByTestId("download-keys").click(),

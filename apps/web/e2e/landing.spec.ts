@@ -98,19 +98,27 @@ test("scroll 0 → end dives into the product, with screenshots", async ({ page 
   await shoot(page, info, "landing-end");
 });
 
-for (const where of ["nav", "hero", "final"] as const) {
-  test(`"Rob this vault" in the ${where} jumps to the product end of the dive`, async ({
+for (const where of ["nav pill", "hero", "final"] as const) {
+  test(`the orange call to action in the ${where} opens the wallet page with a full page load`, async ({
     page,
-  }, info) => {
+  }) => {
     await open(page);
     let link = page.locator(".l-nav .l-pill");
     if (where === "hero")
-      link = page.locator(".l-headline").getByRole("link", { name: "Rob this vault" });
+      link = page.locator(".l-headline").getByRole("link", { name: "Try it with test coins" });
     if (where === "final") {
-      link = page.locator(".l-final").getByRole("link", { name: "Rob this vault" });
-      await link.scrollIntoViewIfNeeded();
+      link = page.locator(".l-final").getByRole("link", { name: "Try it with test coins" });
     }
-    await link.click();
+    await expect(link).toHaveAttribute("href", "/vault/new");
+  });
+}
+
+test('"Rob this vault" in the nav jumps to the product end of the dive', async ({ page }, info) => {
+  await open(page);
+  const link = page.locator(".l-links").getByRole("link", { name: "Rob this vault" });
+  test.skip(!(await link.isVisible()), "the nav's text links are hidden at this width");
+  await link.click();
+  {
     const target = await page.getByTestId("landing-stage").evaluate((stage: HTMLElement) => {
       const top = stage.getBoundingClientRect().top + window.scrollY;
       return top + (stage.offsetHeight - window.innerHeight) * 0.9;
@@ -124,8 +132,8 @@ for (const where of ["nav", "hero", "final"] as const) {
       liveProduct(page, info).getByRole("button", { name: "Try with these keys" }),
     ).toBeFocused();
     await expect(page).toHaveURL(/\/$/);
-  });
-}
+  }
+});
 
 test("the dive follows layout() and update() at 1440 × 930", async ({ page }, info) => {
   test.skip(isPhone(info), "desktop geometry");

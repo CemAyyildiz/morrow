@@ -3,6 +3,7 @@ import { downloadKeys } from "@/app/challenge";
 import { useAppData } from "@/app/data";
 import { Link, useRouter } from "@/app/router";
 import { HOME_PATH, LOST_PATH, PROOF_PATH } from "@/app/routes";
+import { VAULT_NEW_PATH } from "@/app/wallet-paths";
 import { Cards } from "./Cards";
 import { Collage } from "./Collage";
 import { landingCopy } from "./copy";
@@ -127,8 +128,8 @@ export function Landing() {
             {t.nav.github}
           </a>
         </div>
-        <a className="l-pill l-pill-or" href="#app" onClick={rob}>
-          {t.nav.rob}
+        <a className="l-pill l-pill-or" href={VAULT_NEW_PATH}>
+          {t.nav.tryIt}
         </a>
       </nav>
       <main>
@@ -136,7 +137,6 @@ export function Landing() {
           demo={demo}
           onTry={onTry}
           onDownload={onDownload}
-          onRob={rob}
           reduced={reduced}
           scrollRef={scrollRef}
           navRef={navRef}
@@ -148,7 +148,7 @@ export function Landing() {
         <Collage reduced={reduced} />
         <Record />
         <Cards />
-        <Final onRob={rob} />
+        <Final />
       </main>
       <footer className="l-footer">
         <span>{t.footer.left}</span>

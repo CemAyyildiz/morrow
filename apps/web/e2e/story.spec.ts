@@ -63,19 +63,22 @@ test("each beat links its source in a new tab", async ({ page }) => {
   await expect(story(page).locator("ol a")).toHaveCount(SOURCES.length);
 });
 
-test("only live doors show: today, Rob this vault and Read the proof", async ({ page }) => {
+test("the doors: Try it with test coins, Read the proof, Rob this vault", async ({ page }) => {
   await open(page);
   const doors = page.getByTestId("story-doors");
-  await expect(doors.getByRole("link")).toHaveCount(2);
-  await expect(doors.getByRole("link", { name: /^Rob this vault/ })).toHaveAttribute(
+  await expect(doors.getByRole("link")).toHaveCount(3);
+  await expect(doors.getByRole("link", { name: /^Try it with test coins/ })).toHaveAttribute(
     "href",
-    "#app",
+    "/vault/new",
   );
   await expect(doors.getByRole("link", { name: /^Read the proof/ })).toHaveAttribute(
     "href",
     "/proof",
   );
-  await expect(doors.getByRole("link", { name: /Create a vault/ })).toHaveCount(0);
+  await expect(doors.getByRole("link", { name: /^Rob this vault/ })).toHaveAttribute(
+    "href",
+    "#app",
+  );
 });
 
 test('the "Read the proof" door opens the Proof Page in place', async ({ page }) => {
@@ -200,7 +203,9 @@ test("beats fade in on scroll; targets are 44 px; no CSP violation", async ({ pa
     .getByRole("link", { name: /^Chain Signatures, NEAR documentation/ })
     .focus();
   await page.keyboard.press("Tab");
-  const door = page.getByTestId("story-doors").getByRole("link", { name: /^Rob this vault/ });
+  const door = page
+    .getByTestId("story-doors")
+    .getByRole("link", { name: /^Try it with test coins/ });
   await expect(door).toBeFocused();
   const ring = await door.evaluate((el) => {
     const style = getComputedStyle(el);

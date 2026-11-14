@@ -132,4 +132,4 @@ export const proofPath = (vaultId: string) => `${PROOF_PATH}/${vaultId}`;
  * The product paths a landing door (Story 9.2) may link to. A story that ships its screen adds
  * its path here (1.11 `/vault`, 6.1 `/proof`) and its door appears.
  */
-export const LIVE_PATHS: ReadonlySet<string> = new Set(["/challenge", "/proof"]);
+export const LIVE_PATHS: ReadonlySet<string> = new Set(["/challenge", "/vault", "/proof"]);

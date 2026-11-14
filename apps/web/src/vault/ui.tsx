@@ -28,11 +28,14 @@ export function Section({
   title,
   children,
   className,
+  step,
 }: {
   id: string;
   title: string;
   children: ReactNode;
   className?: string;
+  /** A step number: the title then reads as a plain step heading, "1  Connect your wallet". */
+  step?: number | undefined;
 }) {
   const headingId = `vault-${id}-title`;
   return (
@@ -42,9 +45,21 @@ export function Section({
       data-testid={`vault-${id}`}
       className={cn("min-w-0 p-card-pad-mobile desktop:px-[22px] desktop:py-[18px]", className)}
     >
-      <h2 id={headingId} className="text-label text-muted">
-        {title}
-      </h2>
+      {step === undefined ? (
+        <h2 id={headingId} className="text-label text-muted">
+          {title}
+        </h2>
+      ) : (
+        <h2 id={headingId} className="flex items-center gap-3 text-[16px] font-semibold text-ink">
+          <span
+            aria-hidden="true"
+            className="inline-flex size-7 shrink-0 items-center justify-center rounded-full border border-line font-mono text-[13px] text-muted"
+          >
+            {step}
+          </span>
+          {title}
+        </h2>
+      )}
       <div className="mt-3 flex flex-col gap-3">{children}</div>
     </Card>
   );
@@ -61,13 +76,19 @@ export function WalletCard({
   status,
   onConnect,
   onDisconnect,
+  step,
 }: {
   status: WalletStatus;
   onConnect: () => void;
   onDisconnect: () => void;
+  step?: number | undefined;
 }) {
   return (
-    <Section id="wallet" title={t.wallet.title}>
+    <Section
+      id="wallet"
+      title={step === undefined ? t.wallet.title : t.wallet.stepTitle}
+      step={step}
+    >
       {status.kind === "connected" ? (
         <div className="flex flex-wrap items-center gap-3">
           <Badge variant="ok" data-testid="wallet-account">
