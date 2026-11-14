@@ -74,7 +74,7 @@ import { useWallet } from "./useWallet";
 import { WalletPageProblem, walletPageProblem } from "./WalletPageProblem";
 
 const t = copy.vault.page;
-const FAUCET_URL = "https://signetfaucet.com";
+const FAUCET_URL = "https://signet257.bublina.eu.org/";
 const COINS_POLL_MS = 30_000;
 const CLOCK_MS = 15_000;
 
