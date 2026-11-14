@@ -244,7 +244,7 @@ describe("wallet pages", () => {
       `default-src 'self'; script-src 'self' 'nonce-${NONCE}'; style-src 'self' 'unsafe-inline'; ` +
         "font-src 'self'; img-src 'self' data:; frame-src 'self' https://wallet.intear.tech; " +
         "connect-src 'self' https://rpc.testnet.fastnear.com https://archival-rpc.testnet.fastnear.com https://tx.test.fastnear.com https://mempool.space https://watcher.example.org " +
-        "https://*.meteorwallet.app wss://*.meteorwallet.app https://wallet.intear.tech wss://*.intear.tech; " +
+        "https://*.meteorwallet.app wss://*.meteorwallet.app https://test.rpc.fastnear.com https://archival-rpc.testnet.near.org https://wallet.intear.tech wss://*.intear.tech; " +
         "frame-ancestors 'none'; base-uri 'none'; form-action 'self'",
     );
   });

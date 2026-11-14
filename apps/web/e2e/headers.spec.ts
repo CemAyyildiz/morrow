@@ -14,7 +14,7 @@ const walletCsp = (nonce: string) =>
   `default-src 'self'; script-src 'self' 'nonce-${nonce}'; style-src 'self' 'unsafe-inline'; ` +
   "font-src 'self'; img-src 'self' data:; frame-src 'self' https://wallet.intear.tech; " +
   `connect-src 'self' ${RPC_URL} ${BACKEND_URL} ${WATCHER_URL} ` +
-  "https://*.meteorwallet.app wss://*.meteorwallet.app https://wallet.intear.tech wss://*.intear.tech; " +
+  "https://*.meteorwallet.app wss://*.meteorwallet.app https://test.rpc.fastnear.com https://archival-rpc.testnet.near.org https://wallet.intear.tech wss://*.intear.tech; " +
   "frame-ancestors 'none'; base-uri 'none'; form-action 'self'";
 
 const NONCE_META = /<meta name="csp-nonce" content="([A-Za-z0-9+/]{22}==)" \/>/;

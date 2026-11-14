@@ -194,11 +194,16 @@ export function isWalletPath(path: string): boolean {
 
 /**
  * Origins the wallets' executors talk to from their sandboxed iframe, which inherits the page
- * CSP: Meteor's connect backend and Intear's logout bridge.
+ * CSP: Meteor's connect backend and Intear's logout bridge, and the testnet RPC nodes Meteor's
+ * SDK builds transactions with (its NEAR_BASE_CONNECT_CONFIG_TESTNET). Without them Meteor's
+ * extension never receives a signing request: the executor's nonce read is blocked and the
+ * page waits forever (a Chrome check with the Meteor extension, 2026-11-14).
  */
 export const WALLET_CONNECT_SOURCES = [
   "https://*.meteorwallet.app",
   "wss://*.meteorwallet.app",
+  "https://test.rpc.fastnear.com",
+  "https://archival-rpc.testnet.near.org",
   "https://wallet.intear.tech",
   "wss://*.intear.tech",
 ] as const;
