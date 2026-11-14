@@ -63,7 +63,7 @@ test("each beat links its source in a new tab", async ({ page }) => {
   await expect(story(page).locator("ol a")).toHaveCount(SOURCES.length);
 });
 
-test("the doors: Try it with test coins, Read the proof, Rob this vault", async ({ page }) => {
+test("the doors: Try it with test coins, Watch a live Vault, Read the proof", async ({ page }) => {
   await open(page);
   const doors = page.getByTestId("story-doors");
   await expect(doors.getByRole("link")).toHaveCount(3);
@@ -75,9 +75,9 @@ test("the doors: Try it with test coins, Read the proof, Rob this vault", async 
     "href",
     "/proof",
   );
-  await expect(doors.getByRole("link", { name: /^Rob this vault/ })).toHaveAttribute(
+  await expect(doors.getByRole("link", { name: /^Watch a live Vault/ })).toHaveAttribute(
     "href",
-    "#app",
+    "/vault/176",
   );
 });
 
@@ -89,25 +89,6 @@ test('the "Read the proof" door opens the Proof Page in place', async ({ page })
     .click();
   await expect(page).toHaveURL(/\/proof$/);
   await expect(page.getByRole("heading", { level: 1 })).toHaveText("Proof");
-});
-
-test('the "Rob this vault" door jumps to the product end of the dive', async ({ page }, info) => {
-  await open(page);
-  const door = page.getByTestId("story-doors").getByRole("link", { name: /^Rob this vault/ });
-  await door.scrollIntoViewIfNeeded();
-  await door.click();
-  const target = await page.getByTestId("landing-stage").evaluate((stage: HTMLElement) => {
-    const top = stage.getBoundingClientRect().top + window.scrollY;
-    return top + (stage.offsetHeight - window.innerHeight) * 0.9;
-  });
-  await expect
-    .poll(() => page.evaluate(() => window.scrollY), { timeout: 5000 })
-    .toBeCloseTo(target, -1);
-  const product = page.getByTestId(isPhone(info) ? "landing-mobview" : "landing-crisp");
-  await expect(product).toHaveCSS("opacity", "1");
-  await expect(product.getByRole("button", { name: "Try with these keys" })).toBeFocused();
-  // An in-page jump, not a navigation.
-  await expect(page).toHaveURL(/\/$/);
 });
 
 test("three columns on desktop, one on phones; doors full width on phones", async ({

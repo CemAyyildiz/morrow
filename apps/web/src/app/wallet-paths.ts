@@ -8,6 +8,14 @@ export const VAULT_NEW_PATH = "/vault/new";
 /** The Vault page of `vaultId`. */
 export const vaultPath = (vaultId: string) => `/vault/${vaultId}`;
 
+/**
+ * The live example: a signet Vault created on the hosted app with a Meteor testnet wallet on
+ * 2026-11-14 (Owner Account morrow.testnet, Delay 1 hour). The landing and the Challenge page
+ * point visitors at it while no Challenge round is open.
+ */
+export const LIVE_VAULT_ID = "176";
+export const LIVE_VAULT_PATH = vaultPath(LIVE_VAULT_ID);
+
 /** True on a wallet page; the same rule as the server's. */
 export function isWalletPath(pathname: string): boolean {
   return /^\/vault\/(new|\d+)\/?$/.test(pathname);

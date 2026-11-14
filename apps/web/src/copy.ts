@@ -61,7 +61,7 @@ export const copy = {
      * report, not a time of day, so copy.test.ts exempts it from the relative-time rule.
      */
     alertsSeen: (minutes: number) => `Alerts: watcher last seen ${minutes} min ago`,
-    alertsNone: "Alerts: no watcher configured",
+    alertsNone: "Alerts: no watcher for this deployment",
     alertsChecking: "Alerts: checking watcher",
     alertsUnreachable: "Alerts: watcher unreachable",
     alertsSilent: "Alerts: watcher has not reported",
@@ -78,6 +78,12 @@ export const copy = {
     noRound: "No round is open yet",
     noRoundBody:
       "When a round opens, its vault, the published owner keys and every attempt to use them appear here.",
+    noRoundLive:
+      "A Vault made on this site is live on Bitcoin signet, every number read from NEAR and Bitcoin:",
+    noRoundLiveLink: (id: string) => `Vault #${id}`,
+    noRoundMake: "or make your own.",
+    /** The laptop's one chip while it shows the illustration, not a live round. */
+    sample: "sample values until a round opens",
     unreachable: "The Challenge feed is not answering",
     unreachableBody: "The page asks again every 30 seconds. Retrying.",
     round: (round: number) => `round ${round}`,

@@ -26,6 +26,7 @@ export function DesktopProduct({ demo, onTry, onDownload, tryRef }: ProductProps
         <ChallengeScreen
           data={demo.data}
           headingLevel={2}
+          illustration={demo.illustration}
           onTry={onTry}
           onDownload={onDownload}
           tryRef={tryRef}
@@ -48,6 +49,7 @@ export function PhoneProduct({ demo, onTry, onDownload, tryRef }: ProductProps) 
       <ChallengeScreen
         data={demo.data}
         headingLevel={2}
+        illustration={demo.illustration}
         onTry={onTry}
         onDownload={onDownload}
         tryRef={tryRef}

@@ -3,7 +3,7 @@ import { downloadKeys } from "@/app/challenge";
 import { useAppData } from "@/app/data";
 import { Link, useRouter } from "@/app/router";
 import { HOME_PATH, LOST_PATH, PROOF_PATH } from "@/app/routes";
-import { VAULT_NEW_PATH } from "@/app/wallet-paths";
+import { LIVE_VAULT_PATH, VAULT_NEW_PATH } from "@/app/wallet-paths";
 import { Cards } from "./Cards";
 import { Collage } from "./Collage";
 import { landingCopy } from "./copy";
@@ -14,13 +14,9 @@ import { HeroDive } from "./HeroDive";
 import { useReducedMotion } from "@/lib/motion";
 import { Record } from "./Record";
 import { Story } from "./Story";
-import { PHONE_BELOW, robTarget } from "./useDive";
 import "./landing.css";
 
 const t = landingCopy;
-
-/** How long "Rob this vault" may wait for the scroll and a live product before giving up on focus. */
-const SCROLL_SETTLE_MS = 2000;
 
 // The public landing at `/`, ported from the approved mockup: hero dive into the live product,
 // the feature accordion, the cream collage, the record line, the cards and the final sunrise.
@@ -52,61 +48,6 @@ export function Landing() {
   const crispTry = useRef<HTMLButtonElement>(null);
   const mobTry = useRef<HTMLButtonElement>(null);
 
-  // "Rob this vault": scroll to the product end of the dive, then hand keyboard focus to
-  // "Try with these keys" once that copy of the product is live.
-  const rob = useCallback(
-    (event: MouseEvent<HTMLAnchorElement>) => {
-      event.preventDefault();
-      const stage = scrollRef.current;
-      if (!stage) return;
-      const top = robTarget(
-        stage.getBoundingClientRect().top + window.scrollY,
-        stage.offsetHeight,
-        window.innerHeight,
-      );
-      const deadline = performance.now() + SCROLL_SETTLE_MS;
-      let finished = false;
-      let timer = 0;
-      let frame = 0;
-      const finish = () => {
-        finished = true;
-        window.removeEventListener("scrollend", onSettled);
-        window.clearTimeout(timer);
-        window.cancelAnimationFrame(frame);
-      };
-      // Focus only a copy that is live (not inert); retry each frame until the deadline.
-      const focusTry = () => {
-        if (finished) return;
-        const button = window.innerWidth < PHONE_BELOW ? mobTry.current : crispTry.current;
-        if (button && !button.closest("[inert]")) {
-          finish();
-          button.focus({ preventScroll: true });
-        } else if (performance.now() >= deadline) {
-          finish();
-        } else {
-          frame = window.requestAnimationFrame(focusTry);
-        }
-      };
-      function onSettled() {
-        window.removeEventListener("scrollend", onSettled);
-        focusTry();
-      }
-      const atTarget = Math.abs(window.scrollY - top) < 1;
-      window.scrollTo({ top, behavior: reduced ? "auto" : "smooth" });
-      if (reduced || atTarget) {
-        focusTry();
-      } else {
-        window.addEventListener("scrollend", onSettled);
-        timer = window.setTimeout(() => {
-          window.removeEventListener("scrollend", onSettled);
-          focusTry();
-          finish();
-        }, SCROLL_SETTLE_MS);
-      }
-    },
-    [reduced],
-  );
-
   const toTop = (event: MouseEvent<HTMLAnchorElement>) => {
     event.preventDefault();
     window.scrollTo({ top: 0 });
@@ -120,9 +61,7 @@ export function Landing() {
         </a>
         <div className="l-links">
           <a href="#why">{t.nav.howItWorks}</a>
-          <a href="#app" onClick={rob}>
-            {t.nav.rob}
-          </a>
+          <a href={LIVE_VAULT_PATH}>{t.nav.live}</a>
           <Link to={PROOF_PATH}>{t.nav.proof}</Link>
           <a href={t.githubUrl} rel="noreferrer">
             {t.nav.github}
@@ -143,7 +82,7 @@ export function Landing() {
           crispTry={crispTry}
           mobTry={mobTry}
         />
-        <Story onRob={rob} reduced={reduced} />
+        <Story reduced={reduced} />
         <Features reduced={reduced} />
         <Collage reduced={reduced} />
         <Record />

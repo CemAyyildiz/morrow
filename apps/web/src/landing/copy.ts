@@ -23,7 +23,7 @@ export const landingCopy = {
   nav: {
     label: "Site",
     howItWorks: "How it works",
-    rob: "Rob this vault",
+    live: "Live Vault",
     tryIt: "Try it",
     proof: "Proof",
     github: "GitHub",
@@ -86,13 +86,14 @@ export const landingCopy = {
     newTab: " (opens in a new tab)",
     doorsLabel: "Ways in",
     doors: {
-      rob: {
-        label: "Rob this vault",
-        detail: "The Challenge vault, whose keys are published while a round is open.",
-      },
       create: {
         label: "Try it with test coins",
         detail: "Connect a NEAR testnet wallet, create a vault on Bitcoin signet, stop a theft.",
+      },
+      live: {
+        label: "Watch a live Vault",
+        detail:
+          "Vault #176 on Bitcoin signet, made on this site with a wallet. Every number on its page is read from NEAR and Bitcoin.",
       },
       proof: { label: "Read the proof", detail: "Read the rules and recompute the address." },
     },

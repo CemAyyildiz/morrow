@@ -1,7 +1,7 @@
-import { useRef, type MouseEvent } from "react";
+import { useRef } from "react";
 import { Link } from "@/app/router";
 import { LIVE_PATHS } from "@/app/routes";
-import { VAULT_NEW_PATH } from "@/app/wallet-paths";
+import { LIVE_VAULT_PATH, VAULT_NEW_PATH } from "@/app/wallet-paths";
 import { landingCopy } from "./copy";
 import { useReveal } from "./motion";
 
@@ -14,11 +14,11 @@ export type DoorId = keyof typeof t.doors;
 
 /** The three doors, in order, each with the product path it leads to. */
 export const DOORS: readonly { id: DoorId; path: string }[] = [
-  // "Try it with test coins" opens the wallet page with a full page load (its own CSP).
+  // "Try it with test coins" opens the wallet page with a full page load (its own CSP), and
+  // "Watch a live Vault" opens the live example's page the same way.
   { id: "create", path: "/vault" },
+  { id: "live", path: "/vault" },
   { id: "proof", path: "/proof" },
-  // "Rob this vault" jumps to the product end of the dive, the Challenge view.
-  { id: "rob", path: "/challenge" },
 ];
 
 /** The doors whose destination is live; the others are left out, not shown disabled. */
@@ -27,14 +27,13 @@ export function liveDoors(live: ReadonlySet<string> = LIVE_PATHS) {
 }
 
 interface StoryProps {
-  onRob: (event: MouseEvent<HTMLAnchorElement>) => void;
   reduced: boolean;
 }
 
 // Story 9.2, straight after the hero dive: why a Bitcoin time-lock safe did not exist before,
 // in three dated beats with one source each, then the doors into the product. The beats fade
 // in on scroll (motion.ts `useReveal`); reduced motion shows them at once.
-export function Story({ onRob, reduced }: StoryProps) {
+export function Story({ reduced }: StoryProps) {
   const section = useRef<HTMLElement>(null);
   useReveal(section, reduced);
   return (
@@ -47,7 +46,7 @@ export function Story({ onRob, reduced }: StoryProps) {
     >
       <h2 id="l-story-title">{t.title}</h2>
       <Beats />
-      <Doors onRob={onRob} />
+      <Doors />
     </section>
   );
 }
@@ -72,23 +71,9 @@ export function Beats() {
   );
 }
 
-/** A click the browser should keep: another button, or a modifier (new tab, new window). */
-const keepsDefault = (event: MouseEvent) =>
-  event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey;
-
 /** The live doors, in order; `live` defaults to the route flag list. */
-export function Doors({
-  onRob,
-  live = LIVE_PATHS,
-}: {
-  onRob: StoryProps["onRob"];
-  live?: ReadonlySet<string>;
-}) {
+export function Doors({ live = LIVE_PATHS }: { live?: ReadonlySet<string> }) {
   const doors = liveDoors(live);
-  // As router Link: a modified click on "Rob this vault" keeps the browser's behaviour.
-  const rob = (event: MouseEvent<HTMLAnchorElement>) => {
-    if (!keepsDefault(event)) onRob(event);
-  };
   if (doors.length === 0) return null;
   return (
     <ul className="l-doors" aria-label={t.doorsLabel} data-testid="story-doors">
@@ -109,8 +94,8 @@ export function Doors({
               <a className="l-door l-door-or" href={VAULT_NEW_PATH}>
                 {inner}
               </a>
-            ) : id === "rob" ? (
-              <a className="l-door" href="#app" onClick={rob}>
+            ) : id === "live" ? (
+              <a className="l-door" href={LIVE_VAULT_PATH}>
                 {inner}
               </a>
             ) : (

@@ -78,7 +78,7 @@ test("an RPC error shows the contract as unknown with the alarm dot", async ({ p
   await expect(page.getByTestId("system-alerts")).toHaveText("Alerts: watcher last seen 1 min ago");
 });
 
-test("without a watcher URL the card says so, with the alarm signal", async ({ page }) => {
+test("without a watcher URL the card says so, muted: absent is not failing", async ({ page }) => {
   // The same deployment with MORROW_WATCHER_URL unset.
   await page.route("/config.json", async (route) => {
     const config = (await (await route.fetch()).json()) as Record<string, unknown>;
@@ -90,9 +90,11 @@ test("without a watcher URL the card says so, with the alarm signal", async ({ p
     return route.abort();
   });
   await page.goto("/challenge");
-  await expect(page.getByTestId("system-alerts")).toHaveText("Alerts: no watcher configured");
-  await expect(page.getByTestId("system-alerts")).toHaveAttribute("data-alarm", "true");
-  await expect(page.getByTestId("system-dot")).toHaveCSS("background-color", ALARM);
+  await expect(page.getByTestId("system-alerts")).toHaveText(
+    "Alerts: no watcher for this deployment",
+  );
+  await expect(page.getByTestId("system-alerts")).toHaveAttribute("data-alarm", "false");
+  await expect(page.getByTestId("system-dot")).toHaveAttribute("data-state", "checking");
   await page.clock.runFor(60_000);
   expect(polled).toBe(false);
 });

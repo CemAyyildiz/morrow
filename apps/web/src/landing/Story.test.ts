@@ -43,23 +43,23 @@ describe("story beats", () => {
 });
 
 describe("story doors", () => {
-  it("keeps the three doors in order: create, proof, rob", () => {
+  it("keeps the three doors in order: create, live, proof", () => {
     expect(DOORS).toEqual([
       { id: "create", path: "/vault" },
+      { id: "live", path: "/vault" },
       { id: "proof", path: "/proof" },
-      { id: "rob", path: "/challenge" },
     ]);
   });
 
   it("shows only the doors whose destination is live; today all three", () => {
     expect([...LIVE_PATHS]).toEqual(["/challenge", "/vault", "/proof"]);
-    expect(ids(liveDoors())).toEqual(["create", "proof", "rob"]);
+    expect(ids(liveDoors())).toEqual(["create", "live", "proof"]);
   });
 
   it("adds a door once its path is flagged live, with no other change", () => {
-    expect(ids(liveDoors(new Set(["/challenge", "/vault"])))).toEqual(["create", "rob"]);
-    expect(ids(liveDoors(new Set(["/proof", "/challenge"])))).toEqual(["proof", "rob"]);
-    expect(ids(liveDoors(new Set(["/vault"])))).toEqual(["create"]);
+    expect(ids(liveDoors(new Set(["/challenge", "/vault"])))).toEqual(["create", "live"]);
+    expect(ids(liveDoors(new Set(["/proof", "/challenge"])))).toEqual(["proof"]);
+    expect(ids(liveDoors(new Set(["/vault"])))).toEqual(["create", "live"]);
     expect(liveDoors(new Set())).toEqual([]);
   });
 });
@@ -71,35 +71,34 @@ describe("story doors, rendered", () => {
   function render(live: ReadonlySet<string>) {
     // The router reads only the current path while rendering; there is no DOM here.
     vi.stubGlobal("window", { location: { pathname: "/" } });
-    const doors = createElement(Doors, { onRob: () => undefined, live });
+    const doors = createElement(Doors, { live });
     const html = renderToStaticMarkup(
       createElement(RouterProvider, { redirects: {}, children: doors }),
     );
     return { html, items: [...html.matchAll(/<li>(.*?)<\/li>/g)].map((match) => match[1]!) };
   }
 
-  it("draws exactly one door while only the Challenge is live", () => {
-    const { items } = render(new Set(["/challenge"]));
+  it("draws exactly one door while only the Proof is live", () => {
+    const { items } = render(new Set(["/proof"]));
     expect(items).toHaveLength(1);
-    expect(items[0]).toContain('href="#app"');
+    expect(items[0]).toContain('href="/proof"');
   });
 
-  it("draws Try it first, then Read the proof, then Rob this vault, with today's live paths", () => {
+  it("draws Try it first, then the live Vault, then Read the proof, with today's live paths", () => {
     const { items } = render(LIVE_PATHS);
     expect(items).toHaveLength(3);
     expect(items[0]).toContain('href="/vault/new"');
     expect(items[0]).toContain(landingCopy.story.doors.create.label);
     expect(items[0]).toContain(landingCopy.story.doors.create.detail);
-    expect(items[1]).toContain('href="/proof"');
-    expect(items[1]).toContain(landingCopy.story.doors.proof.label);
-    expect(items[2]).toContain('href="#app"');
-    expect(items[2]).toContain(landingCopy.story.doors.rob.label);
+    expect(items[1]).toContain('href="/vault/176"');
+    expect(items[1]).toContain(landingCopy.story.doors.live.label);
+    expect(items[2]).toContain('href="/proof"');
+    expect(items[2]).toContain(landingCopy.story.doors.proof.label);
   });
 
   it("leaves out a door whose path is not live", () => {
     const { html, items } = render(new Set(["/challenge", "/vault"]));
     expect(items).toHaveLength(2);
-    expect(items[1]).toBe(render(new Set(["/challenge"])).items[0]);
     expect(html).not.toContain(landingCopy.story.doors.proof.label);
   });
 });

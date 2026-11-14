@@ -1,6 +1,8 @@
 import { useEffect, useRef, type ReactNode, type Ref } from "react";
 import { downloadKeys } from "@/app/challenge";
 import { useAppData, type ChallengeData } from "@/app/data";
+import { LIVE_VAULT_ID, LIVE_VAULT_PATH, VAULT_NEW_PATH } from "@/app/wallet-paths";
+import { linkClass } from "@/vault/ui";
 import { AttemptLog } from "@/components/AttemptLog";
 import { HeroCard } from "@/components/HeroCard";
 import { TryPanel } from "@/components/TryPanel";
@@ -39,6 +41,21 @@ export function ChallengeView() {
           <CardDescription className="max-w-[460px]">
             {unreachable ? copy.challenge.unreachableBody : copy.challenge.noRoundBody}
           </CardDescription>
+          {!unreachable && (
+            <p
+              className="max-w-[460px] text-[14px] leading-[1.6] text-muted"
+              data-testid="challenge-live"
+            >
+              {copy.challenge.noRoundLive}{" "}
+              <a href={LIVE_VAULT_PATH} className={linkClass}>
+                {copy.challenge.noRoundLiveLink(LIVE_VAULT_ID)}
+              </a>
+              ,{" "}
+              <a href={VAULT_NEW_PATH} className={linkClass}>
+                {copy.challenge.noRoundMake}
+              </a>
+            </p>
+          )}
         </Card>
       </>
     );
@@ -116,6 +133,7 @@ function AnnounceNewRows({ data }: { data: ChallengeData }) {
 export function ChallengeScreen({
   data,
   headingLevel,
+  illustration = false,
   onTry,
   onDownload,
   tryRef,
@@ -124,14 +142,16 @@ export function ChallengeScreen({
 }: {
   data: ChallengeData;
   headingLevel?: 1 | 2 | undefined;
+  /** The landing's laptop while no round is live: one chip says the values are a sample. */
+  illustration?: boolean | undefined;
   onTry?: (() => void) | undefined;
   onDownload?: (() => void) | undefined;
   tryRef?: Ref<HTMLButtonElement> | undefined;
   facts?: ReactNode;
   children?: ReactNode;
 }) {
-  const chips = [copy.challenge.round(data.round)];
-  if (data.keysPublished) chips.push(copy.challenge.keysPublished);
+  const chips = illustration ? [copy.challenge.sample] : [copy.challenge.round(data.round)];
+  if (!illustration && data.keysPublished) chips.push(copy.challenge.keysPublished);
   const coSigner = data.coSigner;
 
   return (

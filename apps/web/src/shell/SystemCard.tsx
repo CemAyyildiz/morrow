@@ -2,7 +2,7 @@ import type { AppConfig, HeartbeatState } from "@/app/data";
 import { copy } from "@/copy";
 import { cn } from "@/lib/utils";
 
-/** The Alerts line: healthy only on a fresh heartbeat; alarm unless still checking. */
+/** The Alerts line: healthy only on a fresh heartbeat; alarm when a configured watcher fails. */
 function alerts(heartbeat: HeartbeatState): { text: string; ok: boolean; alarm: boolean } {
   switch (heartbeat.kind) {
     case "seen":
@@ -11,8 +11,10 @@ function alerts(heartbeat: HeartbeatState): { text: string; ok: boolean; alarm: 
         ok: !heartbeat.stale,
         alarm: heartbeat.stale,
       };
+    // No watcher is configured for this deployment: muted, not an alarm. A configured watcher
+    // that does not answer is the alarm.
     case "none":
-      return { text: copy.system.alertsNone, ok: false, alarm: true };
+      return { text: copy.system.alertsNone, ok: false, alarm: false };
     case "checking":
       return { text: copy.system.alertsChecking, ok: false, alarm: false };
     case "unreachable":

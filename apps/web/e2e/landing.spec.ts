@@ -113,26 +113,11 @@ for (const where of ["nav pill", "hero", "final"] as const) {
   });
 }
 
-test('"Rob this vault" in the nav jumps to the product end of the dive', async ({ page }, info) => {
+test('"Live Vault" in the nav opens the live example with a full page load', async ({ page }) => {
   await open(page);
-  const link = page.locator(".l-links").getByRole("link", { name: "Rob this vault" });
+  const link = page.locator(".l-links").getByRole("link", { name: "Live Vault" });
   test.skip(!(await link.isVisible()), "the nav's text links are hidden at this width");
-  await link.click();
-  {
-    const target = await page.getByTestId("landing-stage").evaluate((stage: HTMLElement) => {
-      const top = stage.getBoundingClientRect().top + window.scrollY;
-      return top + (stage.offsetHeight - window.innerHeight) * 0.9;
-    });
-    await expect
-      .poll(() => page.evaluate(() => window.scrollY), { timeout: 5000 })
-      .toBeCloseTo(target, -1);
-    await expect(liveProduct(page, info)).toHaveCSS("opacity", "1");
-    // Keyboard users land on the live product's primary action.
-    await expect(
-      liveProduct(page, info).getByRole("button", { name: "Try with these keys" }),
-    ).toBeFocused();
-    await expect(page).toHaveURL(/\/$/);
-  }
+  await expect(link).toHaveAttribute("href", "/vault/176");
 });
 
 test("the dive follows layout() and update() at 1440 × 930", async ({ page }, info) => {
