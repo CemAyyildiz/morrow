@@ -9,6 +9,7 @@ import { ChallengeView } from "@/views/ChallengeView";
 import { LostView } from "@/views/LostView";
 import { NotFoundView } from "@/views/NotFoundView";
 import { ProofView } from "@/views/ProofView";
+import { WalletFrame } from "@/vault/WalletFrame";
 import { useRouter } from "./router";
 import { LANDING_PATH, resolveRoute, type ResolvedRoute } from "./routes";
 
@@ -117,6 +118,18 @@ export function App() {
   const back = detail
     ? { to: resolved.route.path, label: copy.nav.backTo(resolved.route.label) }
     : { to: LANDING_PATH, label: copy.nav.backHome };
+  // The wallet pages take the landing's frame, not the dashboard shell.
+  if (resolved.kind === "nav" && resolved.route.id === "vault") {
+    return (
+      <WalletFrame
+        page={resolved.vaultId === undefined ? "create" : "vault"}
+        title={title}
+        back={back}
+      >
+        <Screen {...resolved} />
+      </WalletFrame>
+    );
+  }
   return (
     <AppShell
       activeId={resolved.kind === "nav" ? resolved.route.id : null}

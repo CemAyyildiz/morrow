@@ -499,18 +499,54 @@ export function VaultView({ vaultId }: { vaultId: string }) {
     remainingMs === null || delayMs <= 0 ? null : Math.min(1, 1 - remainingMs / delayMs);
   const opPending = op !== null && op.state === "pending";
 
+  // The Vault's state in one plain sentence, the first thing under the title.
+  const status = clawedBack
+    ? { key: "clawed-back", ...t.status.clawedBack }
+    : vault.state !== "active"
+      ? { key: "not-active", ...t.status.notActive }
+      : op !== null && !opPending
+        ? { key: "settled", title: t.status.settled.title(op.state), body: t.status.settled.body }
+        : opPending && remainingMs !== null && remainingMs <= 0
+          ? { key: "ready", ...t.status.ready }
+          : opPending
+            ? {
+                key: "waiting",
+                title: t.status.waiting.title(formatDuration(remainingMs ?? delayMs)),
+                body: t.status.waiting.body,
+              }
+            : coins.kind !== "ok"
+              ? { key: "reading", ...t.status.reading }
+              : confirmed.length === 0
+                ? { key: "empty", ...t.status.empty }
+                : {
+                    key: "funded",
+                    title: t.status.funded.title,
+                    body: t.status.funded.body(delayText),
+                  };
+
   return (
     <>
-      <header className="flex flex-wrap items-end justify-between gap-4">
-        <div className="flex flex-col gap-3">
+      <header className="flex flex-wrap items-end justify-between gap-5">
+        <div className="flex min-w-0 flex-col gap-4">
           <div className="flex flex-wrap items-center gap-2">
             <Badge variant={clawedBack ? "ok" : "chip"}>{t.states[vault.state]}</Badge>
             <Badge variant="chip">Bitcoin signet</Badge>
             <Badge variant="chip">{t.delayChip(delayText)}</Badge>
           </div>
-          <h1 className="font-display text-[34px] leading-[1.1] font-normal tracking-[-0.03em] desktop:text-[46px]">
+          <h1 className="font-display text-[22px] leading-none font-medium tracking-[-0.02em] text-muted desktop:text-[24px]">
             {t.title(vault.vault_id)}
           </h1>
+          <div data-testid="vault-status" data-status={status.key} className="flex flex-col gap-2">
+            <p
+              className={cn(
+                "font-display text-[32px] leading-[1.08] font-normal tracking-[-0.03em] desktop:text-[46px]",
+                clawedBack ? "text-ok" : "text-ink",
+              )}
+            >
+              {status.title}
+            </p>
+            <p className="max-w-[640px] text-[16px] leading-[1.55] text-muted">{status.body}</p>
+          </div>
         </div>
         <Link to={proofPath(vault.vault_id)} className={buttonVariants({ variant: "secondary" })}>
           <ProofIcon className="size-4" />
@@ -518,7 +554,7 @@ export function VaultView({ vaultId }: { vaultId: string }) {
         </Link>
       </header>
 
-      {connected === null && (
+      {connected === null && !clawedBack && (
         <WalletCard
           status={wallet.status}
           onConnect={wallet.connect}
@@ -681,7 +717,7 @@ export function VaultView({ vaultId }: { vaultId: string }) {
               />
             </div>
           )}
-          <div className="mt-auto flex flex-col gap-2 pt-1">
+          <div className={cn("mt-auto flex flex-col gap-2 pt-1", clawedBack && "hidden")}>
             <div>
               <Button
                 variant={primary === "execute" ? "primary" : "secondary"}
@@ -727,7 +763,13 @@ export function VaultView({ vaultId }: { vaultId: string }) {
         </section>
       </Card>
 
-      <div className="grid grid-cols-1 items-stretch gap-stack desktop:grid-cols-2">
+      {/* A closed Vault has nothing left to do: its story is above, its rules below. */}
+      <div
+        className={cn(
+          "grid grid-cols-1 items-stretch gap-stack desktop:grid-cols-2",
+          clawedBack && "hidden",
+        )}
+      >
         <section
           role="region"
           aria-labelledby="vault-request-title"
@@ -864,7 +906,12 @@ export function VaultView({ vaultId }: { vaultId: string }) {
         </Card>
       )}
 
-      <div className="grid grid-cols-1 items-start gap-stack desktop:grid-cols-3">
+      <div
+        className={cn(
+          "grid grid-cols-1 items-start gap-stack",
+          !clawedBack && "desktop:grid-cols-3",
+        )}
+      >
         {connected !== null && (
           <WalletCard
             status={wallet.status}
@@ -873,7 +920,7 @@ export function VaultView({ vaultId }: { vaultId: string }) {
           />
         )}
 
-        <Section id="keys" title={t.keysTitle}>
+        <Section id="keys" title={t.keysTitle} className={cn(clawedBack && "hidden")}>
           <p className={cn(body, "text-[13px]")}>{t.keysBody}</p>
           <div className="flex flex-wrap items-center gap-3">
             <label

@@ -774,8 +774,47 @@ export const copy = {
       viewTx: "View the transaction on NearBlocks",
       invalidPolicy: (code: string) => `The Policy was refused before sending · ${code}`,
     },
+    frame: {
+      create: "Create a Vault",
+    },
     page: {
       title: (id: string) => `Vault #${id}`,
+      /** The one-line state of the Vault, in plain words, under the title. */
+      status: {
+        notActive: {
+          title: "Not active yet.",
+          body: "The Vault is waiting for its Co-signer keys. Nothing can be put in until then.",
+        },
+        reading: {
+          title: "Reading the coins.",
+          body: "The Vault Address is being checked on Bitcoin signet.",
+        },
+        empty: {
+          title: "Empty, waiting for test bitcoin.",
+          body: "Send signet coins to the Vault Address below. After one confirmation the thief step opens.",
+        },
+        funded: {
+          title: "Funded. Now play the thief.",
+          body: (delay: string) =>
+            `Ask for a withdrawal, as a thief with your keys would. NEAR will not co-sign it for ${delay}.`,
+        },
+        waiting: {
+          title: (left: string) => `A thief is asking. ${left} until NEAR would co-sign.`,
+          body: "The request is public. Press Claw back and the coins go home before that.",
+        },
+        ready: {
+          title: "The waiting time is over.",
+          body: "Execute sends the coins to the request's address. Claw back still sends them home instead.",
+        },
+        settled: {
+          title: (state: string) => `The request is ${state}.`,
+          body: "Nothing is waiting. Request another withdrawal, or claw the coins back.",
+        },
+        clawedBack: {
+          title: "The theft was stopped.",
+          body: "Every coin is back at your safe address and the Vault is closed. The whole story is on its Proof Page.",
+        },
+      },
       guideTitle: "Try it: stop a theft in 3 steps",
       guide: {
         fund: {
